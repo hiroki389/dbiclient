@@ -590,8 +590,8 @@ function! dbiclient#getQueryAsync(sql,callback,limitrows,opt)
                     \,'null'        : g:dbiclient_null
                     \,'table_info'  : get(a:opt ,'table_info' ,0)
                     \,'column_info' : get(a:opt ,'column_info' ,0)
-                    \,'table_name'  : get(a:opt ,s:connect_opt_table_name ,v:null)
-                    \,'tabletype'   : get(a:opt ,s:connect_opt_table_type ,v:null)
+                    \,'table_name'  : get(a:opt ,'table_name' ,v:null)
+                    \,'tabletype'   : get(a:opt ,'tabletype' ,v:null)
                     \,'tempfile'    : tempname()}
         call ch_sendexpr(channel, param ,{"callback": funcref('s:callback2')})
     else
