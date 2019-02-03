@@ -22,11 +22,11 @@ cpan> install DBD::SQLite
 ```
 
 # Database connection method
+dbiclient#connect({port}, {dns}, {user}, {password}, [limit], [encoding] [, {opt}])
 ```vim
-dbiclient#connect({port}, {dns}, {user}, {password} [, {opt}])
 "example
-"param
 :call dbiclient#connect(9001,'ODBC:RIVUS','RIVUS','password',10000,'utf8')
+
 let opt={}  
 " Filter the object type.
 let opt.connect_opt_table_type='TABLE,SYNONYM'
@@ -35,6 +35,7 @@ let opt.connect_opt_table_name='TEST%'
 " Set environment variables within perl.
 let opt.connect_opt_envdict={'NLS_LANG':'Japanese_Japan.AL32UTF8'}
 :call dbiclient#connect(9001,'Oracle:sid=XE','RIVUS','password',1000,'utf8',opt)
+
 :call dbiclient#connect(9001,'Pg:dbname=postgres','postgres','password',1000,'utf8')
 ```
 
