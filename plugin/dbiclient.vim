@@ -9,18 +9,42 @@ let s:cpo_save = &cpo
 set cpo&vim
 
 " default 
-let g:dbiclient_debugflg       = 0
-let g:dbiclient_rootPath       = expand('~') . '/.temp/dbiclient'
-let g:dbiclient_perlmPath      = fnamemodify(expand('<sfile>:h') . '/../rplugin/perl/socket.pl',':p')
-let g:dbiclient_col_delimiter  = "\t"
-let g:dbiclient_sql_delimiter1 = ';'
-let g:dbiclient_sql_delimiter2 = '/'
-let g:dbiclient_null           = ''
-let g:dbiclient_linesep        = v:null
-let g:dbiclient_surround       = v:null
-let g:dbiclient_new_window_hight  = ''
-let g:dbiclient_perl_binmode  = 'utf8'
-let g:dbiclient_buffer_encoding  = 'utf8'
+if !exists('g:dbiclient_debugflg')
+    let g:dbiclient_debugflg         = 0
+endif
+if !exists('g:dbiclient_rootPath')
+    let g:dbiclient_rootPath         = expand('~') . '/.temp/dbiclient'
+endif
+if !exists('g:dbiclient_perlmPath')
+    let g:dbiclient_perlmPath        = fnamemodify(expand('<sfile>:h') . '/../rplugin/perl/socket.pl',':p')
+endif
+if !exists('g:dbiclient_col_delimiter')
+    let g:dbiclient_col_delimiter    = "\t"
+endif
+if !exists('g:dbiclient_sql_delimiter1')
+    let g:dbiclient_sql_delimiter1   = ';'
+endif
+if !exists('g:dbiclient_sql_delimiter2')
+    let g:dbiclient_sql_delimiter2   = '/'
+endif
+if !exists('g:dbiclient_null')
+    let g:dbiclient_null             = ''
+endif
+if !exists('g:dbiclient_linesep')
+    let g:dbiclient_linesep          = v:null
+endif
+if !exists('g:dbiclient_surround')
+    let g:dbiclient_surround         = v:null
+endif
+if !exists('g:dbiclient_new_window_hight')
+    let g:dbiclient_new_window_hight = ''
+endif
+if !exists('g:dbiclient_perl_binmode')
+    let g:dbiclient_perl_binmode     = 'utf8'
+endif
+if !exists('g:dbiclient_buffer_encoding')
+    let g:dbiclient_buffer_encoding  = 'utf8'
+endif
 
 "command! -nargs=* DBIJobStart :call dbiclient#jobStart(<f-args>)
 "command! DBIJobStat :call dbiclient#jobStat()

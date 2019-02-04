@@ -106,7 +106,6 @@ $SIG{HUP} = $SIG{TERM} = $SIG{KILL} = $SIG{QUIT} =\&exitfunc;
 $SIG{INT} = \&cancel;
 
 binmode STDIN,  (":encoding(" . $vimencoding . ')');
-binmode STDERR,  (":encoding(" . $vimencoding . ')');
 binmode STDOUT,  (":encoding(" . $vimencoding . ')');
 STDERR->autoflush;
 STDOUT->autoflush;
