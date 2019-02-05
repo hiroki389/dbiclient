@@ -263,6 +263,7 @@ sub rutine{
                 $sql =~ s/^[ \t\r\n]*$//m;
                 next if $sql eq "";
                 outputlog("UPDATE START(${user})"  . "\n" . $sql , $pid , $sig);
+                $result->{lastsql} = $sql;
                 $sth=$dbh->prepare($sql);
                 my $rv=$sth->execute;
                 $sth->finish;
@@ -337,6 +338,7 @@ sub rutine{
                         $result->{primary_key}=\@primary_key;
                     }
                 }
+                $result->{lastsql} = $sql;
                 $sth=$dbh->prepare($sql);
                 exec_sql($data,$sig,$tempfile,$result,1);
                 my @outputline = ();

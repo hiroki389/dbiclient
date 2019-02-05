@@ -566,9 +566,6 @@ endfunction
 function! dbiclient#getQueryAsync(sql,callback,limitrows,opt)
     function! s:callback2(c,m) closure
         call function(a:callback)(a:c,a:m)
-        if exists('b:bufmap') && !has_key(b:bufmap,"cols")
-            call dbiclient#deleteHistory(dbiclient#loadQueryHistory(),[a:sql],s:getHistoryPath())
-        endif
     endfunction
     if s:error1()
         return {}
@@ -688,9 +685,6 @@ endfunction
 function! dbiclient#dBCommandAsync(command,callback,delim)
     function! s:callback3(c,m) closure
         call function(a:callback)(a:c,a:m)
-        if exists('b:bufmap') && get(b:bufmap,"status",9) != 1
-            call dbiclient#deleteHistory(dbiclient#loadQueryHistoryDo(),get(a:command,'do',[]),s:getHistoryPathDo())
-        endif
     endfunction
     if s:error1()
         return {}
@@ -717,6 +711,10 @@ endfunction
 function! s:cb_do(ch,dict) abort
     call ch_close(a:ch)
     if type(a:dict)==v:t_dict
+        if get(a:dict,"status",9) == 9
+            let deletesql=[get(a:dict,'lastsql','') . "\n" . g:dbiclient_sql_delimiter2, get(a:dict,'lastsql','') . g:dbiclient_sql_delimiter1]
+            call dbiclient#deleteHistory(dbiclient#loadQueryHistoryDo(),deletesql,s:getHistoryPathDo())
+        endif
         if has_key(a:dict,'commit')
             if get(a:dict,"status",9) == 1
                 call s:echoMsg('IO13')
@@ -798,6 +796,10 @@ function! s:cb_outputResultCmn(ch,dict) abort
     let info= info . '[COUNT=' . get(a:dict,'cnt',-1) . ']'
     let matchadds=[]
     call add(matchadds,['String','\v^SQL\>.*'])
+    if get(a:dict,"status",9) == 9
+        let deletesql=[get(a:dict,'lastsql','')]
+        call dbiclient#deleteHistory(dbiclient#loadQueryHistory(),deletesql,s:getHistoryPath())
+    endif
     if get(a:dict,"status",9) == 1
         let ymdhmss=strftime("%Y%m%d%H%M%S",localtime()) . reltime()[1][-4:]
         call s:f.newBuffer(get(opt,'bufname','Select_' . s:getuser(a:dict) . '_' . ymdhmss),g:dbiclient_new_window_hight,g:dbiclient_buffer_encoding)
