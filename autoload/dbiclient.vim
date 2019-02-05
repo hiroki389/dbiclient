@@ -490,21 +490,29 @@ function! dbiclient#dBExecRangeSQLDoAuto() range
     if empty(trim(join(list)))
         return
     endif
-    if len(filter(list[:],{_,x->x =~ '\v' . g:dbiclient_sql_delimiter2 . '\s*$'})) > 0
+    if join(list, "\n") =~ '\v\n\s*' . g:dbiclient_sql_delimiter2 . '\s*%(\n|$)'
         let delim =g:dbiclient_sql_delimiter2
+        let mode=2
     else
         let delim =g:dbiclient_sql_delimiter1
+        let mode=1
     endif
-    let sqllist =s:split(join(list,"\n"),'\v' . delim . '\s*%(\n|$)')
-    call dbiclient#dBCommandAsync({"do":sqllist},'s:cb_do',delim)
+    call dbiclient#dBExecRangeSQLDo(delim,mode)
 endfunction
-function! dbiclient#dBExecRangeSQLDo(delim) range
+function! dbiclient#dBExecRangeSQLDo(delim, mode) range
     let list = s:f.getRangeCurList(getpos("'<"), getpos("'>"))
     if empty(trim(join(list)))
         return
     endif
-    let sqllist =s:split(join(list,"\n"),'\v' . a:delim . '\s*%(\n|$)')
-    call dbiclient#dBCommandAsync({"do":sqllist},'s:cb_do',a:delim)
+    if a:mode == 2
+        let delim = '\n\s*' . a:delim
+        let delim2 = "\n" . a:delim
+    else
+        let delim = a:delim
+        let delim2 = a:delim
+    endif
+    let sqllist =s:split(join(list,"\n"),'\v' . delim . '\s*%(\n|$)')
+    call dbiclient#dBCommandAsync({"do":sqllist},'s:cb_do',delim2)
 endfunction
 
 function! dbiclient#getQuery(sql,limitrows,opt)
@@ -799,7 +807,7 @@ function! s:cb_outputResultCmn(ch,dict) abort
         if get(a:dict.data,'table_info',0) != 1 && get(a:dict.data,'column_info',0) != 1
             call extend(matchadds,s:append('$',['"Quick Help<nmap>: S:SELECT W:WHERE <C-g>:GROUP O:ORDER A:ALIGN R:RELOAD'],'Comment'))
             call add(w:disableline,line('$'))
-            call extend(matchadds,s:append('$',['"Quick Help<vmap>: I:create inssert U:create update D:create delete'],'Comment'))
+            call extend(matchadds,s:append('$',['"Quick Help<vmap>: <C-I>:create inssert <C-U>:create update <C-D>:create delete'],'Comment'))
             call add(w:disableline,line('$'))
         elseif get(a:dict.data,'table_info',0) == 1
             call extend(matchadds,s:append('$',['"Quick Help: <CR>:SQL W:TABLE_NAME T:TABLE_TYPE'],'Comment'))
@@ -877,9 +885,9 @@ function! s:cb_outputResult(ch,dict) abort
             nmap <buffer> <nowait> <silent> S :<C-u>call <SID>select()<CR>
             nmap <buffer> <nowait> <silent> <C-G> :<C-u>call <SID>group()<CR>
             nmap <buffer> <nowait> <silent> O :<C-u>call <SID>order()<CR>
-            vmap <buffer> <nowait> <silent> I :call <SID>createInsertRange()<CR>
-            vmap <buffer> <nowait> <silent> D :call <SID>createDeleteRange('')<CR>
-            vmap <buffer> <nowait> <silent> U :call <SID>createUpdateRange('')<CR>
+            vmap <buffer> <nowait> <silent> <C-I> :call <SID>createInsertRange()<CR>
+            vmap <buffer> <nowait> <silent> <C-D> :call <SID>createDeleteRange('')<CR>
+            vmap <buffer> <nowait> <silent> <C-U> :call <SID>createUpdateRange('')<CR>
         endif
         call s:align('!')
     endif
@@ -896,9 +904,9 @@ function! s:cb_outputResultEasyAlign(ch,dict)
             nmap <buffer> <nowait> <silent> S :<C-u>call <SID>select()<CR>
             nmap <buffer> <nowait> <silent> <C-G> :<C-u>call <SID>group()<CR>
             nmap <buffer> <nowait> <silent> O :<C-u>call <SID>order()<CR>
-            vmap <buffer> <nowait> <silent> I :call <SID>createInsertRange()<CR>
-            vmap <buffer> <nowait> <silent> D :call <SID>createDeleteRange('')<CR>
-            vmap <buffer> <nowait> <silent> U :call <SID>createUpdateRange('')<CR>
+            vmap <buffer> <nowait> <silent> <C-I> :call <SID>createInsertRange()<CR>
+            vmap <buffer> <nowait> <silent> <C-D> :call <SID>createDeleteRange('')<CR>
+            vmap <buffer> <nowait> <silent> <C-U> :call <SID>createUpdateRange('')<CR>
         endif
         call s:align('')
     endif
@@ -1122,7 +1130,7 @@ function! s:order()
     endif
     let bufmap=deepcopy(b:bufmap)
     let bufmap.opt.closebufnr=bufnr('%')
-    call s:selectExtends('SQL_ORDER',1)
+    call s:selectExtends('SQL_ORDER',1,get(bufmap.opt,'order',{}))
     let b:bufmap=bufmap
     nmap <buffer> <nowait> <silent> <CR> :<C-u>call <SID>orderQuery(b:bufmap.alignFlg ? '!' : '')<CR>
 endfunction
@@ -1140,6 +1148,10 @@ function! s:orderQuery(bang)
         let order = ' ORDER BY ' . join(list1,',')
         let b:bufmap.opt.extend.order = order
     endif
+    let b:bufmap.opt.order = {}
+    let b:bufmap.opt.order.selectdict = b:selectdict
+    let b:bufmap.opt.order.selectdictstr = b:selectdictstr
+    let b:bufmap.opt.order.selectdictAscDesc = b:selectdictAscDesc
     let extend=b:bufmap.opt.extend
     call s:extendquery(a:bang,get(extend,'select','T.*'),get(extend,'where',''),get(extend,'order',''),get(extend,'group',''))
 endfunction
@@ -1149,7 +1161,7 @@ function! s:select()
     endif
     let bufmap=deepcopy(b:bufmap)
     let bufmap.opt.closebufnr=bufnr('%')
-    call s:selectExtends('SQL_SELECT',0)
+    call s:selectExtends('SQL_SELECT',0,get(bufmap.opt,'select',{}))
     let b:bufmap=bufmap
     nmap <buffer> <nowait> <silent> <CR> :<C-u>call <SID>selectQuery(b:bufmap.alignFlg ? '!' : '')<CR>
 endfunction
@@ -1167,6 +1179,10 @@ function! s:selectQuery(bang)
         let select = join(list1,',')
         let b:bufmap.opt.extend.select = select
     endif
+    let b:bufmap.opt.select = {}
+    let b:bufmap.opt.select.selectdict = b:selectdict
+    let b:bufmap.opt.select.selectdictstr = b:selectdictstr
+    let b:bufmap.opt.select.selectdictAscDesc = b:selectdictAscDesc
     let extend=b:bufmap.opt.extend
     call s:extendquery(a:bang,get(extend,'select','T.*'),get(extend,'where',''),get(extend,'order',''),get(extend,'group',''))
 endfunction
@@ -1177,7 +1193,7 @@ function! s:group()
     let bang=b:bufmap.alignFlg ? '!' : ''
     let bufmap=deepcopy(b:bufmap)
     let bufmap.opt.closebufnr=bufnr('%')
-    call s:selectExtends('SQL_GROUP',0)
+    call s:selectExtends('SQL_GROUP',0,get(bufmap.opt,'group',{}))
     let b:bufmap=bufmap
     nmap <buffer> <nowait> <silent> <CR> :<C-u>call <SID>groupQuery(b:bufmap.alignFlg ? '!' : '')<CR>
 endfunction
@@ -1197,6 +1213,10 @@ function! s:groupQuery(bang)
         let b:bufmap.opt.extend.group = group
         let b:bufmap.opt.extend.select = join(s:selectValues(b:selectdict),',')
     endif
+    let b:bufmap.opt.group = {}
+    let b:bufmap.opt.group.selectdict = b:selectdict
+    let b:bufmap.opt.group.selectdictstr = b:selectdictstr
+    let b:bufmap.opt.group.selectdictAscDesc = b:selectdictAscDesc
     let extend=b:bufmap.opt.extend
     call s:extendquery(a:bang,get(extend,'select','T.*'),get(extend,'where',''),get(extend,'order',''),get(extend,'group',''))
 endfunction
@@ -1366,7 +1386,8 @@ function! s:init()
     let s:loaded=1
 endfunction
 function! s:selectValues(selectdict)
-    return map(sort(map(items(a:selectdict),{_,x->[x[1],x[0]]})),{_,x->x[1] . (b:selectdictAscDesc[x[1]] ? ' DESC' : '')})
+    let list=sort(items(a:selectdict),{x,y->x[1] == y[1] ? 0 : x[1] > y[1] ? 1 : -1})
+    return map(map(list,{_,x->[x[1],x[0]]}),{_,x->x[1] . (b:selectdictAscDesc[x[1]] ? ' DESC' : '')})
 endfunction
 function! s:SelectLines(orderFlg) range
     if s:isDisableline(a:firstline, a:lastline)
@@ -1472,14 +1493,24 @@ function! s:selectWhere()
     call s:append(0,list)
     norm gg
 endfunction
-function! s:selectExtends(bufname,orderflg)
-    let precols=get(b:bufmap,'opt',{})
-    let precols=get(precols,'precols',[])
-    let list=map(copy(empty(precols) ? b:bufmap.cols : precols),{_,x->x})
+function! s:selectExtends(bufname,orderflg,dict)
+    let matchadds=[]
+    call add(matchadds,['Comment','^[*].*'])
+    call add(matchadds,['Comment','\v^(\[ASC\]|\[DESC\]).*'])
+    let opt=get(b:bufmap,'opt',{})
+    let precols=get(opt,'precols',[])
+    if has_key(a:dict,'selectdict')
+        let list=[]
+        for key in copy(empty(precols) ? b:bufmap.cols : precols)
+            call add(list, get(a:dict.selectdictstr, key, key))
+        endfor
+    else
+        let list=map(copy(empty(precols) ? b:bufmap.cols : precols),{_,x->x})
+    endif
     call s:f.newBuffer(a:bufname,g:dbiclient_new_window_hight,g:dbiclient_buffer_encoding)
-    let b:selectdict={}
-    let b:selectdictstr={}
-    let b:selectdictAscDesc={}
+    let b:selectdict=get(a:dict,'selectdict',{})
+    let b:selectdictstr=get(a:dict,'selectdictstr',{})
+    let b:selectdictAscDesc=get(a:dict,'selectdictAscDesc',{})
     call s:append(0,list)
     norm gg
     if a:orderflg
@@ -1490,6 +1521,8 @@ function! s:selectExtends(bufname,orderflg)
         vmap <buffer> <nowait> <silent> <SPACE> :call <SID>SelectLines(0)<CR>
     endif
     call s:f.readonly()
+    let b:matches_dbiclient=matchadds
+    call s:sethl()
 endfunction
 function! s:isDisableline(...)
     if exists('w:disableline')
