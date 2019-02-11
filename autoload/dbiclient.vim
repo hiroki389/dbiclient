@@ -980,6 +980,12 @@ function! s:getalignlist(lines)
     call s:debugLog('align:end')
     return extend(lines,lines2)
 endfunction
+function! dbiclient#selectTableOfList(table)
+    if s:isDisableline()
+        return
+    endif
+    call dbiclient#selectTableCmn('!',a:table)
+endfunction
 function! dbiclient#selectTable(bang,wordFlg, ...)
     let limitrows=get(a:,1,s:limitrows)
     if a:wordFlg
@@ -990,9 +996,6 @@ function! dbiclient#selectTable(bang,wordFlg, ...)
     call dbiclient#selectTableCmn(a:bang,table,limitrows)
 endfunction
 function! dbiclient#selectTableCmn(bang,table,...)
-    if s:isDisableline()
-        return
-    endif
     if empty(trim(a:table))
         return
     endif
@@ -1320,7 +1323,7 @@ function! s:UserTables(bang,tableNm,tabletype)
     let s:params[s:dbi_job_port].tabletype=tabletype == v:null ? '' : tabletype
     let s:params[s:dbi_job_port].table_name=tableNm == v:null ? '' : tableNm
     let cmd= []
-    call add(cmd,'nmap <buffer> <nowait> <silent> <CR> :<C-u>call dbiclient#selectTableCmn(b:bufmap.alignFlg ? "!" : "",trim(matchstr(getline("."),''\v^[^\|]+'')))<CR>')
+    call add(cmd,'nmap <buffer> <nowait> <silent> <CR> :<C-u>call dbiclient#selectTableOfList(trim(matchstr(getline("."),''\v^[^\|]+'')))<CR>')
     call add(cmd,'nmap <buffer> <nowait> <silent> W :<C-u>call <SID>UserTables(b:bufmap.alignFlg ? "!" : "",input(''TABLE_NAME:'',''' . escape(s:params[s:dbi_job_port].table_name,'|') . '''),''' . escape(s:params[s:dbi_job_port].tabletype,'|') . ''')<CR>')
     call add(cmd,'nmap <buffer> <nowait> <silent> T :<C-u>call <SID>UserTables(b:bufmap.alignFlg ? "!" : "",''' . escape(s:params[s:dbi_job_port].table_name,'|') . ''',input(''TABLE_TYPE:'',''' . escape(s:params[s:dbi_job_port].tabletype,'|') . '''))<CR>')
     call add(cmd,'norm gg')
