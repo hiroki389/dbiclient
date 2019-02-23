@@ -32,6 +32,7 @@ my $datasource;
 my $user="";
 my $pass;
 my $limitrows;
+my $oracleflg;
 my $odbcflg;
 my $postgresflg;
 my $envdict;
@@ -175,6 +176,7 @@ while(1){
         $dbencoding=$data->{encoding};
         $primarykeyflg=$data->{primarykeyflg};
         eval {
+            $oracleflg = (${datasource} =~ /oracle:/i);
             $odbcflg = (${datasource} =~ /odbc:/i);
             $postgresflg = (${datasource} =~ /pg:/i);
             while (my ($key, $value) = each(%{$data->{envdict}})){
@@ -291,7 +293,7 @@ sub rutine{
             $dbh->{LongTruncOk}=1;
             $dbh->{LongReadLen}=102400;
             my $username=$user eq '' ? undef : $user;
-            if ($odbcflg || $postgresflg) {
+            if (!$oracleflg) {
                 $username=undef;
             }
             if($data->{table_info} == 1){
