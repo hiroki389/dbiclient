@@ -131,10 +131,10 @@ function! s:error3()
         call s:echoMsg('EO10')
         return 1
     endif
-    if b:bufmap.alignFlg==1
-        call s:echoMsg('EO16')
-        return 1
-    endif
+    "if b:bufmap.alignFlg==1
+    "    call s:echoMsg('EO16')
+    "    return 1
+    "endif
     return 0
 endfunction
 function! s:getTableName(sql,table)
@@ -166,7 +166,7 @@ function! dbiclient#getResultList(fileNm)
     let ret = {}
     let file = readfile(a:fileNm)
     let cols=get(file,1,[])
-    let val=dbiclient#funclib#List(file[2:]).filter({x->!empty(x)}).fmap({xs->s:f.zip(s:split(cols,"\t"),s:split(xs,"\t"))})
+    let val=dbiclient#funclib#List(file[2:]).filter({x->!empty(x)}).fmap({xs->s:f.zip(s:split(cols,g:dbiclient_col_delimiter),s:split(xs,g:dbiclient_col_delimiter))})
     return val
 endfunction
 function! s:createInsertRange() range
@@ -196,7 +196,7 @@ function! s:createInsertRange() range
     endif
     let list = getline(a:firstline, a:lastline)
     if b:bufmap.alignFlg==1
-        let list = map(list,{_,line->join(map(split(line,'|'),{_,x->trim(x)}),"\t")})
+        let list = map(list,{_,line->join(map(split(line,g:dbiclient_col_delimiter_align),{_,x->trim(x)}),g:dbiclient_col_delimiter)})
     endif
     if empty(list)
         return
@@ -249,7 +249,7 @@ function! s:createUpdateRange(bang) range
     endif
     let list = getline(a:firstline, a:lastline)
     if b:bufmap.alignFlg==1
-        let list = map(list,{_,line->join(map(split(line,'|'),{_,x->trim(x)}),"\t")})
+        let list = map(list,{_,line->join(map(split(line,g:dbiclient_col_delimiter_align),{_,x->trim(x)}),g:dbiclient_col_delimiter)})
     endif
     if empty(list)
         return
@@ -293,7 +293,7 @@ function! s:createDeleteRange(bang) range
     endif
     let list = getline(a:firstline, a:lastline)
     if b:bufmap.alignFlg==1
-        let list = map(list,{_,line->join(map(split(line,'|'),{_,x->trim(x)}),"\t")})
+        let list = map(list,{_,line->join(map(split(line,g:dbiclient_col_delimiter_align),{_,x->trim(x)}),g:dbiclient_col_delimiter)})
     endif
     if empty(list)
         return
@@ -962,21 +962,21 @@ function! s:getalignlist(lines)
     if empty(a:lines)
         return []
     endif
-    let colsize=len(split(a:lines[0],"\t",1))
+    let colsize=len(split(a:lines[0],g:dbiclient_col_delimiter,1))
     let maxsize=200000/colsize
     call s:debugLog('align:start:maxsize ' . maxsize)
     let lines=a:lines[:maxsize]
     call s:debugLog('align:lines ' . len(lines))
     let lines2=a:lines[maxsize+1:]
     call s:debugLog('align:lines2 ' . len(lines2))
-    let lines=map(lines,{_,x->split(x,"\t",1)})
+    let lines=map(lines,{_,x->split(x,g:dbiclient_col_delimiter,1)})
     call s:debugLog('align:copy')
     let linesLen=map(deepcopy(lines),{_,x->map(x,{_,y->strwidth(y)})})
     call s:debugLog('align:linesLen')
     let maxCols=copy(linesLen[0])
     call map(copy(linesLen),{_,cols->map(maxCols,{i,col->colsize == len(cols) && col < cols[i] ? cols[i] : col})})
     call s:debugLog('align:maxCols' . string(maxCols))
-    let lines=map(lines,{_,cols->colsize == len(cols) ? join(map(cols,{i,col->col . repeat(' ',maxCols[i] + 1 - strwidth(col))}),'| ') : join(cols,"\t")})
+    let lines=map(lines,{_,cols->colsize == len(cols) ? join(map(cols,{i,col->col . repeat(' ',maxCols[i] + 1 - strwidth(col))}),g:dbiclient_col_delimiter_align . ' ') : join(cols,g:dbiclient_col_delimiter)})
     call s:debugLog('align:end')
     return extend(lines,lines2)
 endfunction
@@ -1323,7 +1323,7 @@ function! s:UserTables(bang,tableNm,tabletype)
     let s:params[s:dbi_job_port].tabletype=tabletype == v:null ? '' : tabletype
     let s:params[s:dbi_job_port].table_name=tableNm == v:null ? '' : tableNm
     let cmd= []
-    call add(cmd,'nmap <buffer> <nowait> <silent> <CR> :<C-u>call dbiclient#selectTableOfList(trim(matchstr(getline("."),''\v^[^\|]+'')))<CR>')
+    call add(cmd,'nmap <buffer> <nowait> <silent> <CR> :<C-u>call dbiclient#selectTableOfList(trim(matchstr(getline("."),''\v^[^\' . g:dbiclient_col_delimiter_align . ']+'')))<CR>')
     call add(cmd,'nmap <buffer> <nowait> <silent> W :<C-u>call <SID>UserTables(b:bufmap.alignFlg ? "!" : "",input(''TABLE_NAME:'',''' . escape(s:params[s:dbi_job_port].table_name,'|') . '''),''' . escape(s:params[s:dbi_job_port].tabletype,'|') . ''')<CR>')
     call add(cmd,'nmap <buffer> <nowait> <silent> T :<C-u>call <SID>UserTables(b:bufmap.alignFlg ? "!" : "",''' . escape(s:params[s:dbi_job_port].table_name,'|') . ''',input(''TABLE_TYPE:'',''' . escape(s:params[s:dbi_job_port].tabletype,'|') . '''))<CR>')
     call add(cmd,'norm gg')

@@ -418,7 +418,7 @@ sub exec_sql{
     my $cols="";
     my $i=0;
     foreach my $col (@{$sth->{NAME}}){
-        if ($data->{table_info} == 1 && ($col eq 'TABLE_CAT' || $col eq 'TABLE_SCHEM')) {
+        if ($data->{table_info} == 1 && ($col ne 'TABLE_NAME' && $col ne 'TABLE_TYPE' && $col ne 'REMARKS')) {
         }elsif ($data->{column_info} ==1 && ($col eq 'TABLE_CAT' || $col eq 'TABLE_SCHEM')) {
         } else {
             $col=Encode::is_utf8($col) ? $col : Encode::decode($dbencoding, $col);

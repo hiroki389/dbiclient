@@ -63,6 +63,7 @@ let opt.connect_opt_envdict={'NLS_LANG':'Japanese_Japan.AL32UTF8'}
 |global variable              | Default   | Description                                                |
 |:----------------------------|:----------|:-----------------------------------------------------------|
 |g:dbiclient_col_delimiter    | "\t"      | Set column delimiter                                       |
+|g:dbiclient_col_delimiter_align    | "|"      | Set column delimiter                                       |
 |g:dbiclient_null             | ''        | Set display setting of NULL value                          |
 |g:dbiclient_linesep          | v:null    | Set display settings for line breaks in columns            |
 |g:dbiclient_surround         | v:null    | Set display setting of column enclosure                    |

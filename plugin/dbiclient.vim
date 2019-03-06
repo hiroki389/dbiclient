@@ -18,6 +18,9 @@ endif
 if !exists('g:dbiclient_perlmPath')
     let g:dbiclient_perlmPath        = fnamemodify(expand('<sfile>:h') . '/../rplugin/perl/socket.pl',':p')
 endif
+if !exists('g:dbiclient_col_delimiter_align')
+    let g:dbiclient_col_delimiter_align    = "|"
+endif
 if !exists('g:dbiclient_col_delimiter')
     let g:dbiclient_col_delimiter    = "\t"
 endif
@@ -71,7 +74,7 @@ command! -nargs=? DBIReload :call dbiclient#reload(<f-args>)
 command! -nargs=* DBITables :call dbiclient#UserTables('!',<f-args>)
 command! DBIColumnsFrmTbl :call dbiclient#selectColumnsTable('!',1)
 
-command! -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDoAuto()
+"command! -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDoAuto()
 command! -range DBIExecuteSemicolon :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter1, 1)
 command! -range DBIExecuteSlash :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter2, 2)
 
