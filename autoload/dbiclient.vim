@@ -844,7 +844,7 @@ function! s:cb_outputResultCmn(ch,dict) abort
         call s:append('$',lines[2:])
         norm gg
         if g:dbiclient_col_delimiter != "\t"
-            exe '%s/\t/' . g:dbiclient_col_delimiter . '/g'
+            exe 'silent! %s/\t/' . g:dbiclient_col_delimiter . '/g'
         endif
     else
         if has_key(a:dict.data,'tempfile')
