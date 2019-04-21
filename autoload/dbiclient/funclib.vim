@@ -266,52 +266,62 @@ function! {s:_plugin_name}#funclib#new()
     endfunction
     " 
     function! s:res.edit(bufname,line,enc)
-        call s:res.newBufferBase(a:bufname,a:line,a:enc,1)
+        return s:res.newBufferBase(a:bufname,a:line,a:enc,1,0)
     endfunction
     function! s:res.editWrite(bufname,line,enc)
-        call s:res.newBufferBase(a:bufname,a:line,a:enc,0)
+        return s:res.newBufferBase(a:bufname,a:line,a:enc,0,0)
     endfunction
     function! s:res.editBase(bufname,line,enc,roflg)
-        let nr=bufnr('%')
         silent! exe "bo " . a:line . "sp ++enc=" . a:enc . " " . a:bufname
+        let bufnr=bufnr('%')
         if a:roflg
             setlocal buftype=nowrite
         endif
         setlocal noswapfile          "スワップファイルを作成しない
         setlocal bufhidden=wipe      "バッファがウィンドウ内から表示されなくなったら削除
         setlocal nowrap              "ラップしない
-        let s:lastbufnrDict[bufnr('%')] = nr
+        let s:lastbufnrDict[bufnr] = bufnr
+        return bufnr
     endfunction
     " 一時バッファーを作成
-    function! s:res.newBuffer(bufname,line,enc)
-        call s:res.newBufferBase(a:bufname,a:line,a:enc,1)
+    function! s:res.newBuffer(bufname,line,enc,previewFlg)
+        return s:res.newBufferBase(a:bufname,a:line,a:enc,1,a:previewFlg)
     endfunction
-    function! s:res.newBufferWrite(bufname,line,enc)
-        call s:res.newBufferBase(a:bufname,a:line,a:enc,0)
+    function! s:res.newBufferWrite(bufname,line,enc,previewFlg)
+        return s:res.newBufferBase(a:bufname,a:line,a:enc,0,a:previewFlg)
     endfunction
-    function! s:res.newBufferBase(bufname,line,enc,roflg)
-        let nr=bufnr('%')
-        call s:res.delbuf(a:bufname)
-        silent! exe "bo " . a:line . "new ++enc=" . a:enc . " " . a:bufname
-        call s:res.chngeBuftype(a:roflg)
-        nnoremap <buffer> <silent> <nowait> q :silent! bd!<CR>
-        let s:lastbufnrDict[bufnr('%')] = nr
-        "setlocal readonly            "読み込み専用
-    endfunction
-    function! s:res.getLastBufnr(nr)
-        let nr = get(s:lastbufnrDict,a:nr,-1)
-        if has_key(s:lastbufnrDict,a:nr)
-            call remove(s:lastbufnrDict,a:nr)
+    function! s:res.newBufferBase(bufname,line,enc,roflg,previewFlg)
+        let bufnr=bufnr(a:bufname)
+        call s:res.delbuf(bufnr)
+        if a:previewFlg
+            silent! exe "bo " . "pedit ++enc=" . a:enc . " " . a:bufname
+            wincmd P
+        else
+            silent! exe "bo " . a:line . "new ++enc=" . a:enc . " " . a:bufname
         endif
-        return nr
+        call s:res.chngeBuftype(a:roflg)
+        let bufnr=bufnr('%')
+        "nnoremap <buffer> <silent> <nowait> q :silent! quit!<CR>
+        let s:lastbufnrDict[bufnr] = a:bufname
+        "setlocal readonly            "読み込み専用
+        call clearmatches()
+        return bufnr
+    endfunction
+    function! s:res.getLastBufnr(bufnr)
+        let bufnr = get(s:lastbufnrDict,a:bufnr,-1)
+        if has_key(s:lastbufnrDict,a:bufnr)
+            call remove(s:lastbufnrDict,a:bufnr)
+        endif
+        return bufnr
     endfunction
     function! s:res.enew(bufname,roflg)
-        let nr=bufnr('%')
         silent! exe "enew"
         silent! exe "file " . a:bufname
+        let bufnr=bufnr('%')
         call s:res.chngeBuftype(a:roflg)
-        let s:lastbufnrDict[bufnr('%')] = nr
+        let s:lastbufnrDict[bufnr] = a:bufname
         "setlocal readonly            "読み込み専用
+        return bufnr
     endfunction
     function! s:res.chngeBuftype(roflg)
         if a:roflg
@@ -324,43 +334,64 @@ function! {s:_plugin_name}#funclib#new()
         "setlocal readonly            "読み込み専用
         call add(s:funclibbuflist,bufnr('%'))
     endfunction
-    function! s:res.readonly()
-        setlocal readonly
-        setlocal nomodifiable
+    function! s:res.readonly(bufnr)
+        call setbufvar(a:bufnr,'&readonly',1)
+        call setbufvar(a:bufnr,'&modifiable',0)
     endfunction
-    function! s:res.noreadonly()
-        setlocal noreadonly
-        setlocal modifiable
+    function! s:res.noreadonly(bufnr)
+        call setbufvar(a:bufnr,'&readonly',0)
+        call setbufvar(a:bufnr,'&modifiable',1)
     endfunction
     " 指定したバッファー名のウィンドウに遷移
-    function! s:res.gotoWin(bufname)
-        let wid = s:res.getwid(a:bufname)
+    function! s:res.gotoWin(bufnr)
+        let wid = s:res.getwid(a:bufnr)
         if wid != -1
             call win_gotoid(wid)
             return 1
         endif
         return -1
     endfunction
-    function! s:res.getwidlist(bufname)
+    function! s:res.gotoWinCurrentTab(bufnr)
+        let wid = s:res.getwidCurrentTab(a:bufnr)
+        if wid != -1
+            call win_gotoid(wid)
+            return 1
+        endif
+        return -1
+    endfunction
+    function! s:res.getwidlist(bufnr)
         let ret=[]
-        for wid in map(range(tabpagewinnr(tabpagenr(),'$')),{_,x->win_getid(x+1)})
-            if(s:res.any(map(win_findbuf(bufnr(a:bufname)),{_,x->wid==x}),{x->x!=0}))
-                call add(ret, wid)
-            endif
+        for tabnr in range(1,tabpagenr('$'))
+            for wid in map(range(tabpagewinnr(tabnr,'$')),{_,x->win_getid(x+1,tabnr)})
+                if(s:res.any(map(win_findbuf(a:bufnr),{_,x->wid==x}),{x->x!=0}))
+                    call add(ret, wid)
+                endif
+            endfor
         endfor
         return ret
     endfunction
-    function! s:res.getwid(bufname)
-        for wid in map(range(tabpagewinnr(tabpagenr(),'$')),{_,x->win_getid(x+1)})
-            if(s:res.any(map(win_findbuf(bufnr(a:bufname)),{_,x->wid==x}),{x->x!=0}))
+    function! s:res.getwidCurrentTab(bufnr)
+        let tabnr = tabpagenr()
+        for wid in map(range(tabpagewinnr(tabnr,'$')),{_,x->win_getid(x+1,tabnr)})
+            if(s:res.any(map(win_findbuf(a:bufnr),{_,x->wid==x}),{x->x!=0}))
                 return wid
             endif
         endfor
         return -1
     endfunction
-    function! s:res.delbuf(bufname)
-        if bufnr(a:bufname) != -1
-            exe 'silent! bd! ' . bufnr(a:bufname)
+    function! s:res.getwid(bufnr)
+        for tabnr in range(1,tabpagenr('$'))
+            for wid in map(range(tabpagewinnr(tabnr,'$')),{_,x->win_getid(x+1,tabnr)})
+                if(s:res.any(map(win_findbuf(a:bufnr),{_,x->wid==x}),{x->x!=0}))
+                    return wid
+                endif
+            endfor
+        endfor
+        return -1
+    endfunction
+    function! s:res.delbuf(bufnr)
+        if a:bufnr != -1
+            exe 'silent! bwipeout! ' . a:bufnr
         endif
     endfunction
     " 指定した範囲の行をリストにして返却
@@ -650,7 +681,7 @@ endfunction
 function! s:deleteallbuf()
     for val in s:funclibbuflist
         if bufexists(val)
-            exe 'silent! bd! ' . val
+            exe 'silent! bwipeout! ' . val
         endif
     endfor
 endfunction

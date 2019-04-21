@@ -28,7 +28,7 @@ if !exists('g:dbiclient_sql_delimiter1')
     let g:dbiclient_sql_delimiter1   = ';'
 endif
 if !exists('g:dbiclient_sql_delimiter2')
-    let g:dbiclient_sql_delimiter2   = '/'
+    let g:dbiclient_sql_delimiter2   = "\/"
 endif
 if !exists('g:dbiclient_null')
     let g:dbiclient_null             = ''
@@ -42,51 +42,44 @@ endif
 if !exists('g:dbiclient_new_window_hight')
     let g:dbiclient_new_window_hight = ''
 endif
+if !exists('g:dbiclient_previewwindow')
+    let g:dbiclient_previewwindow = 0
+endif
 if !exists('g:dbiclient_perl_binmode')
     let g:dbiclient_perl_binmode     = 'utf8'
 endif
 if !exists('g:dbiclient_buffer_encoding')
     let g:dbiclient_buffer_encoding  = 'utf8'
 endif
+if !exists('g:dbiclient_disp_remarks')
+    let g:dbiclient_disp_remarks  = 1
+endif
+if !exists('g:dbiclient_prelinesep')
+    let g:dbiclient_prelinesep  = '<<CRR>>'
+endif
+if !exists('g:dbiclient_hist_cnt')
+    let g:dbiclient_hist_cnt  = 1000
+endif
 
-"command! -nargs=* DBIJobStart :call dbiclient#jobStart(<f-args>)
-"command! DBIJobStat :call dbiclient#jobStat()
-command! DBIJobStop :call dbiclient#jobStop(1)
-command! DBIJobStopAll :call dbiclient#jobStopAll()
-command! DBIJobNext :call dbiclient#jobNext()
 command! DBIJobList :call dbiclient#joblist()
-command! DBIClose :call dbiclient#close()
-"command! -nargs=+ DBISet :call dbiclient#set(<f-args>)
-"command! -nargs=* DBIConnect :call dbiclient#connect(<f-args>)
+command! -nargs=* DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args>)
 
 command! DBICommit :call dbiclient#commit()
 command! DBIRollback :call dbiclient#rollback()
-command! DBICancel :call dbiclient#cancel()
+command! -nargs=? DBICancel :call dbiclient#cancel(<f-args>)
 
-"command! DBILog :call dbiclient#sqllog()
-command! DBIHistory :call dbiclient#dbhistory()
-command! DBIHistoryDo :call dbiclient#dbhistoryDo()
-"command! DBIAlign :call dbiclient#align(!get(b:bufmap,'alignFlg',0))
+command! DBIHistoryAll :call dbiclient#dbhistoryAllCmd()
 
-command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRangeSQL('!',<f-args>)
-command! -bang -nargs=? DBISelectFrmTbl :call dbiclient#selectTable('!',1,<f-args>)
-command! -nargs=? DBIReload :call dbiclient#reload(<f-args>)
-command! -nargs=* DBITables :call dbiclient#UserTables('!',<f-args>)
-command! DBIColumnsFrmTbl :call dbiclient#selectColumnsTable('!',1)
+command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRangeSQL(g:dbiclient_sql_delimiter1,"<bang>" == '!' ? 0 : 1,<f-args>)
+command! -bang -range -nargs=? DBISelectSlash :<line1>,<line2>call dbiclient#selectRangeSQL(g:dbiclient_sql_delimiter2,"<bang>" == '!' ? 0 : 1,<f-args>)
+command! -bang -nargs=? DBISelectTable :call dbiclient#selectTable("<bang>" == '!' ? 0 : 1,1,<f-args>)
+command! -bang -nargs=? DBIReload :call dbiclient#reloadMain("<bang>" == '!' ? 0 : 1,<f-args>)
+command! -nargs=? DBIColumnsTable :call dbiclient#selectColumnsTable(1,1,<q-args>)
 
-"command! -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDoAuto()
-command! -range DBIExecuteSemicolon :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter1)
-command! -range DBIExecuteSlash :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter2)
+command! -bang -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter1,"<bang>")
+command! -bang -range DBIExecuteSlash :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter2,"<bang>")
 
-"command! -range DBICreateInsert :<line1>,<line2>call dbiclient#createInsertRange()
-"command! -bang -range DBICreateUpdate :<line1>,<line2>call dbiclient#createUpdateRange('<bang>')
-"command! -bang -range DBICreateDelete :<line1>,<line2>call dbiclient#createDeleteRange('<bang>')
-
-augroup dbiclient
-    au!
-    "autocmd VimEnter * DBIJobStart 9001
-    autocmd VimLeavePre * DBIJobStopAll
-augroup END
 
 let &cpo = s:cpo_save
 unlet s:cpo_save
+
