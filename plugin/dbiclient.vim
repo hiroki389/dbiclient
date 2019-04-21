@@ -75,8 +75,8 @@ command! -nargs=* DBITables :call dbiclient#UserTables('!',<f-args>)
 command! DBIColumnsFrmTbl :call dbiclient#selectColumnsTable('!',1)
 
 "command! -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDoAuto()
-command! -range DBIExecuteSemicolon :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter1, 1)
-command! -range DBIExecuteSlash :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter2, 2)
+command! -range DBIExecuteSemicolon :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter1)
+command! -range DBIExecuteSlash :<line1>,<line2>call dbiclient#dBExecRangeSQLDo(g:dbiclient_sql_delimiter2)
 
 "command! -range DBICreateInsert :<line1>,<line2>call dbiclient#createInsertRange()
 "command! -bang -range DBICreateUpdate :<line1>,<line2>call dbiclient#createUpdateRange('<bang>')

@@ -40,36 +40,37 @@ let opt.connect_opt_envdict={'NLS_LANG':'Japanese_Japan.AL32UTF8'}
 ```
 
 # Explanation of the ex command
-|excommand              | Description                                                            |
-|:----------------------|:-----------------------------------------------------------------------|
-|:DBITables             | Display table list                                                     |
-|:DBISelect             | Execute select statement of selected range                             |
-|:DBISelectFrmTbl       | Execute the select statement of the table name at the cursor position  |
-|:DBIReload             | Reload the SQL                                                         |
-|:DBIColumnsFrmTbl      | Display table information from the table name at the cursor position   |
-|:DBIExecute            | Execute the selection SQL (insert, update, delete etc.)                |
-|:DBICommit             | Commit                                                                 |
-|:DBIRollback           | Rollback                                                               |
-|:DBICancel             | Request cancellation before SQL timeout                                |
-|:DBIHistory            | Display execution history of select statement                          |
-|:DBIHistoryDo          | Display execution history of SQL (insert, update, delete etc.)         |
-|:DBIJobStop            | Stop the socket application                                            |
-|:DBIJobStopAll         | Stop the socket application on all ports. It is also called when vim exits.  |
-|:DBIJobNext            | Switch to the next job when running on multiple ports                  |
-|:DBIJobList            | Display job list when running on multiple ports                        |
-|:DBIClose              | Close the DB connection                                                |
+| excommand               | Description                                                                 |
+| :---------------------- | :-----------------------------------------------------------------------    |
+| :DBITables              | Display table list                                                          |
+| :DBISelect              | Execute select statement of selected range                                  |
+| :DBISelectFrmTbl        | Execute the select statement of the table name at the cursor position       |
+| :DBIReload              | Reload the SQL                                                              |
+| :DBIColumnsFrmTbl       | Display table information from the table name at the cursor position        |
+| :DBIExecuteSemicolon    | Execute the selection SQL (insert, update, delete etc.)                     |
+| :DBIExecuteSlash        | Execute the selection SQL (procedure etc.)                                  |
+| :DBICommit              | Commit                                                                      |
+| :DBIRollback            | Rollback                                                                    |
+| :DBICancel              | Request cancellation before SQL timeout                                     |
+| :DBIHistory             | Display execution history of select statement                               |
+| :DBIHistoryDo           | Display execution history of SQL (insert, update, delete etc.)              |
+| :DBIJobStop             | Stop the socket application                                                 |
+| :DBIJobStopAll          | Stop the socket application on all ports. It is also called when vim exits. |
+| :DBIJobNext             | Switch to the next job when running on multiple ports                       |
+| :DBIJobList             | Display job list when running on multiple ports                             |
+| :DBIClose               | Close the DB connection                                                     |
 
 # Description of global variables
-|global variable              | Default   | Description                                                |
-|:----------------------------|:----------|:-----------------------------------------------------------|
-|g:dbiclient_col_delimiter    | "\t"      | Set column delimiter                                       |
-|g:dbiclient_col_delimiter_align    | "|"      | Set column delimiter                                       |
-|g:dbiclient_null             | ''        | Set display setting of NULL value                          |
-|g:dbiclient_linesep          | v:null    | Set display settings for line breaks in columns            |
-|g:dbiclient_surround         | v:null    | Set display setting of column enclosure                    |
-|g:dbiclient_new_window_hight | ''        | Set the height of the buffer                               |
-|g:dbiclient_perl_binmode     | 'utf8'    | Set perl input / output encoding                           |
-|g:dbiclient_buffer_encoding  | 'utf8'    | Set buffer encoding                                        |
+| global variable                 | Default     | Description                                                  |
+| :----------------------------   | :---------- | :----------------------------------------------------------- |
+| g:dbiclient_col_delimiter       | "\t"        | Set column delimiter                                         |
+| g:dbiclient_col_delimiter_align | "           | "                                                            | Set column delimiter |
+| g:dbiclient_null                | ''          | Set display setting of NULL value                            |
+| g:dbiclient_linesep             | v:null      | Set display settings for line breaks in columns              |
+| g:dbiclient_surround            | v:null      | Set display setting of column enclosure                      |
+| g:dbiclient_new_window_hight    | ''          | Set the height of the buffer                                 |
+| g:dbiclient_perl_binmode        | 'utf8'      | Set perl input / output encoding                             |
+| g:dbiclient_buffer_encoding     | 'utf8'      | Set buffer encoding                                          |
 
 # Licence
 Copyright (c) 2019 Hiroki Kitamura  

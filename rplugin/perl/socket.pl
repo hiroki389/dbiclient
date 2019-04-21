@@ -194,6 +194,7 @@ while(1){
             my $message = Encode::is_utf8($@) ? $@ : Encode::decode($dbencoding,$@);
             outputlog("CONNECT ERROR:DBI:${datasource} ${user} ${pass}:" . $message,$port);
             $result->{status}=9;
+            $result->{message}=$message;
         }else{
             outputlog("CONNECT:${datasource} ${user} $dbencoding",$port);
             $dbh->{AutoCommit} = 0;

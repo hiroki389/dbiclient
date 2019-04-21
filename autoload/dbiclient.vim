@@ -461,13 +461,14 @@ function! dbiclient#selectRangeSQL(bang,...) range
         return
     endif
     let i=0
-    for sql in split(join(list,"\n"),'\v' . g:dbiclient_sql_delimiter1 .'\s*%(\n|$)')
-        call dbiclient#getQueryAsync(sql,s:callbackstr(a:bang),limitrows,{})
-        if i == 0
-            sleep 1
-        endif
-        let i+=1
-    endfor
+    let sqllist=s:splitSql(list, g:dbiclient_sql_delimiter1)
+    if len(sqllist) == 1
+        call dbiclient#getQueryAsync(sqllist[0],s:callbackstr(a:bang),limitrows,{})
+    else
+        for sql in sqllist
+            call dbiclient#getQuerySyncBufferd(sql,s:callbackstr(a:bang),limitrows,{})
+        endfor
+    endif
 endfunction
 
 function! s:split(str,delim)
@@ -485,34 +486,37 @@ function! s:echoMsg(id,...)
     echom msg
 endfunction
 
-function! dbiclient#dBExecRangeSQLDoAuto() range
+function! dbiclient#dBExecRangeSQLDo(delim) range
     let list = s:f.getRangeCurList(getpos("'<"), getpos("'>"))
     if empty(trim(join(list)))
         return
     endif
-    if join(list, "\n") =~ '\v\n\s*' . g:dbiclient_sql_delimiter2 . '\s*%(\n|$)'
-        let delim =g:dbiclient_sql_delimiter2
-        let mode=2
-    else
-        let delim =g:dbiclient_sql_delimiter1
-        let mode=1
-    endif
-    call dbiclient#dBExecRangeSQLDo(delim,mode)
+    call dbiclient#dBCommandAsync({"do":s:splitSql(list, a:delim)},'s:cb_do',a:delim)
 endfunction
-function! dbiclient#dBExecRangeSQLDo(delim, mode) range
-    let list = s:f.getRangeCurList(getpos("'<"), getpos("'>"))
-    if empty(trim(join(list)))
-        return
-    endif
-    if a:mode == 2
-        let delim = '\n\s*' . a:delim
-        let delim2 = "\n" . a:delim
-    else
-        let delim = a:delim
-        let delim2 = a:delim
-    endif
-    let sqllist =s:split(join(list,"\n"),'\v' . delim . '\s*%(\n|$)')
-    call dbiclient#dBCommandAsync({"do":sqllist},'s:cb_do',delim2)
+function! s:splitSql(sqllist,delim)
+    let list = a:sqllist
+    let delim = a:delim
+    let list=filter(list,{_,x->trim(x) != ''})
+    let sql=join(list,"\n")
+    let regexp='\v%(''(''''|[^''])*'')|%(--.{-}(\n|$))|%(\/\*\_.{-}\*\/)'
+    let cnt=1
+    let mapstr={}
+    while matchstr(sql,regexp) != ""
+        let mapstr['$$$' . cnt . '$$$'] = matchstr(sql,regexp)
+        let sql=substitute(sql,regexp,'$$$' . cnt . '$$$','')
+        let cnt+=1
+    endwhile
+    call s:debugLog(sql)
+    let sqllist =s:split(sql,delim)
+    let sqllist2=[]
+    for sql2 in filter(sqllist,{_,x->trim(x) != ''})
+        for [key,val] in items(mapstr)
+            let sql2=substitute(sql2,'\V' . key,escape(val,'\&'),'')
+        endfor
+        call add(sqllist2,sql2)
+    endfor
+    call s:debugLog(sqllist2)
+    return sqllist2
 endfunction
 
 function! dbiclient#getQuery(sql,limitrows,opt)
@@ -560,6 +564,15 @@ function! dbiclient#getQuerySync(sql,callback,limitrows,opt)
     endif
     let channel = dbiclient#getQueryAsync(a:sql,a:callback,a:limitrows,a:opt)
     while ch_status(channel) == "open"
+        sleep 1
+    endwhile
+endfunction
+function! dbiclient#getQuerySyncBufferd(sql,callback,limitrows,opt)
+    if s:error1()
+        return
+    endif
+    let channel = dbiclient#getQueryAsync(a:sql,a:callback,a:limitrows,a:opt)
+    while ch_status(channel) == "fail" || ch_status(channel) == "buffered"
         sleep 1
     endwhile
 endfunction
@@ -651,6 +664,8 @@ function! s:connect(dsn,user,pass,limitrows,encoding,opt)
         let s:params[s:dbi_job_port].connect=get(ret,'status',9)
         if s:params[s:dbi_job_port].connect == 1
             call dbiclient#UserTables('!')
+        elseif s:params[s:dbi_job_port].connect == 9
+            echoerr ret.message
         endif
     else
         call s:echoMsg('IO19',s:dbi_job_port)
@@ -712,7 +727,7 @@ function! s:cb_do(ch,dict) abort
     call ch_close(a:ch)
     if type(a:dict)==v:t_dict
         if get(a:dict,"status",9) == 9
-            let deletesql=[get(a:dict,'lastsql','') . "\n" . g:dbiclient_sql_delimiter2, get(a:dict,'lastsql','') . g:dbiclient_sql_delimiter1]
+            let deletesql=[get(a:dict,'lastsql','') . g:dbiclient_sql_delimiter2, get(a:dict,'lastsql','') . g:dbiclient_sql_delimiter1]
             call dbiclient#deleteHistory(dbiclient#loadQueryHistoryDo(),deletesql,s:getHistoryPathDo())
         endif
         if has_key(a:dict,'commit')
@@ -844,7 +859,7 @@ function! s:cb_outputResultCmn(ch,dict) abort
         call s:append('$',lines[2:])
         norm gg
         if g:dbiclient_col_delimiter != "\t"
-            exe 'silent! %s/\t/' . g:dbiclient_col_delimiter . '/g'
+            silent exe 'silent! %s/\t/' . g:dbiclient_col_delimiter . '/g'
         endif
     else
         if has_key(a:dict.data,'tempfile')
@@ -989,7 +1004,7 @@ endfunction
 function! dbiclient#selectTable(bang,wordFlg, ...)
     let limitrows=get(a:,1,s:limitrows)
     if a:wordFlg
-        let table=expand('<cWORD>')
+        let table=expand('<cword>')
     else
         let table=join(s:f.getRangeCurList(getpos("'<"), getpos("'>")))
     endif
@@ -1341,7 +1356,7 @@ function! s:UserTables(bang,tableNm,tabletype)
 endfunction
 function! dbiclient#selectColumnsTable(bang,wordFlg)
     if a:wordFlg
-        let table=expand('<cWORD>')
+        let table=expand('<cword>')
     else
         let table=join(s:f.getRangeCurList(getpos("'<"), getpos("'>")))
     endif
