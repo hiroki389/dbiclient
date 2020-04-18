@@ -36,13 +36,14 @@ dbiclient#connect_secure({port}, {dns}, {user}, {passfileName} [, {opt}])
 
 ```vim
 let opt={}  
-let opt.connect_opt_table_type  = 'TABLE,SYNONYM'
-let opt.connect_opt_table_name  = 'TEST%'
-let opt.connect_opt_envdict     = {'NLS_LANG':'Japanese_Japan.AL32UTF8'}
-let opt.connect_opt_schema_flg  = 1
-let opt.connect_opt_schema_list = ['SCHEMA1','SCHEMA2']
-let opt.connect_opt_limitrows   = 10000
-let opt.connect_opt_encoding    = 'cp932'
+let opt.connect_opt_table_type       = 'TABLE,SYNONYM'
+let opt.connect_opt_table_name       = 'TEST%'
+let opt.connect_opt_envdict          = {'NLS_LANG':'Japanese_Japan.AL32UTF8'}
+let opt.connect_opt_schema_flg       = 1
+let opt.connect_opt_schema_list      = ['SCHEMA1','SCHEMA2']
+let opt.connect_opt_limitrows        = 10000
+let opt.connect_opt_encoding         = 'cp932'
+let opt.connect_opt_history_data_flg = 1
 :call dbiclient#connect(9001,'Oracle:sid=XE','RIVUS','password',opt)
 ```
 
@@ -57,8 +58,9 @@ let opt.connect_opt_encoding    = 'cp932'
 | connect_opt_table_name        | ''          | Filter the table displayed in the table list                 |
 | connect_opt_table_type        | ''          | Filter the object type                                       |
 | connect_opt_envdict           | undef       | Set environment variables                                    |
-| connect_opt_schema_flg        | 0(disabled) | Add schema with table                                        |
-| connect_opt_schema_list       | []          | Search columns info using schema name                        |
+| connect_opt_schema_flg        | 0(disabled) | Add schema with table when this flag is true                 |
+| connect_opt_schema_list       | []          | Search columns info using schema names in order              |
+| connect_opt_history_data_flg  | 0           | Show history data when this flag is true                     |
 
 # Explanation of the ex command
 | excommand               | Description                                                                 |

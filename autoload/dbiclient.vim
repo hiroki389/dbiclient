@@ -51,6 +51,7 @@ let s:connect_opt_debuglog='connect_opt_debuglog'
 let s:connect_opt_schema_list='connect_opt_schema_list'
 let s:connect_opt_limitrows='connect_opt_limitrows'
 let s:connect_opt_encoding='connect_opt_encoding'
+let s:connect_opt_history_data_flg='connect_opt_history_data_flg'
 
 let s:nmap_job_CH = '<CR>'
 let s:nmap_job_ST = 'ms'
@@ -1149,7 +1150,8 @@ function! s:connect_base(dsn,user,pass,limitrows,encoding,opt) abort
         let s:params[port].table_name = get(opt,s:connect_opt_table_name,'')
         let s:params[port].tabletype = get(opt,s:connect_opt_table_type,'')
         let s:params[port].schema_flg = get(opt,s:connect_opt_schema_flg,0)
-        let s:params[port].schema_list = get(opt,s:connect_opt_schema_list[:],[])
+        let s:params[port].schema_list = get(opt,s:connect_opt_schema_list,[])
+        let s:params[port].history_data_flg = get(opt,s:connect_opt_history_data_flg,0)
         let s:params[port].envdict = get(opt,s:connect_opt_envdict,{})
         let s:params[port].process = job_info(s:jobs[port]).process
         let command = deepcopy(s:params[port])
@@ -1378,6 +1380,12 @@ function! s:cb_do(ch,dict) abort
         let ww=[datetime . 'DSN:' . connStr . ' SQL:' . sql . ' ' . join(bufVals,'{DELIMITER_CR}')]
         call writefile(ww,path,'a')
         call writefile(ww,path2,'a')
+        if s:params[port].history_data_flg == 0 && filereadable(a:dict.data.tempfile)
+            call delete(a:dict.data.tempfile)
+        endif
+        if s:params[port].history_data_flg == 0 && filereadable(a:dict.data.tempfile . 'err')
+            call delete(a:dict.data.tempfile . 'err')
+        endif
     endif
     let endttime = localtime()
     if exists('bufnr')
@@ -1647,6 +1655,12 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         let ww=[datetime . 'DSN:' . connStr . ' SQL:' . sql . ' ' . join(bufVals,'{DELIMITER_CR}')]
         call writefile(ww,path,'a')
         call writefile(ww,path2,'a')
+        if s:params[port].history_data_flg == 0 && filereadable(a:dict.data.tempfile)
+            call delete(a:dict.data.tempfile)
+        endif
+        if s:params[port].history_data_flg == 0 && filereadable(a:dict.data.tempfile . 'err')
+            call delete(a:dict.data.tempfile . 'err')
+        endif
     endif
     if get(a:dict,"status",9) == 9
         let winid = s:f.getwid(bufnr)
