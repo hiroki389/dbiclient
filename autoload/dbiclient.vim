@@ -72,12 +72,14 @@ let s:vmap_result_UP = '<C-U>'
 let s:nmap_do_PR = 'me'
 
 let s:nmap_table_SQ = '<CR>'
+let s:nmap_table_CT = 'mc'
 let s:nmap_table_TT = 'mt'
 let s:nmap_table_TW = 'mw'
 
 let s:nmap_history_PR = '<CR>'
 let s:nmap_history_RE = 'mr'
 let s:nmap_history_SQ = 'me'
+let s:nmap_history_DD = 'md'
 
 let s:nmap_edit_SQ = '<CR>'
 let s:nmap_select_SQ = '<CR>'
@@ -206,9 +208,8 @@ function! s:deleteHistoryAllCmd() abort
     if s:loaded == 0
         let limit = g:dbiclient_hist_cnt * -1
         if len(sqllist) > limit * -1
-            call writefile(sqllist[0:limit - 1],sqlpath . '.bk','a')
+            "call writefile(sqllist[0:limit - 1],sqlpath . '.bk','a')
             call writefile(sqllist[limit:],sqlpath)
-            let sqllist = sqllist[limit:]
         endif
     endif
 endfunction
@@ -221,10 +222,38 @@ function! s:deleteHistoryCmd(port) abort
     let sqllist = s:readfile(sqlpath)
     let limit = g:dbiclient_hist_cnt * -1
     if len(sqllist) > limit * -1
-        call writefile(sqllist[0:limit - 1],sqlpath . '.bk','a')
+        "call writefile(sqllist[0:limit - 1],sqlpath . '.bk','a')
+        for val in sqllist[0:limit - 1]
+            let cmd = map(split(matchstr(val,'\v.{-}\t\zs.*'),'{DELIMITER_CR}'),{_,x -> eval(x)})
+            if filereadable(cmd.data.tempfile)
+                call delete(cmd.data.tempfile)
+            endif
+            if filereadable(cmd.data.tempfile . 'err')
+                call delete(cmd.data.tempfile . 'err')
+            endif
+        endfor
         call writefile(sqllist[limit:],sqlpath)
-        let sqllist = sqllist[limit:]
     endif
+endfunction
+
+function! s:deleteHistory(sqlpath,no,removefile) abort
+    let sqlpath = a:sqlpath
+    let no = a:no
+    if !filereadable(sqlpath)
+        return
+    endif
+    let sqllist = filter(s:readfile(sqlpath),{_,x -> x =~ '\v^(.{-})DSN:(.{-})SQL:'})
+    sandbox silent! let cmd = eval(matchstr(sqllist[no],'\v.{-}\t\zs.*'))
+    if a:removefile && type(cmd) == v:t_dict
+        if filereadable(cmd.data.tempfile)
+            call delete(cmd.data.tempfile)
+        endif
+        if filereadable(cmd.data.tempfile . 'err')
+            call delete(cmd.data.tempfile . 'err')
+        endif
+    endif
+    call remove(sqllist,no)
+    call writefile(sqllist,sqlpath)
 endfunction
 
 function! s:loadQueryHistoryAllCmd() abort
@@ -1489,6 +1518,7 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         elseif get(a:dict.data,'table_info',0) == 1
             let msgList = []
             call add(msgList, [get(g:,'dbiclient_nmap_table_SQ',s:nmap_table_SQ), ':SQL'])
+            call add(msgList, [get(g:,'dbiclient_nmap_table_CT',s:nmap_table_CT), ':COUNT'])
             call add(msgList, [get(g:,'dbiclient_nmap_table_TW',s:nmap_table_TW), ':TABLE_NAME'])
             call add(msgList, [get(g:,'dbiclient_nmap_table_TT',s:nmap_table_TT), ':TABLE_TYPE'])
             call add(tupleList, s:Tuple('"Quick Help',msgList))
@@ -2124,6 +2154,7 @@ function! s:selectHistoryAll() abort
         call s:nmap(get(g:,'dbiclient_nmap_history_PR',s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryAllCmd()[line(".")  - len(b:disableline) - 1])<CR>')
         call s:nmap(get(g:,'dbiclient_nmap_history_SQ',s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryAllCmd()[line(".")  - len(b:disableline) - 1])<CR>')
         call s:nmap(get(g:,'dbiclient_nmap_history_RE',s:nmap_history_RE), ':call <SID>dbhistoryAllCmd()<CR>')
+        call s:nmap(get(g:,'dbiclient_nmap_history_DD',s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmdAll(),line(".")  - len(b:disableline) - 1, 0)<CR>:call <SID>dbhistoryAllCmd()<CR>')
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr,1,'$')
@@ -2135,6 +2166,7 @@ function! s:selectHistoryAll() abort
     call add(msgList, [get(g:,'dbiclient_nmap_history_PR',s:nmap_history_PR), ':PREVIEW'])
     call add(msgList, [get(g:,'dbiclient_nmap_history_SQ',s:nmap_history_SQ), ':SQL_PREVIEW'])
     call add(msgList, [get(g:,'dbiclient_nmap_history_RE',s:nmap_history_RE), ':RELOAD'])
+    call add(msgList, [get(g:,'dbiclient_nmap_history_DD',s:nmap_history_DD), ':DELETE'])
     call add(tupleList, s:Tuple('"Quick Help<nmap>',msgList))
     let maxsize = max(map(deepcopy(tupleList),{_,x -> len(x.Get1())}))
     for tuple in tupleList
@@ -2179,6 +2211,7 @@ function! s:selectHistory(port) abort
         call s:nmap(get(g:,'dbiclient_nmap_history_PR',s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:disableline) - 1])<CR>')
         call s:nmap(get(g:,'dbiclient_nmap_history_SQ',s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:disableline) - 1])<CR>')
         call s:nmap(get(g:,'dbiclient_nmap_history_RE',s:nmap_history_RE), ':call <SID>dbhistoryCmd(<SID>getPort())<CR>')
+        call s:nmap(get(g:,'dbiclient_nmap_history_DD',s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmd(<SID>getPort()),line(".")  - len(b:disableline) - 1, 1)<CR>:call <SID>dbhistoryCmd(<SID>getPort())<CR>')
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr,1,'$')
@@ -2193,6 +2226,7 @@ function! s:selectHistory(port) abort
     call add(msgList, [get(g:,'dbiclient_nmap_history_PR',s:nmap_history_PR), ':PREVIEW'])
     call add(msgList, [get(g:,'dbiclient_nmap_history_SQ',s:nmap_history_SQ), ':SQL_PREVIEW'])
     call add(msgList, [get(g:,'dbiclient_nmap_history_RE',s:nmap_history_RE), ':RELOAD'])
+    call add(msgList, [get(g:,'dbiclient_nmap_history_DD',s:nmap_history_DD), ':DELETE'])
     call add(tupleList, s:Tuple('"Quick Help<nmap>',msgList))
     let maxsize = max(map(deepcopy(tupleList),{_,x -> len(x.Get1())}))
     for tuple in tupleList
@@ -2376,6 +2410,13 @@ function! s:order() abort
     call s:nmap(get(g:,'dbiclient_nmap_order_SQ',s:nmap_order_SQ), ':<C-u>call <SID>orderQuery(b:dbiclient_bufmap.alignFlg)<CR>')
 endfunction
 
+function! s:count(schemtable,port) abort
+    if s:isDisableline() || s:error2CurrentBuffer(a:port)
+        return
+    endif
+    return s:getQueryAsyncSimple('SELECT COUNT(*) FROM ' . a:schemtable)
+endfunction
+
 function! s:select() abort
     let port = s:getPort()
     function! s:selectQuery(alignFlg) abort
@@ -2543,7 +2584,9 @@ function! s:where() abort
 endfunction
 
 function! s:dbhistoryAllCmd() abort
+    let save_cursor = getcurpos()
     call s:selectHistoryAll()
+    call setpos('.', save_cursor)
     return
 endfunction
 
@@ -2552,7 +2595,9 @@ function! s:dbhistoryCmd(port) abort
     if !has_key(s:params,port)
         return
     endif
+    let save_cursor = getcurpos()
     call s:selectHistory(port)
+    call setpos('.', save_cursor)
     return
 endfunction
 
@@ -2690,6 +2735,7 @@ function! s:userTables(alignFlg,tableNm,tabletype,port) abort
         let bufnr = s:newBuffer(bufname)
         call add(s:bufferList,bufnr)
         call s:nmap(get(g:,'dbiclient_nmap_table_SQ',s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()),<SID>getPort())<CR>')
+        call s:nmap(get(g:,'dbiclient_nmap_table_CT',s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()),<SID>getPort())<CR>')
         call s:nmap(get(g:,'dbiclient_nmap_table_TW',s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg ,input("TABLE_NAME:",get(<SID>getParams(),"table_name","")) ,get(<SID>getParams(),"tabletype","")                        ,<SID>getPort())<CR>')
         call s:nmap(get(g:,'dbiclient_nmap_table_TT',s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg ,get(<SID>getParams(),"table_name","")                        ,input("TABLE_TYPE:",get(<SID>getParams(),"tabletype","")) ,<SID>getPort())<CR>')
     else
