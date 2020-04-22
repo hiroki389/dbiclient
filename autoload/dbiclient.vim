@@ -224,12 +224,14 @@ function! s:deleteHistoryCmd(port) abort
     if len(sqllist) > limit * -1
         "call writefile(sqllist[0:limit - 1],sqlpath . '.bk','a')
         for val in sqllist[0:limit - 1]
-            let cmd = map(split(matchstr(val,'\v.{-}\t\zs.*'),'{DELIMITER_CR}'),{_,x -> eval(x)})
-            if filereadable(cmd.data.tempfile)
-                call delete(cmd.data.tempfile)
-            endif
-            if filereadable(cmd.data.tempfile . 'err')
-                call delete(cmd.data.tempfile . 'err')
+            sandbox silent! let cmd = eval(matchstr(val,'\v.{-}\t\zs.*'))
+            if type(cmd) == v:t_dict
+                if filereadable(cmd.data.tempfile)
+                    call delete(cmd.data.tempfile)
+                endif
+                if filereadable(cmd.data.tempfile . 'err')
+                    call delete(cmd.data.tempfile . 'err')
+                endif
             endif
         endfor
         call writefile(sqllist[limit:],sqlpath)
@@ -340,11 +342,18 @@ endfunction
 function! s:error2(port,bufnr) abort
     let port = a:port
     let bufnr = a:bufnr
-    let connInfo = s:getconninfo(getbufvar(bufnr,'dbiclient_bufmap',{}))
+    let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
+    let connInfo = s:getconninfo(dbiclient_bufmap)
     let hashKey1 = get(get(s:params,port,{}),'hashKey','1')
     let hashKey2 = get(connInfo,'hashKey','2')
     if hashKey1 != hashKey2
         call s:echoMsg('IO07',port)
+        return 1
+    endif
+    call filter(s:sendexprList,{_,x -> s:ch_statusOk(x[1])})
+    let sendexprList = filter(s:sendexprList[:],{_,x -> x[0] == port})
+    if len(sendexprList) > 0
+        call s:echoMsg('IO20')
         return 1
     endif
     if s:error1(port)
@@ -1077,6 +1086,7 @@ function! s:getQueryAsync(sql,callback,limitrows,opt,port) abort
     let bufname = get(a:opt,'reloadBufname','Result_' . s:getuser(s:params[a:port]) . '_' . a:port . '_' . ymdhmss)
     let bufnr = s:bufnr(get(a:opt,'reloadBufnr',s:bufnr(bufname)))
 
+    let ro = getbufvar(bufnr, '&readonly', 0)
     if s:f.getwid(bufnr) == -1
         let bufnr = s:peditBuffer(bufname)
         call add(s:bufferList,bufnr)
@@ -1093,6 +1103,7 @@ function! s:getQueryAsync(sql,callback,limitrows,opt,port) abort
             call s:vmap(get(g:,'dbiclient_vmap_result_UP',s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
         endif
     else
+        call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr,1,'$')
         call setbufvar(bufnr,'dbiclient_bufmap',{})
         call setbufvar(bufnr,'dbiclient_col_line',0)
@@ -1101,6 +1112,9 @@ function! s:getQueryAsync(sql,callback,limitrows,opt,port) abort
         call setbufvar(bufnr,'dbiclient_matches',[])
     endif
     call s:appendbufline(bufnr,'$',['Now loading...'])
+    if ro
+        call s:f.readonly(bufnr)
+    endif
     call s:f.gotoWin(bufnr)
     "redraw!
     "if empty(dbiclient_bufmap)
@@ -1283,11 +1297,13 @@ function! s:dBCommandAsync(command,callback,delim,port) abort
         let ymdhmss = strftime("%Y%m%d%H%M%S",localtime()) . reltime()[1][-4:] . split(reltimestr(reltime()),'\.')[1]
         let bufname='Result_' . s:getuser(s:params[a:port]) . '_' . port . '_' . ymdhmss
         let bufnr = s:bufnr(bufname)
+        let ro = getbufvar(bufnr, '&readonly', 0)
         if s:f.getwid(bufnr) == -1
             let bufnr = s:peditBuffer(bufname)
             call add(s:bufferList,bufnr)
             call s:nmap(get(g:,'dbiclient_nmap_do_PR',s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
         else
+            call s:f.noreadonly(bufnr)
             call s:deletebufline(bufnr,1,'$')
             call setbufvar(bufnr,'dbiclient_bufmap',{})
             call setbufvar(bufnr,'dbiclient_col_line',0)
@@ -1296,6 +1312,9 @@ function! s:dBCommandAsync(command,callback,delim,port) abort
             call setbufvar(bufnr,'dbiclient_matches',[])
         endif
         call s:appendbufline(bufnr,'$',['Now loading...'])
+        if ro
+            call s:f.readonly(bufnr)
+        endif
         call s:f.gotoWin(bufnr)
         "redraw!
         let command.reloadBufname = bufname
@@ -1313,6 +1332,8 @@ function! s:cb_do(ch,dict) abort
     if type(a:ch) == v:t_channel && s:ch_statusOk(a:ch)
         call ch_close(a:ch)
     endif
+    let bufnr = s:bufnr(get(get(a:dict,'data',{}),'reloadBufnr',-1))
+    let ro = getbufvar(bufnr, '&readonly', 0)
     let matchadds=[]
     if type(a:dict)==v:t_dict
         if has_key(a:dict,'commit')
@@ -1326,7 +1347,6 @@ function! s:cb_do(ch,dict) abort
         else
             let ymdhms = strftime("%Y%m%d%H%M%S",localtime())
             let bufname = get(a:dict.data,'reloadBufname','')
-            let bufnr = s:bufnr(get(a:dict.data,'reloadBufnr',-1))
             if get(a:dict,'restoreFlg',0) == 1
                 let bufnr = s:bufnr(bufname)
                 "let bufname = bufname . '_HISTORY_PREVIEW'
@@ -1337,6 +1357,7 @@ function! s:cb_do(ch,dict) abort
                 call s:nmap(get(g:,'dbiclient_nmap_do_PR',s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
                 call add(s:bufferList,bufnr)
             else
+                call s:f.noreadonly(bufnr)
                 call s:deletebufline(bufnr,1,'$')
                 call setbufvar(bufnr,'dbiclient_bufmap',{})
                 call setbufvar(bufnr,'dbiclient_col_line',0)
@@ -1439,6 +1460,9 @@ function! s:cb_do(ch,dict) abort
     if s:f.getwid(s:bufnr('DBIJobList')) != -1
         call s:joblist(0)
     endif
+    if ro
+        call s:f.readonly(bufnr)
+    endif
 endfunction
 
 function! s:getStatus(port, connInfo) abort
@@ -1492,7 +1516,7 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         if get(a:dict.data,'sql','') != ''
             let list1=[]
             let msgList = []
-            let singleTableFlg = !empty(get(a:dict.data,'single_table',''))
+            let singleTableFlg = !empty(get(get(a:dict, 'data',{}),'single_table',''))
             if singleTableFlg
                 call add(msgList, [get(g:,'dbiclient_nmap_result_SE',s:nmap_result_SE), ':SELECT'])
                 call add(msgList, [get(g:,'dbiclient_nmap_result_WH',s:nmap_result_WH), ':WHERE'])
@@ -1718,6 +1742,7 @@ function! s:cb_outputResult(ch,dict) abort
         let bufnr = s:bufnr(bufname)
         "let bufname = bufname . '_HISTORY_PREVIEW'
     endif
+    let ro = getbufvar(bufnr, '&readonly', 0)
     if s:f.getwid(bufnr) == -1
         let bufnr = s:peditBuffer(bufname)
         let a:dict.data.reloadBufnr = bufnr
@@ -1735,6 +1760,7 @@ function! s:cb_outputResult(ch,dict) abort
             call s:vmap(get(g:,'dbiclient_vmap_result_UP',s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
         endif
     else
+        call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr,1,'$')
         call setbufvar(bufnr,'dbiclient_bufmap',{})
         call setbufvar(bufnr,'dbiclient_col_line',0)
@@ -1767,6 +1793,9 @@ function! s:cb_outputResult(ch,dict) abort
     if s:f.getwid(s:bufnr('DBIJobList')) != -1
         call s:joblist(0)
     endif
+    if ro
+        call s:f.readonly(bufnr)
+    endif
     return 0
 endfunction
 
@@ -1782,6 +1811,7 @@ function! s:cb_outputResultEasyAlign(ch,dict) abort
         let bufnr = s:bufnr(bufname)
         "let bufname = bufname . '_HISTORY_PREVIEW'
     endif
+    let ro = getbufvar(bufnr, '&readonly', 0)
     if s:f.getwid(bufnr) == -1
         let bufnr = s:peditBuffer(bufname)
         let a:dict.data.reloadBufnr = bufnr
@@ -1799,6 +1829,7 @@ function! s:cb_outputResultEasyAlign(ch,dict) abort
             call s:vmap(get(g:,'dbiclient_vmap_result_UP',s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
         endif
     else
+        call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr,1,'$')
         call setbufvar(bufnr,'dbiclient_bufmap',{})
         call setbufvar(bufnr,'dbiclient_col_line',0)
@@ -1838,6 +1869,9 @@ function! s:cb_outputResultEasyAlign(ch,dict) abort
     endif
     if s:f.getwid(s:bufnr('DBIJobList')) != -1
         call s:joblist(0)
+    endif
+    if ro
+        call s:f.readonly(bufnr)
     endif
     return 0
 endfunction
@@ -2355,6 +2389,9 @@ function! s:editSql() abort
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = deepcopy(getbufvar(bufnr,'dbiclient_bufmap',{}))
+    if empty(get(dbiclient_bufmap,'data',{}))
+        return
+    endif
     let bufname = bufname('%') . '_SQL_EDIT'
     let bufnr = s:newBuffer(bufname)
     call s:appendbufline(bufnr,0,split(dbiclient_bufmap.data.sql,"\n"))
@@ -2398,7 +2435,7 @@ function! s:order() abort
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = deepcopy(getbufvar(bufnr,'dbiclient_bufmap',{}))
-    let singleTableFlg = !empty(get(dbiclient_bufmap.data,'single_table',''))
+    let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data',{}),'single_table',''))
     if !singleTableFlg
         return
     endif
@@ -2452,7 +2489,7 @@ function! s:select() abort
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = deepcopy(getbufvar(bufnr,'dbiclient_bufmap',{}))
-    let singleTableFlg = !empty(get(dbiclient_bufmap.data,'single_table',''))
+    let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data',{}),'single_table',''))
     if !singleTableFlg
         return
     endif
@@ -2501,7 +2538,7 @@ function! s:group() abort
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = deepcopy(getbufvar(bufnr,'dbiclient_bufmap',{}))
-    let singleTableFlg = !empty(get(dbiclient_bufmap.data,'single_table',''))
+    let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data',{}),'single_table',''))
     if !singleTableFlg
         return
     endif
@@ -2570,7 +2607,7 @@ function! s:where() abort
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = deepcopy(getbufvar(bufnr,'dbiclient_bufmap',{}))
-    let singleTableFlg = !empty(get(dbiclient_bufmap.data,'single_table',''))
+    let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data',{}),'single_table',''))
     if !singleTableFlg
         return
     endif
@@ -2608,6 +2645,11 @@ function! s:dbhistoryRestore(str) abort
     sandbox silent! let cmd = map(split(matchstr(a:str,'\v^.{-}\t\zs.*'),'{DELIMITER_CR}'),{_,x ->  eval(x)})
     if len(cmd) == 1
         let dbiclient_bufmap = cmd[0]
+        let tempfile = get(get(dbiclient_bufmap,'data',{}),'tempfile','')
+        if !filereadable(tempfile)
+            call s:echoMsg('EO02',tempfile)
+            return
+        endif
         "let dbiclient_bufmap.alignFlg = 1
         let dbiclient_bufmap.restoreFlg = 1
         let connInfo1 = s:getconninfo(dbiclient_bufmap)
@@ -2654,10 +2696,14 @@ endfunction
 
 function! s:reload(bufnr) abort
     let bufnr = a:bufnr
-    if s:bufnr(bufnr) != s:bufnr('%')
+    let winid = s:f.getwidCurrentTab(bufnr)
+    let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
+    if s:bufnr(bufnr) != s:bufnr('%') && winid == -1
+        let bufnr = s:bufnr('%')
+        let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
+    elseif s:bufnr(bufnr) != s:bufnr('%')
         quit
     endif
-    let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
 
     if !empty(dbiclient_bufmap)
         call s:reloadMain(bufnr,get(dbiclient_bufmap,"alignFlg",0),get(get(dbiclient_bufmap,'data',{}),'limitrows',s:getLimitrows()))
@@ -2760,6 +2806,7 @@ function! s:userTables(alignFlg,tableNm,tabletype,port) abort
                 \,'reloadBufname' : bufname
                 \,'reloadBufnr'   : bufnr}
     call s:appendbufline(bufnr,'$',['Now loading...'])
+    call s:f.readonly(bufnr)
     call s:f.gotoWin(bufnr)
     call s:getQueryAsync('',s:callbackstr(a:alignFlg),-1,opt,a:port)
 endfunction
