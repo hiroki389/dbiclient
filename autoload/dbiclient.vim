@@ -649,6 +649,8 @@ endfunction
 function! s:updateStatus(moveFlg) abort
     let cport = s:getCurrentPort()
     for bufnr in uniq(sort(s:bufferList))
+        let ro = getbufvar(bufnr, '&readonly', 0)
+        call s:f.noreadonly(bufnr)
         let tupleList = getbufvar(bufnr,'dbiclient_tupleList',[])
         if bufexists(bufnr) && !empty(tupleList)
             let tuple = tupleList[0]
@@ -678,6 +680,9 @@ function! s:updateStatus(moveFlg) abort
                 call s:setbufline(bufnr,row,info)
                 let row += 1
             endfor
+        endif
+        if ro
+            call s:f.readonly(bufnr)
         endif
     endfor
     if s:f.getwid(s:bufnr('DBIJobList')) != -1
