@@ -28,7 +28,7 @@ if !exists('g:dbiclient_sql_delimiter1')
     let g:dbiclient_sql_delimiter1   = ';'
 endif
 if !exists('g:dbiclient_sql_delimiter2')
-    let g:dbiclient_sql_delimiter2   = "\/"
+    let g:dbiclient_sql_delimiter2   = '^\s*\/'
 endif
 if !exists('g:dbiclient_null')
     let g:dbiclient_null             = ''

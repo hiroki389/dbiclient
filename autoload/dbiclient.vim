@@ -984,7 +984,7 @@ function! s:dBExecRangeSQLDo(delim,bang) range abort
     let sqllist = s:splitSql(sqllist, a:delim)
     let sqllist = map(sqllist,{_,x -> substitute(x,'\v\c\&\&' . defineKeys . '\.?' ,'\=get(defineDict,matchstr(submatch(0),''\v\c\&\&\zs[[:alnum:]_]+\ze\.?''), submatch(0))','g')})
     "echom 'test2'
-    call s:dBCommandAsync({"do":sqllist,"continue":(a:bang == '!' ? 1 : 0)},'s:cb_do',a:delim,port)
+    call s:dBCommandAsync({"doText":list[:],"do":sqllist,"continue":(a:bang == '!' ? 1 : 0)},'s:cb_do',a:delim,port)
 endfunction
 
 function! s:splitSql(sqllist,delim) abort
@@ -1283,13 +1283,6 @@ function! s:dBCommandAsync(command,callback,delim,port) abort
     if has_key(a:command,'do') && len(get(a:command,'do',[])) == 0
         return {}
     endif
-    let hist=[]
-    for sql in get(a:command,'do',[])[:]
-        if trim(sql) != ''
-            "let sql .= a:delim
-            call add(hist,join(split(sql . a:delim,"\n"),"{DELIMITER_CR}"))
-        endif
-    endfor
     let channel = ch_open('localhost:' . port)
     if !s:ch_statusOk(channel)
         return {}
@@ -1443,7 +1436,7 @@ function! s:cb_do(ch,dict) abort
         endif
     endif
     let endttime = localtime()
-    if exists('bufnr')
+    if bufnr != -1
         let tupleList = getbufvar(bufnr,'dbiclient_tupleList',[])
         let maxsize = max(map(deepcopy(tupleList),{_,x -> len(x.Get1())}))
         let tuple = tupleList[1]
@@ -2358,16 +2351,7 @@ function! s:editSqlDo() abort
     let dbiclient_bufmap = deepcopy(getbufvar(bufnr,'dbiclient_bufmap',{}))
     let bufname = bufname('%') . '_SQL_PREVIEW'
     let bufnr = s:newBuffer(bufname)
-    let i = 0
-    for sql in dbiclient_bufmap.data.do
-        let sqllist = s:split(sql,'\n')
-        if i < len(dbiclient_bufmap.data.do) - 1
-            let delimiter = get(dbiclient_bufmap.data,'delimiter','')
-            let sqllist[-1] = sqllist[-1] . delimiter
-        endif
-        call s:appendbufline(bufnr,'$',sqllist)
-        let i += 1
-    endfor
+    call s:appendbufline(bufnr,'$',get(dbiclient_bufmap.data,'doText',[]))
     norm gg
 endfunction
 
@@ -2693,7 +2677,7 @@ function! s:getSqlHistory(str) abort
         if has_key(dbiclient_bufmap.data,'sql')
             return split(dbiclient_bufmap.data.sql,'\v(\r\n|[\n\r])')
         else
-            return split(join(dbiclient_bufmap.data.do, get(dbiclient_bufmap.data, 'delimiter', '') . "\n"),'\v(\r\n|[\n\r])')
+            return get(dbiclient_bufmap.data,'doText',[])
         endif
     endif
     return []
