@@ -373,7 +373,7 @@ sub rutine{
                 $lsql =~ s/(\t|\r\n|\r|\n)+/ /gm;
                 $lsql =~ s/^ +//m;
                 next if $lsql eq "";
-                my $schem = $data->{schem} == '' ? $user : $data->{schem};
+                my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                 my @schema_list = ($schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
@@ -381,8 +381,8 @@ sub rutine{
                     if ($g_primarykeyflg == 1) {
                         my @primary_key = ();
                         @primary_key=$g_dbh->primary_key( undef, $schem2, $data->{tableNm});
-                        if ($#primary_key > 0) {
-                            outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
+                        outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
+                        if (@primary_key > 0) {
                             $result->{primary_key}=\@primary_key;
                             last;
                         }
@@ -410,7 +410,7 @@ sub rutine{
                 my $t_offset = int((Time::HiRes::time - $start_time)*1000);
                 $result->{time}=${t_offset};
                 if ($result->{status} == 1) {
-                    my $schem = $data->{schem} == '' ? $user : $data->{schem};
+                    my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                     my @schema_list = ($schem);
                     push(@schema_list, @{$g_schema_list});
                     foreach my $schem2 (@schema_list){
@@ -435,7 +435,7 @@ sub rutine{
                 outputlog("EXEC TABLE_INFO START ", $g_port);
                 exec_sql($data,$sig,$tempfile,$result,0);
             }elsif($data->{column_info} == 1){
-                my $schem = $data->{schem} == '' ? $user : $data->{schem};
+                my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                 outputlog('tableNm:' . $data->{tableNm} , $g_port);
                 outputlog('schem:' . $schem , $g_port);
                 my @schema_list = ($schem);
@@ -444,8 +444,8 @@ sub rutine{
                     outputlog('primary_key schem2:' . $schem2 , $g_port);
                     my @primary_key = ();
                     @primary_key=$g_dbh->primary_key( undef, $schem2, $data->{tableNm});
-                    if ($#primary_key > 0) {
-                        outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
+                    outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
+                    if (@primary_key > 0) {
                         $result->{primary_key}=\@primary_key;
                         last;
                     }
