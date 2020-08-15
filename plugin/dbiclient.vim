@@ -60,6 +60,35 @@ endif
 if !exists('g:dbiclient_hist_cnt')
     let g:dbiclient_hist_cnt  = 1000
 endif
+if !exists('g:dbiclient_testdata_fixedmap')
+    let g:dbiclient_testdata_fixedmap  = {}
+endif
+
+" connect opt default 
+if !exists('g:dbiclient_connect_opt_gotowinlastbuf')
+    let g:dbiclient_connect_opt_gotowinlastbuf = 0
+endif
+if !exists('g:dbiclient_connect_opt_primarykeyflg')
+    let g:dbiclient_connect_opt_primarykeyflg  = 1
+endif
+if !exists('g:dbiclient_connect_opt_table_name')
+    let g:dbiclient_connect_opt_table_name  = ''
+endif
+if !exists('g:dbiclient_connect_opt_table_type')
+    let g:dbiclient_connect_opt_table_type  = ''
+endif
+if !exists('g:dbiclient_connect_opt_schema_flg')
+    let g:dbiclient_connect_opt_schema_flg  = 0
+endif
+if !exists('g:dbiclient_connect_opt_schema_list')
+    let g:dbiclient_connect_opt_schema_list  = []
+endif
+if !exists('g:dbiclient_connect_opt_history_data_flg')
+    let g:dbiclient_connect_opt_history_data_flg  = 0
+endif
+if !exists('g:dbiclient_connect_opt_envdict')
+    let g:dbiclient_connect_opt_envdict  = {}
+endif
 
 command! DBIJobList :call dbiclient#joblist()
 command! -nargs=* DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args>)

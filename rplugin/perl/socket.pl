@@ -16,7 +16,6 @@ use DBI;
 use List::Util;
 use Data::Dumper;
 use Devel::Peek;
-#use Devel::Size qw(size total_size);
 use Time::HiRes;  
 use File::Path;
 BEGIN { push @INC, dirname($0) }
@@ -169,12 +168,10 @@ while(1){
     if ($exitflg == 1) {
         last;
     }
-    #print STDERR 'READY',"\n";
     outputlog("READY",$g_port);
     $g_client_socket = $g_server_socket->accept;
     outputlog("PROC START",$g_port);
     $g_cancelFlg = 0;
-    #print $g_client_socket encode_json ['ex',"echom 'socket accept'"],"\n";
     my $hersockaddr    = getpeername($g_client_socket);
     (my $clport, my $cliaddr) = sockaddr_in($hersockaddr);
     my $herhostname    = gethostbyaddr($cliaddr, AF_INET);
@@ -242,25 +239,16 @@ while(1){
             $g_dbh->{AutoCommit} = 0;
             $g_dbh->{RaiseError} = 1;
         }
-        #$result->{user}=$g_user;
-        #print $g_client_socket encode_json ['ex',"redraw"],"\n";
-        #print $g_client_socket encode_json ['ex',"echom 'dbhconnect'"],"\n";
         print $g_client_socket encode_json [$sig,$result],"\n";
     } elsif(defined($g_dbh)) {
-        #my $tempfile="${g_basedir}/" . $g_user . '_' . getdatetime . ".dat";
         my $tempfile=$data->{tempfile};
-        #$result->{user}=$g_user;
         my $result={};
         if (exists $data->{close}){
             disconnect();
-            #print $g_client_socket encode_json ['ex',"redraw"],"\n";
-            #print $g_client_socket encode_json ['ex',"echom 'dbhdisconnect'"],"\n";
             print $g_client_socket encode_json [$sig,$result],"\n";
         } else {
             open(STDERR,'>>',"${tempfile}.err") or die("error :$!");
             $result = rutine($data,$sig,$tempfile);
-            #print $g_client_socket encode_json ['ex',"redraw"],"\n";
-            #print $g_client_socket encode_json ['ex',"echom 'command done'"],"\n";
             print $g_client_socket encode_json [$sig,$result],"\n";
             close(STDERR);
         }
@@ -273,9 +261,6 @@ while(1){
     } else {
         my $result={};
         $result->{status}=9;
-        #$result->{user}=$g_user;
-        #print $g_client_socket encode_json ['ex',"redraw"],"\n";
-        #print $g_client_socket encode_json ['ex',"echom 'dbhdisconnect'"],"\n";
         print $g_client_socket encode_json [$sig,$result],"\n";
     }
     undef($data);
@@ -336,7 +321,6 @@ sub rutine{
                 if ($continue == 0 && $@) {
                     die($@);
                 }
-                #my $rv=$g_dbh->do($sql);
                 outputlog("UPDATE END COUNT($rv)" , $g_port);
                 push(@outputline,$loopstart_date . '(' . int((Time::HiRes::time - $loopstart_time)*1000) . 'ms) ' . $rv . ' updated. "' . $lsql . '"');
                 eval {
@@ -377,7 +361,6 @@ sub rutine{
                 my @schema_list = ($schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
-                    outputlog('primary_key schem2:' . $schem2 , $g_port);
                     if ($g_primarykeyflg == 1) {
                         my @primary_key = ();
                         @primary_key=$g_dbh->primary_key( undef, $schem2, $data->{tableNm});
@@ -417,7 +400,6 @@ sub rutine{
                         $g_sth=$g_dbh->table_info( undef, $schem2, $data->{tableNm}, undef );
                         $result->{table_info}=$g_sth->fetchall_arrayref({});
                         $g_sth->finish();
-                        outputlog('column_info schem2:' . $schem2 , $g_port);
                         $g_sth=$g_dbh->column_info( undef, $schem2, $data->{tableNm}, undef );
                         $result->{column_info}=$g_sth->fetchall_arrayref({});
                         $g_sth->finish();
@@ -437,11 +419,9 @@ sub rutine{
             }elsif($data->{column_info} == 1){
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                 outputlog('tableNm:' . $data->{tableNm} , $g_port);
-                outputlog('schem:' . $schem , $g_port);
                 my @schema_list = ($schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
-                    outputlog('primary_key schem2:' . $schem2 , $g_port);
                     my @primary_key = ();
                     @primary_key=$g_dbh->primary_key( undef, $schem2, $data->{tableNm});
                     outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
@@ -451,7 +431,6 @@ sub rutine{
                     }
                 }
                 foreach my $schem2 (@schema_list){
-                    outputlog('column_info schem2:' . $schem2 , $g_port);
                     $g_sth=$g_dbh->column_info( undef, $schem2, $data->{tableNm}, undef );
                     outputlog("EXEC COLUMN_INFO START ", $g_port);
                     exec_sql($data,$sig,$tempfile,$result,0);
@@ -516,14 +495,10 @@ sub exec_sql{
     $result->{colsindex}=[];
     foreach my $col (@{$g_sth->{NAME}}){
 
-        #if ($data->{table_info} == 1 && ($col ne 'TABLE_NAME' && $col ne 'TABLE_TYPE' && $col ne 'REMARKS')) {
-        #}elsif ($data->{column_info} ==1 && ($col eq 'TABLE_CAT' || $col eq 'TABLE_SCHEM')) {
-        #} else {
         $col=Encode::is_utf8($col) ? $col : Encode::decode($g_dbencoding, $col);
         push(@{$result->{cols}},$col);
         push(@{$result->{colsindex}},$i);
         push(@{$result->{maxcols}},ulength($col));
-        #}
         $i=$i+1;
     }
     my $firstIdx=@{$result->{colsindex}}[0];
@@ -543,9 +518,7 @@ sub exec_sql{
                 last;
             }
         }
-        #print "list Size : " . total_size(\$list) . "Byte\n";
         $result->{cnt}+=@list;
-        #print Dumper $result;
         if(@{$result->{cols}}){
             my $rows="";
             for my $select (@list){
