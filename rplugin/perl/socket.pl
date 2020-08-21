@@ -38,6 +38,7 @@ my $g_odbcflg;
 my $g_postgresflg;
 my $g_dbencoding;
 my $g_primarykeyflg;
+my $g_columninfoflg;
 my $g_schema_list;
 my $g_port=shift;
 my $g_basedir=shift;
@@ -62,13 +63,13 @@ sub outputlog{
 }
 
 sub getdate{
-    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(Time::HiRes::time);
     $year += 1900;
     $mon += 1;
     return sprintf("%04d%02d%02d",$year,$mon,$mday);
 }
 sub getdatetime{
-    return strftime("%c",localtime(time));
+    return strftime("%c",localtime(Time::HiRes::time));
 }
 sub disconnect{
     if(defined($g_dbh)){
@@ -214,6 +215,7 @@ while(1){
         $g_limitrows=$data->{limitrows};
         $g_dbencoding=$data->{encoding};
         $g_primarykeyflg=$data->{primarykeyflg};
+        $g_columninfoflg=$data->{columninfoflg};
         $g_schema_list=$data->{schema_list};
         eval {
             $g_oracleflg = (${g_datasource} =~ /oracle:/i);
@@ -248,7 +250,9 @@ while(1){
             print $g_client_socket encode_json [$sig,$result],"\n";
         } else {
             open(STDERR,'>>',"${tempfile}.err") or die("error :$!");
-            $result = rutine($data,$sig,$tempfile);
+            $result->{startdate}=getdatetime;
+            $result = rutine($data,$sig,$tempfile,$result);
+            $result->{enddate}=getdatetime;
             print $g_client_socket encode_json [$sig,$result],"\n";
             close(STDERR);
         }
@@ -270,9 +274,8 @@ sub rutine{
     my $data=shift;
     my $sig=shift;
     my $tempfile=shift;
-    my $result={};
+    my $result=shift;
     $result->{status}=1;
-    $result->{startdate}=getdatetime;
     $result->{data}=$data;
     outputlog("INPUTDATA_KEYS:(${g_user}) "  . join(",",keys(%{$data})) , $g_port);
     open(DATAFILE,'>>',$tempfile) or die("error :$!");
@@ -336,7 +339,7 @@ sub rutine{
                     }
                 };
                 my $t_offset = int((Time::HiRes::time - $start_time)*1000);
-                $result->{time}=${t_offset};
+                $result->{sqltime}=${t_offset};
             }
         }else{
             $g_dbh->{LongTruncOk}=1;
@@ -373,7 +376,7 @@ sub rutine{
                 }
                 $g_sth=$g_dbh->prepare($sql);
                 outputlog("EXEC SQL START " . substr($lsql,0,100), $g_port);
-                exec_sql($data,$sig,$tempfile,$result,1);
+                exec_sql($data,$sig,$tempfile,$result,$start_time,1);
                 if ($result->{status} == 2) {
                     push(@outputline,$loopstart_date . '(' . int((Time::HiRes::time - $loopstart_time)*1000) . 'ms) ' . $result->{cnt} . ' updated. "' . $lsql . '"');
                 }
@@ -390,9 +393,9 @@ sub rutine{
                         }
                     }
                 };
-                my $t_offset = int((Time::HiRes::time - $start_time)*1000);
-                $result->{time}=${t_offset};
-                if ($result->{status} == 1) {
+
+                my $column_start_time = Time::HiRes::time; 
+                if ($result->{status} == 1 && $g_columninfoflg == 1) {
                     my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                     my @schema_list = ($schem);
                     push(@schema_list, @{$g_schema_list});
@@ -408,6 +411,8 @@ sub rutine{
                         }
                     }
                 }
+                my $t_offset = int((Time::HiRes::time - $column_start_time)*1000);
+                $result->{columntime}=${t_offset};
             } elsif($data->{table_info} == 1){
                 my $ltableNm=!defined($data->{table_name}) ? undef : $data->{table_name};
                 my $ltabletype=!defined($data->{tabletype}) ? undef : $data->{tabletype};
@@ -415,7 +420,7 @@ sub rutine{
                 $ltabletype=!defined($ltabletype) || $ltabletype =~ /^\s*$/ ? undef : $ltabletype;
                 $g_sth=$g_dbh->table_info( undef, $user, $ltableNm, $ltabletype );
                 outputlog("EXEC TABLE_INFO START ", $g_port);
-                exec_sql($data,$sig,$tempfile,$result,0);
+                exec_sql($data,$sig,$tempfile,$result,$start_time,0);
             }elsif($data->{column_info} == 1){
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                 outputlog('tableNm:' . $data->{tableNm} , $g_port);
@@ -433,7 +438,7 @@ sub rutine{
                 foreach my $schem2 (@schema_list){
                     $g_sth=$g_dbh->column_info( undef, $schem2, $data->{tableNm}, undef );
                     outputlog("EXEC COLUMN_INFO START ", $g_port);
-                    exec_sql($data,$sig,$tempfile,$result,0);
+                    exec_sql($data,$sig,$tempfile,$result,$start_time,0);
                     if ($result->{cnt} > 0) {
                         last;
                     }
@@ -472,8 +477,8 @@ sub exec_sql{
     my $sig=shift;
     my $tempfile=shift;
     my $result=shift;
+    my $start_time=shift;
     my $exeflg=shift;
-    my $start_time = Time::HiRes::time; 
     if ($g_odbcflg && $exeflg == 0) {
     } else {
         $g_sth->execute;
@@ -481,6 +486,9 @@ sub exec_sql{
     if ($g_cancelFlg == 1) {
         cancel();
     }
+    $result->{sqltime}=int((Time::HiRes::time - $start_time)*1000);
+
+    my $fetch_start_time = Time::HiRes::time; 
     outputlog("FETCH START" , $g_port);
     $result->{startfetch}=getdatetime;
     if(!exists $g_sth->{NAME} || @{$g_sth->{NAME}}==0){
@@ -513,7 +521,7 @@ sub exec_sql{
             push @list,\@arr;
             last if $g_limitrows != -1 && $cnt++>=$g_limitrows;
             if ($brcnt++>=$cbrcnt) {
-                my $t_offset = int((Time::HiRes::time - $start_time)*1000);
+                my $t_offset = int((Time::HiRes::time - $fetch_start_time)*1000);
                 outputlog("EXEC WHILE: TIME(${t_offset}ms) COUNT(" . ($cnt-1) . ")" . " LIMITROWS($g_limitrows) " . $tempfile , $g_port);
                 last;
             }
@@ -533,11 +541,14 @@ sub exec_sql{
                             $val = "";
                         }
                     }
-                    $val =~ s/\t/    /gm;
+                    $val =~ s/\t/<<TAB>>/gm;
                     if (exists $data->{linesep} && defined($data->{linesep}) && $val =~ /(\r\n|\r|\n)+/) {
                         $val =~ s/(\r\n|\r|\n)+/$data->{linesep}/g;
                     }
-                    if (!(exists $data->{linesep} && defined($data->{linesep})) && $val =~ /(\r\n|\r|\n)+/){
+                    if ($val =~ /[[:cntrl:]]/ && $val !~ /(\r\n|\r|\n)/){
+                        $val = "(HEX)";
+                    }
+                    if ((!(exists $data->{linesep} && defined($data->{linesep})) && $val =~ /(\r\n|\r|\n)+/)){
                         my $surr = '"';
                         if (exists $data->{surround} && defined($data->{surround})) {
                             $surr = $data->{surround};
@@ -573,8 +584,9 @@ sub exec_sql{
     }
     $g_sth->finish;
     outputlog("FETCH END" , $g_port);
-    my $t_offset = int((Time::HiRes::time - $start_time)*1000);
+    my $t_offset = int((Time::HiRes::time - $fetch_start_time)*1000);
     outputlog("EXEC END: TIME(${t_offset}ms) COUNT(" . ($cnt-1) . ")" . " LIMITROWS($g_limitrows) " . $tempfile , $g_port);
+    $result->{fetchtime}=$t_offset;
 }
 
 exitfunc();
