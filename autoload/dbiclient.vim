@@ -41,6 +41,8 @@ let s:msg={
             \,'IO20':'It is running sql on server.'
             \}
 
+let s:tab_placefolder='\V<<#TAB#>>'
+
 let s:connect_opt_table_name='connect_opt_table_name'
 let s:connect_opt_table_type='connect_opt_table_type'
 let s:connect_opt_schema_flg='connect_opt_schema_flg'
@@ -1512,7 +1514,7 @@ function! s:cb_do(ch,dict) abort
         let user = s:getuser(connInfo)
         let connStr = user . '@' . dsn
 
-        let sql = s:getSqlLine(string(get(a:dict.data, 'do','')))
+        let sql = substitute(s:getSqlLine(string(get(a:dict.data, 'do',''))),'\t',' ','g')
         let sql = (strdisplaywidth(sql) > 300 ? sql[:300] . '...' : sql) . "\t"
         let dbiclient_bufmap = a:dict
         call add(bufVals,string(dbiclient_bufmap))
@@ -1810,7 +1812,7 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         let user = s:getuser(connInfo)
         let connStr = user . '@' . dsn
 
-        let sql = s:getSqlLine(get(a:dict.data, 'sql',''))
+        let sql = substitute(s:getSqlLine(get(a:dict.data, 'sql','')),'\t',' ','g')
         let sql = (strdisplaywidth(sql) > 300 ? sql[:300] . '...' : sql) . "\t"
         call add(bufVals,string(dbiclient_bufmap))
         let ww=[datetime . 'DSN:' . connStr . ' SQL:' . sql . ' ' . join(bufVals,'{DELIMITER_CR}')]
@@ -2029,7 +2031,7 @@ function! s:align(alignFlg,bufnr, preCr) abort
         endif
     else
         let surr='\V'
-        let dbiclient_lines_tmp = map(dbiclient_lines_tmp, {_,line -> substitute(substitute(line, surr . a:preCr . '\v|\V' . a:preCr . surr,'','g'), '\V<<TAB>>', "\t", 'g')})
+        let dbiclient_lines_tmp = map(dbiclient_lines_tmp, {_,line -> substitute(substitute(line, surr . a:preCr . '\v|\V' . a:preCr . surr,'','g'), s:tab_placefolder, "\t", 'g')})
         let lines = dbiclient_lines_tmp
     endif
     call s:appendbufline(bufnr,'$',lines)
@@ -2156,7 +2158,7 @@ function! s:getalignlist2(lines,maxCols) abort
     let colsize = len(split(a:lines[0],g:dbiclient_col_delimiter,1))
     let lines = a:lines[:]
     call s:debugLog('align:lines ' . len(lines))
-    let lines = map(lines ,{_,x -> map(split(x,g:dbiclient_col_delimiter,1), {_,x -> substitute(x, '\V<<TAB>>', "\t", 'g')})})
+    let lines = map(lines ,{_,x -> map(split(x,g:dbiclient_col_delimiter,1), {_,x -> substitute(x, s:tab_placefolder, "\t", 'g')})})
     call s:debugLog('align:copy')
     call s:debugLog('align:maxCols' . string(a:maxCols))
     let lines = map(lines,{_,cols -> colsize ==# len(cols) ? join(map(cols,{i,col -> col . repeat(' ',a:maxCols[i] + 1 - strdisplaywidth(col))}),g:dbiclient_col_delimiter_align . ' ') : join(cols,g:dbiclient_col_delimiter)})
@@ -2175,7 +2177,7 @@ function! s:getalignlist(lines) abort
     call s:debugLog('align:lines ' . len(lines))
     let lines2 = a:lines[maxsize+1:]
     call s:debugLog('align:lines2 ' . len(lines2))
-    let lines = map(lines ,{_,x -> map(split(x,g:dbiclient_col_delimiter,1), {_,x -> substitute(x, '\V<<TAB>>', "\t", 'g')})})
+    let lines = map(lines ,{_,x -> map(split(x,g:dbiclient_col_delimiter,1), {_,x -> substitute(x, s:tab_placefolder, "\t", 'g')})})
     call s:debugLog('align:copy')
     let linesLen = map(deepcopy(lines),{_,x -> map(x,{_,y -> strdisplaywidth(y)})})
     call s:debugLog('align:linesLen')

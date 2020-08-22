@@ -115,6 +115,8 @@ sub ulength{
     for my $c (split(/(?=.)/,$val)){
         if (bytes::length $c > 1) {
             $size+=2;
+        } elsif ($c =~ /\t/) {
+            $size+=4;
         } elsif ($c =~ /[[:cntrl:]]/) {
             $size+=2;
         } else {
@@ -541,11 +543,10 @@ sub exec_sql{
                             $val = "";
                         }
                     }
-                    $val =~ s/\t/<<TAB>>/gm;
                     if (exists $data->{linesep} && defined($data->{linesep}) && $val =~ /(\r\n|\r|\n)+/) {
                         $val =~ s/(\r\n|\r|\n)+/$data->{linesep}/g;
                     }
-                    if ($val =~ /[[:cntrl:]]/ && $val !~ /(\r\n|\r|\n)/){
+                    if ($val =~ /[[:cntrl:]]/ && $val !~ /(\t|\r\n|\r|\n)/){
                         $val = "(HEX)";
                     }
                     if ((!(exists $data->{linesep} && defined($data->{linesep})) && $val =~ /(\r\n|\r|\n)+/)){
@@ -569,6 +570,7 @@ sub exec_sql{
                     if (@{$result->{maxcols}}[$i - $firstIdx] < $maxsize) {
                         @{$result->{maxcols}}[$i - $firstIdx] = $maxsize;
                     }
+                    $val =~ s/\t/<<#TAB#>>/gm;
 
                     $record = $record . "\t" . $val;
                 }
