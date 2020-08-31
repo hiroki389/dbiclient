@@ -261,9 +261,6 @@ while(1){
         if (defined($tempfile) && -e "${tempfile}.err" && -z "${tempfile}.err") {
             unlink "${tempfile}.err";
         }
-        if (defined($tempfile) && -e "${tempfile}" && -z "${tempfile}") {
-            unlink "${tempfile}";
-        }
     } else {
         my $result={};
         $result->{status}=9;
