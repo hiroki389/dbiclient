@@ -9,89 +9,35 @@ let s:cpo_save = &cpo
 set cpo&vim
 
 " default 
-if !exists('g:dbiclient_debugflg')
-    let g:dbiclient_debugflg         = 0
-endif
-if !exists('g:dbiclient_rootPath')
-    let g:dbiclient_rootPath         = expand('~') . '/.temp/dbiclient'
-endif
-if !exists('g:dbiclient_perlmPath')
-    let g:dbiclient_perlmPath        = fnamemodify(expand('<sfile>:h') . '/../rplugin/perl/socket.pl',':p')
-endif
-if !exists('g:dbiclient_col_delimiter_align')
-    let g:dbiclient_col_delimiter_align    = "|"
-endif
-if !exists('g:dbiclient_col_delimiter')
-    let g:dbiclient_col_delimiter    = "\t"
-endif
-if !exists('g:dbiclient_sql_delimiter1')
-    let g:dbiclient_sql_delimiter1   = ';'
-endif
-if !exists('g:dbiclient_sql_delimiter2')
-    let g:dbiclient_sql_delimiter2   = '^\s*\/'
-endif
-if !exists('g:dbiclient_null')
-    let g:dbiclient_null             = ''
-endif
-if !exists('g:dbiclient_linesep')
-    let g:dbiclient_linesep          = v:null
-endif
-if !exists('g:dbiclient_surround')
-    let g:dbiclient_surround         = v:null
-endif
-if !exists('g:dbiclient_new_window_hight')
-    let g:dbiclient_new_window_hight = ''
-endif
-if !exists('g:dbiclient_previewwindow')
-    let g:dbiclient_previewwindow = 0
-endif
-if !exists('g:dbiclient_perl_binmode')
-    let g:dbiclient_perl_binmode     = 'utf8'
-endif
-if !exists('g:dbiclient_buffer_encoding')
-    let g:dbiclient_buffer_encoding  = 'utf8'
-endif
-if !exists('g:dbiclient_disp_remarks')
-    let g:dbiclient_disp_remarks  = 1
-endif
-if !exists('g:dbiclient_prelinesep')
-    let g:dbiclient_prelinesep  = '<<CRR>>'
-endif
-if !exists('g:dbiclient_hist_cnt')
-    let g:dbiclient_hist_cnt  = 1000
-endif
-if !exists('g:dbiclient_testdata_fixedmap')
-    let g:dbiclient_testdata_fixedmap  = {}
-endif
-if !exists('g:dbiclient_call_after_connected')
-    let g:Dbiclient_call_after_connected  = {-> dbiclient#userTablesMain()}
-endif
+let g:dbiclient_debugflg               = get(g:,'dbiclient_debugflg', 0)
+let g:dbiclient_rootPath               = get(g:,'dbiclient_rootPath', expand('~') . '/.temp/dbiclient')
+let g:dbiclient_perlmPath              = get(g:,'dbiclient_perlmPath', fnamemodify(expand('<sfile>:h') . '/../rplugin/perl/socket.pl',':p'))
+let g:dbiclient_col_delimiter_align    = get(g:,'dbiclient_col_delimiter_align', "|")
+let g:dbiclient_col_delimiter          = get(g:,'dbiclient_col_delimiter', "\t")
+let g:dbiclient_sql_delimiter1         = get(g:,'dbiclient_sql_delimiter1', ';')
+let g:dbiclient_sql_delimiter2         = get(g:,'dbiclient_sql_delimiter2', '^\s*\/')
+let g:dbiclient_null                   = get(g:,'dbiclient_null', '')
+let g:dbiclient_linesep                = get(g:,'dbiclient_linesep', "\n")
+let g:dbiclient_surround               = get(g:,'dbiclient_surround', '')
+let g:dbiclient_new_window_hight       = get(g:,'dbiclient_new_window_hight', '')
+let g:dbiclient_previewwindow          = get(g:,'dbiclient_previewwindow', 0      )
+let g:dbiclient_perl_binmode           = get(g:,'dbiclient_perl_binmode', 'utf8')
+let g:dbiclient_buffer_encoding        = get(g:,'dbiclient_buffer_encoding', 'utf8')
+let g:dbiclient_disp_remarks           = get(g:,'dbiclient_disp_remarks', 1)
+let g:dbiclient_prelinesep             = get(g:,'dbiclient_prelinesep', '<<CRR>>')
+let g:dbiclient_hist_cnt               = get(g:,'dbiclient_hist_cnt', 1000)
+let g:dbiclient_testdata_fixedmap      = get(g:,'dbiclient_testdata_fixedmap', {})
+let g:Dbiclient_call_after_connected   = get(g:,'Dbiclient_call_after_connected', {-> dbiclient#userTablesMain()})
 
 " connect opt default 
-if !exists('g:dbiclient_connect_opt_columninfoflg')
-    let g:dbiclient_connect_opt_columninfoflg  = 0
-endif
-if !exists('g:dbiclient_connect_opt_primarykeyflg')
-    let g:dbiclient_connect_opt_primarykeyflg  = 1
-endif
-if !exists('g:dbiclient_connect_opt_table_name')
-    let g:dbiclient_connect_opt_table_name  = ''
-endif
-if !exists('g:dbiclient_connect_opt_table_type')
-    let g:dbiclient_connect_opt_table_type  = ''
-endif
-if !exists('g:dbiclient_connect_opt_schema_flg')
-    let g:dbiclient_connect_opt_schema_flg  = 0
-endif
-if !exists('g:dbiclient_connect_opt_schema_list')
-    let g:dbiclient_connect_opt_schema_list  = []
-endif
-if !exists('g:dbiclient_connect_opt_history_data_flg')
-    let g:dbiclient_connect_opt_history_data_flg  = 0
-endif
-if !exists('g:dbiclient_connect_opt_envdict')
-    let g:dbiclient_connect_opt_envdict  = {}
-endif
+let g:dbiclient_connect_opt_columninfoflg     = get(g:,'dbiclient_connect_opt_columninfoflg', 0)
+let g:dbiclient_connect_opt_primarykeyflg     = get(g:,'dbiclient_connect_opt_primarykeyflg', 1)
+let g:dbiclient_connect_opt_table_name        = get(g:,'dbiclient_connect_opt_table_name', '')
+let g:dbiclient_connect_opt_table_type        = get(g:,'dbiclient_connect_opt_table_type', '')
+let g:dbiclient_connect_opt_schema_flg        = get(g:,'dbiclient_connect_opt_schema_flg', 0)
+let g:dbiclient_connect_opt_schema_list       = get(g:,'dbiclient_connect_opt_schema_list', [])
+let g:dbiclient_connect_opt_history_data_flg  = get(g:,'dbiclient_connect_opt_history_data_flg', 0)
+let g:dbiclient_connect_opt_envdict           = get(g:,'dbiclient_connect_opt_envdict', {})
 
 command! DBIJobList :call dbiclient#joblist()
 command! DBIClose :call dbiclient#jobStopNext()

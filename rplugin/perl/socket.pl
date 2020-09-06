@@ -540,22 +540,22 @@ sub exec_sql{
                             $val = "";
                         }
                     }
-                    if (exists $data->{linesep} && defined($data->{linesep}) && $val =~ /(\r\n|\r|\n)+/) {
+                    if ($data->{linesep} ne "\n" && $val =~ /(\r\n|\r|\n)+/) {
                         $val =~ s/(\r\n|\r|\n)+/$data->{linesep}/g;
                     }
                     if ($val =~ /[[:cntrl:]]/ && $val !~ /(\t|\r\n|\r|\n)/){
                         $val = "(HEX)";
                     }
-                    if ((!(exists $data->{linesep} && defined($data->{linesep})) && $val =~ /(\r\n|\r|\n)+/)){
+                    if ($data->{linesep} eq "\n" && $val =~ /(\r\n|\r|\n)+/){
                         my $surr = '"';
-                        if (exists $data->{surround} && defined($data->{surround})) {
+                        if ($data->{surround} ne '') {
                             $surr = $data->{surround};
                         }
                         my @linesVal = map({ulength $_;} split(/(\r\n|\r|\n)+/, ($surr . $val . $surr)));
                         $maxsize = List::Util::max(@linesVal);
                         $val =~ s/(\r\n|\r|\n)/\n/g;
                         $val =  $data->{prelinesep} . $surr . $val . $surr . $data->{prelinesep};
-                    } elsif (exists $data->{surround} && defined($data->{surround}) && $data->{column_info} != 1 && $data->{table_info} != 1) {
+                    } elsif ($data->{surround} ne '' && $data->{column_info} != 1 && $data->{table_info} != 1) {
                         my $surr = $data->{surround};
                         $val =  $surr . $val . $surr;
                     }

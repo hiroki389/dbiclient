@@ -1,18 +1,18 @@
 dbiclient.vim
 ====
 
-dbiclient is a client tool for accessing databases from vim.
+vimからSQLを実行するためのクライアントツール
 
-# Description
-You can execute SQL asynchronously with vim's socket function.  
-It supports various databases to use the perl DBI library.
+# 説明
+vimのソケット通信を利用し、perlのDBIライブラリを呼び出します。  
+非同期に実行されるため、vim側で待たされることなくストレスフリーに実行できます。  
 
-# Requirement
-vim8.1  
-perl5.24
+# 必須アプリ
+vim8.1以上
+perl
 
-# DBI library installation
-cpan
+# perlライブラリのインストール方法
+cpan または ppm
 ```shell
 cpan> install JSON
 cpan> install DBI
@@ -22,18 +22,21 @@ cpan> install DBD::Pg
 cpan> install DBD::SQLite
 ```
 
-# Usage database connection method
-dbiclient#connect({port}, {dns}, {user}, {password} [, {opt}])   
-dbiclient#connect_secure({port}, {dns}, {user}, {passfileName} [, {opt}])
+# DB接続方法
+DB接続するには、connect関数とconnect_secure関数を利用する方法があります。  
+引数 ポート番号、データソース、ユーザー名、パスワード、オプション  
+dbiclient#connect({port}, {dsn}, {user}, {password} [, {opt}])   
 ```vim
-:call dbiclient#connect(v:null,'ODBC:RIVUS','RIVUS','password')
+:call dbiclient#connect(9001,'ODBC:RIVUS','RIVUS','password')
 ```
 
+引数 ポート番号、データソース、ユーザー名、パスワードID、オプション  
+dbiclient#connect_secure({port}, {dsn}, {user}, {passfileName} [, {opt}])  
 ```vim
 :DBISetSecurePassword PASSFILE
-:call dbiclient#connect_secure(v:null,'ODBC:RIVUS','RIVUS','PASSFILE')
+:call dbiclient#connect_secure(9001,'ODBC:RIVUS','RIVUS','PASSFILE')
 ```
-
+他の例
 ```vim
 let opt={}  
 let opt.connect_opt_table_type       = 'TABLE,SYNONYM'
@@ -50,52 +53,60 @@ let opt.connect_opt_history_data_flg = 1
 ```vim
 :call dbiclient#connect(9001,'Pg:dbname=postgres','postgres','password')
 ```
-# Description connecting options
+# DB接続オプション
 | key                           | Default     | Description                                                  |
 | :---------------------------- | :---------- | :----------------------------------------------------------- |
-| connect_opt_limitrows         | 1000        | Set to limit number of rows                                  |
-| connect_opt_encoding          | 'utf8'      | Set encoding                                                 |
-| connect_opt_table_name        | ''          | Filter the table displayed in the table list                 |
-| connect_opt_table_type        | ''          | Filter the object type                                       |
-| connect_opt_envdict           | undef       | Set environment variables                                    |
-| connect_opt_schema_flg        | 0(disabled) | Add schema with table when this flag is true                 |
-| connect_opt_schema_list       | []          | Search columns info using schema names in order              |
-| connect_opt_history_data_flg  | 0           | Show history data when this flag is true                     |
+| connect_opt_limitrows         | 1000        | 最大フェッチ件数                                             |
+| connect_opt_encoding          | 'utf8'      | 文字エンコーディング                                         |
+| connect_opt_table_name        | ''          | テーブル一覧のテーブルフィルター                             |
+| connect_opt_table_type        | ''          | テーブル一覧のタイプフィルター                               |
+| connect_opt_envdict           | undef       | DBMSの環境変数を設定                                         |
+| connect_opt_schema_flg        | 0(disabled) | スキーマ名付与フラグ                                         |
+| connect_opt_schema_list       | []          | 同一インスタンス内の別スキーマからカラム名を取得する         |
+| connect_opt_history_data_flg  | 0           | SQLの結果の履歴保持フラグ                                    |
 
-# Explanation of the ex command
-| excommand               | Description                                                                 |
-| :---------------------- | :-----------------------------------------------------------------------    |
-| :DBIJobList             | Display job list when running on multiple ports                             |
-| :DBISelect              | Execute select statement of selected range                                  |
-| :DBISelectSlash         | Execute select statement of selected range                                  |
-| :DBISelectTable         | Execute the select statement of the table name at the cursor position       |
-| :DBIReload              | Reload the SQL                                                              |
-| :DBIColumnsTable        | Display table information from the table name at the cursor position        |
-| :DBIExecute             | Execute the selection SQL (insert, update, delete etc.)                     |
-| :DBIExecuteSlash        | Execute the selection SQL (procedure etc.)                                  |
-| :DBICommit              | Commit                                                                      |
-| :DBIRollback            | Rollback                                                                    |
-| :DBICancel              | Request cancellation before SQL timeout                                     |
-| :DBIHistoryAll          | Display execution history of select statement                               |
-| :DBISetSecurePassword   | Write db password in encrypted file                                         |
+# exコマンド
+| excommand               | Description                                                                        |
+| :---------------------- | :-----------------------------------------------------------------------           |
+| :DBIJobList             | 接続中のDB情報一覧を表示する                                                       |
+| :DBIClose               | DBを切断する                                                                       |
+| :DBITables              | テーブル一覧を表示する                                                             |
+| :DBISelect              | ビジュアルモードで選択したSQLを一つ実行し結果を表示する                            |
+| :DBISelectSemicolon     | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字はセミコロン) |
+| :DBISelectSlash         | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字はスラッシュ) |
+| :DBISelectFrom          | テーブル名を指定し、SQLを実行する                                                  |
+| :DBIReload              | カレントウィンドウのSQLを再実行する                                                |
+| :DBIColumnsTable        | テーブル名を指定し、カラム情報を取得する                                           |
+| :DBIExecute             | ビジュアルモードで選択したSQLを一つ実行する                                        |
+| :DBIExecuteSmicolon     | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はセミコロン)             |
+| :DBIExecuteSlash        | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はスラッシュ)             |
+| :DBICommit              | コミットする                                                                       |
+| :DBIRollback            | ロールバックする                                                                   |
+| :DBICancel              | 実行中のSQLをキャンセルする                                                        |
+| :DBIHistory             | SQL履歴を表示する                                                                  |
+| :DBIHistoryAll          | すべてのSQL履歴を表示する                                                          |
+| :DBISetSecurePassword   | パスワードファイルを作成する                                                       |
 
-# Description of global variables
-| global variable                 | Default     | Description                                                  |
-| :----------------------------   | :---------- | :----------------------------------------------------------- |
-| g:dbiclient_col_delimiter       | "\t"        | Set column delimiter                                         |
-| g:dbiclient_col_delimiter_align | "|"         | Set column delimiter                                         |
-| g:dbiclient_null                | ''          | Set display setting of NULL value                            |
-| g:dbiclient_linesep             | v:null      | Set display settings for line breaks in columns              |
-| g:dbiclient_surround            | v:null      | Set display setting of column enclosure                      |
-| g:dbiclient_new_window_hight    | ''          | Set the height of the buffer                                 |
-| g:dbiclient_perl_binmode        | 'utf8'      | Set perl input / output encoding                             |
-| g:dbiclient_buffer_encoding     | 'utf8'      | Set buffer encoding                                          |
-| g:dbiclient_hist_cnt            | 1000        | Set number of sql history                                    |
+# 各種設定方法
+| global variable                  | Default                         | Description                                                  |
+| :----------------------------    | :----------                     | :----------------------------------------------------------- |
+| g:dbiclient_col_delimiter        | "\t"                            | 未整列状態のカラム区切り文字                                 |
+| g:dbiclient_col_delimiter_align  | "|"                             | 整列状態のカラム区切り文字                                   |
+| g:dbiclient_null                 | ''                              | NULLの表示文字                                               |
+| g:dbiclient_linesep              | "\n"                            | 改行コードの表示文字                                         |
+| g:dbiclient_surround             | ''                              | カラムの囲い文字                                             |
+| g:dbiclient_new_window_hight     | ''                              | ウィンドウの高さ                                             |
+| g:dbiclient_perl_binmode         | 'utf8'                          | perlの文字エンコーディング                                   |
+| g:dbiclient_buffer_encoding      | 'utf8'                          | vimの文字エンコーディング                                    |
+| g:dbiclient_hist_cnt             | 1000                            | SQL履歴の最大保持件数                                        |
+| g:dbiclient_disp_remarks         | 1                               | カラム名の表示可否                                           |
+| g:dbiclient_prelinesep           | '<<CRR>>'                       | 改行コードの一時変換文字                                     |
+| g:Dbiclient_call_after_connected | {-> dbiclient#userTablesMain()} | DB接続後に実行する関数                                       |
 
-# Licence
+# ライセンス
 Copyright (c) 2019 Hiroki Kitamura  
 Released under the MIT license  
 [MIT](https://opensource.org/licenses/mit-license.php)
 
-# Author
+# 著者
 [hiroki389](https://github.com/hiroki389)

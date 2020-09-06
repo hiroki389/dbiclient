@@ -2429,9 +2429,9 @@ function! s:parseSQL(sql,cols) abort
     if from =~? '\v[()]' || parseSQL.select[1] =~? '\v[()]' || parseSQL.table[1] =~? '\v[()]' || parseSQL.group[1] =~? '\v[()]' || parseSQL.order[1] =~? '\v[()]'
         return {}
     endif
-    let selectStr = filter(split(parseSQL.select[1], ','), {_,x -> match(a:cols,trim(x)) == -1})
-    let orderStr  = filter(split(parseSQL.order[1] , ','), {_,x -> match(a:cols,trim(x)) == -1})
-    let groupStr  = filter(split(parseSQL.group[1] , ','), {_,x -> match(a:cols,trim(x)) == -1})
+    let selectStr = filter(split(parseSQL.select[1], ','), {_,x -> match(a:cols,'\V' . trim(x)) == -1})
+    let orderStr  = filter(split(parseSQL.order[1] , ','), {_,x -> match(a:cols,'\V' . substitute(trim(x),'\v\c\s*(asc|desc)','','')) == -1})
+    let groupStr  = filter(split(parseSQL.group[1] , ','), {_,x -> match(a:cols,'\V' . trim(x)) == -1})
     if len(selectStr) > 0 || len(orderStr) > 0 || len(groupStr) > 0
         return {}
     endif
