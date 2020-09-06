@@ -58,16 +58,16 @@ postgreの例
 :call dbiclient#connect(9001,'Pg:dbname=postgres','postgres','password')
 ```
 # DB接続オプション
-| key                           | Default     | Description                                                  |
-| :---------------------------- | :---------- | :----------------------------------------------------------- |
-| connect_opt_limitrows         | 1000        | 最大フェッチ件数                                             |
-| connect_opt_encoding          | 'utf8'      | 文字エンコーディング                                         |
-| connect_opt_table_name        | ''          | テーブル一覧のテーブルフィルター                             |
-| connect_opt_table_type        | ''          | テーブル一覧のタイプフィルター                               |
-| connect_opt_envdict           | {}          | DBMSの環境変数を設定                                         |
-| connect_opt_schema_flg        | 0           | スキーマ名付与フラグ                                         |
-| connect_opt_schema_list       | []          | 同一インスタンス内の別スキーマからカラム名を取得する         |
-| connect_opt_history_data_flg  | 0           | SQL結果の履歴保持フラグ                                      |
+| key                           | Default                                      | Description                                                  |
+| :---------------------------- | :----------                                  | :----------------------------------------------------------- |
+| connect_opt_limitrows         | g:dbiclient_connect_opt_limitrows = 1000     | 最大フェッチ件数                                             |
+| connect_opt_encoding          | g:dbiclient_connect_opt_encoding = 'utf8'    | 文字エンコーディング                                         |
+| connect_opt_table_name        | g:dbiclient_connect_opt_table_name = ''      | テーブル一覧のテーブルフィルター                             |
+| connect_opt_table_type        | g:dbiclient_connect_opt_table_type = ''      | テーブル一覧のタイプフィルター                               |
+| connect_opt_envdict           | g:dbiclient_connect_opt_envdict = {}         | DBMSの環境変数を設定                                         |
+| connect_opt_schema_flg        | g:dbiclient_connect_opt_schema_flg = 0       | スキーマ名付与フラグ                                         |
+| connect_opt_schema_list       | g:dbiclient_connect_opt_schema_list = []     | 同一インスタンス内の別スキーマからカラム名を取得する         |
+| connect_opt_history_data_flg  | g:dbiclient_connect_opt_history_data_flg = 0 | SQL結果の履歴保持フラグ                                      |
 
 # exコマンド
 | excommand                      | Description                                                                        |
@@ -95,7 +95,7 @@ postgreの例
 |  global variable                  |  Default                         |  Description                                                  |
 |  :----------------------------    |  :----------                     |  :----------------------------------------------------------- |
 |  g:dbiclient_col_delimiter        |  "\t"                            |  未整列状態のカラム区切り文字                                 |
-|  g:dbiclient_col_delimiter_align  |  "|"                             |  整列状態のカラム区切り文字                                   |
+|  g:dbiclient_col_delimiter_align  |  "&#124;"                             |  整列状態のカラム区切り文字                                   |
 |  g:dbiclient_null                 |  ''                              |  NULLの表示文字                                               |
 |  g:dbiclient_linesep              |  "\n"                            |  改行コードの表示文字                                         |
 |  g:dbiclient_surround             |  ''                              |  カラムの囲い文字                                             |
