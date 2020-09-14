@@ -5,7 +5,7 @@ vimからSQLを実行するためのクライアントツール
 
 # 説明
 vimのソケット通信を利用し、perlのDBIライブラリを呼び出します。  
-非同期に実行されるため、vim側で待たされることなくストレスフリーに実行できます。  
+ソケット通信を利用することで、非同期にSQLを実行します。
 
 # 必須アプリ
 vim8.1以上  
@@ -40,17 +40,10 @@ ODBCの例(connect_secure)
 :DBISetSecurePassword PASSFILE
 :call dbiclient#connect_secure(9001,'ODBC:RIVUS','RIVUS','PASSFILE')
 ```
-oracleの例
+oracleでNLS_LANGをUTF8に設定して接続する例
 ```vim
 let opt={}  
-let opt.connect_opt_table_type       = 'TABLE,SYNONYM'
-let opt.connect_opt_table_name       = 'TEST%'
 let opt.connect_opt_envdict          = {'NLS_LANG':'Japanese_Japan.AL32UTF8'}
-let opt.connect_opt_schema_flg       = 1
-let opt.connect_opt_schema_list      = ['SCHEMA1','SCHEMA2']
-let opt.connect_opt_limitrows        = 10000
-let opt.connect_opt_encoding         = 'cp932'
-let opt.connect_opt_history_data_flg = 1
 :call dbiclient#connect(9001,'Oracle:sid=XE','RIVUS','password',opt)
 ```
 postgreの例
@@ -67,7 +60,7 @@ postgreの例
 | connect_opt_envdict           | g:dbiclient_connect_opt_envdict = {}         | DBMSの環境変数を設定                                         |
 | connect_opt_schema_flg        | g:dbiclient_connect_opt_schema_flg = 0       | スキーマ名付与フラグ                                         |
 | connect_opt_schema_list       | g:dbiclient_connect_opt_schema_list = []     | 同一インスタンス内の別スキーマからカラム名を取得する         |
-| connect_opt_history_data_flg  | g:dbiclient_connect_opt_history_data_flg = 0 | SQL結果の履歴保持フラグ                                      |
+| connect_opt_history_data_flg  | g:dbiclient_connect_opt_history_data_flg = 0 | SQL結果の履歴保持フラグ、一時領域の逼迫及びセキュリティの観点からデフォルトではOFFになっている                                      |
 
 # exコマンド
 | excommand                      | Description                                                                        |
@@ -78,9 +71,9 @@ postgreの例
 | :DBISelect[!] [count]          | ビジュアルモードで選択したSQLを一つ実行し結果を表示する                            |
 | :DBISelectSemicolon[!] [count] | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字はセミコロン) |
 | :DBISelectSlash[!] [count]     | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字はスラッシュ) |
-| :DBISelectFrom[!] [count]      | テーブル名を指定し、SQLを実行する                                                  |
+| :DBISelectFrom[!] [tableNm]    | テーブル名を指定し、SQLを実行する                                                  |
 | :DBIReload[!] [count]          | カレントウィンドウのSQLを再実行する                                                |
-| :DBIColumnsTable               | テーブル名を指定し、カラム情報を取得する                                           |
+| :DBIColumnsTable [tableNm]     | テーブル名を指定し、カラム情報を取得する                                           |
 | :DBIExecute[!]                 | ビジュアルモードで選択したSQLを一つ実行する                                        |
 | :DBIExecuteSmicolon[!]         | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はセミコロン)             |
 | :DBIExecuteSlash[!]            | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はスラッシュ)             |

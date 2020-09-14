@@ -1819,19 +1819,19 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         let F1 = {x -> matchstr(x,'\v^\s*\zs.+\ze\s*')}
         let F2 = {x -> trim(substitute(matchstr(x,'\v^\s*\zs.+\ze\s*'),'\v(ASC|DESC)\s*$','',''))}
 
-        let selectStr = split(dbiclient_bufmap.opt.extend.select, ',')
+        let selectStr = split(dbiclient_bufmap.opt.extend.select, '\v\s*,\s*')
         let dbiclient_bufmap.opt.select = {}
         let dbiclient_bufmap.opt.select.selectdict = s:f2.Foldl({x,y -> extend(x,y)},{},map(selectStr[:],{i,x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.select.selectdictstr = s:f2.Foldl({x,y -> extend(x,y)},{},map(selectStr[:],{i,x -> {F1(x) : '*' . (i+1) . ' ' . F1(x)}}))
         let dbiclient_bufmap.opt.select.selectdictAscDesc = s:f2.Foldl({x,y -> extend(x,y)},{},map(selectStr[:],{i,x -> {F1(x) : 0}}))
 
-        let orderStr = split(matchstr(dbiclient_bufmap.opt.extend.order,'\v\corder by \zs.*'),',')
+        let orderStr = split(matchstr(dbiclient_bufmap.opt.extend.order,'\v\corder by \zs.*'),'\v\s*,\s*')
         let dbiclient_bufmap.opt.order = {}
         let dbiclient_bufmap.opt.order.selectdict = s:f2.Foldl({x,y -> extend(x,y)},{},map(orderStr[:],{i,x -> {F2(x) : i+1}}))
         let dbiclient_bufmap.opt.order.selectdictstr = s:f2.Foldl({x,y -> extend(x,y)},{},map(orderStr[:],{i,x -> {F2(x) : (x =~? '\v\c<desc>' ? '[DESC]' : '[ASC]') . (i+1) . ' ' . F2(x)}}))
         let dbiclient_bufmap.opt.order.selectdictAscDesc = s:f2.Foldl({x,y -> extend(x,y)},{},map(orderStr[:],{i,x -> {F2(x) : x =~? '\v\c<desc>' ? 1 : 0}}))
 
-        let groupStr = split(matchstr(dbiclient_bufmap.opt.extend.group,'\v\cgroup by \zs.*'),',')
+        let groupStr = split(matchstr(dbiclient_bufmap.opt.extend.group,'\v\cgroup by \zs.*'),'\v\s*,\s*')
         let dbiclient_bufmap.opt.group = {}
         let dbiclient_bufmap.opt.group.selectdict = s:f2.Foldl({x,y -> extend(x,y)},{},map(groupStr[:],{i,x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.group.selectdictstr = s:f2.Foldl({x,y -> extend(x,y)},{},map(groupStr[:],{i,x -> {F1(x) : '*' . (i+1) . ' ' . F1(x)}}))
@@ -2247,8 +2247,8 @@ function! s:selectTableCmn(alignFlg,table,port,...) abort
         return {}
     endif
     let limitrows = get(a:,1,s:getLimitrows())
-    let list = ['SELECT * FROM ' . a:table . ' T']
-    call s:getQueryAsync(join(list,"\n"),s:callbackstr(a:alignFlg),limitrows,{'single_table':a:table},a:port)
+    let list = ['SELECT * FROM ' . a:table]
+    call s:getQueryAsync(join(list,"\n"),s:callbackstr(a:alignFlg),limitrows,{'single_table':matchstr(a:table,'\v^\s*\zs.{-}\ze\s*')},a:port)
 endfunction
 
 function! s:editHistory(str) abort
@@ -2288,7 +2288,9 @@ function! s:getSqlLineDelComment(sql) abort
         let ret = map(ret,{_,x -> substitute(x,'\V###HYPEN###', commentStr,'g')})
     endfor
     let ret = join(ret,"\n")
+    let ret = substitute(ret,'\v(/\*).{-}(\*/)','','g')
     return ret
+    "return dbiclient#parseSQL2(a:sql).getSqlLineDelComment()
 endfunction
 
 function! s:getSqlLine(sql) abort
@@ -2439,6 +2441,117 @@ function! s:parseSQL(sql,cols) abort
     return map(filter(parseSQL,{_,x -> trim(x[1]) !=# ''}),{_,x -> x[0] . trim(x[1])})
 endfunction
 
+function! dbiclient#parseSQL2(sql) abort
+    let dic = {}
+    let data = []
+    let ac = []
+    let sqflg = 0
+    let dqflg = 0
+    let cmt1flg = 0
+    let cmt2flg = 0
+    let subflg = 0
+    let type = ''
+    for c in split(a:sql, '\v<|>|(--)@=|(\/\*)@=|(\*\/)@<=|(''''|'')@=|(''''|'')@<=|(\s+)@=|(\s+)@<=|(\n)@=|(\n)@<=')
+        let loopflg = sqflg + dqflg + cmt1flg + cmt2flg + subflg
+        if !loopflg && c == "'"
+            let sqflg = 1
+            let type = 'single quote'
+        elseif !loopflg && (c == '"' || c == '`' || c == '[')
+            let dqflg = 1
+            let type = 'double quote'
+        elseif !loopflg && c == '--'
+            let cmt1flg = 1
+            let type = 'comment'
+        elseif !loopflg && c == '#'
+            let cmt1flg = 1
+            let type = 'comment'
+        elseif !loopflg && c == '/*'
+            let cmt2flg = 1
+            let type = 'comment'
+        "elseif !loopflg && c == '('
+        "    let subflg = 1
+        "    let type = 'sub'
+        elseif sqflg && c == "'"
+            let sqflg = 0
+        elseif dqflg && (c == '"' || c == '`' || c == ']')
+            let dqflg = 0
+        elseif cmt1flg && c == "\n"
+            let cmt1flg = 0
+        elseif cmt2flg && c == '*/'
+            let cmt2flg = 0
+        "elseif subflg && c == ')'
+        "    let subflg = 0
+        endif
+        let loopflg = sqflg + dqflg + cmt1flg + cmt2flg + subflg
+
+        call add(ac,c)
+        if loopflg
+        else
+            let str = join(ac,'')
+            if empty(type)
+                if str =~ '\v\c<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<by>|<group>|<having>|<into>|<join>|<on>|<left>|<inner>|<right>|<cross>|<natural>|<full>'
+                    let type = toupper(str)
+                elseif str =~ '\v\c<create>|<drop>|<alter>'
+                    let type = toupper(str)
+                elseif str =~ '\v\c<grant>|<revoke>|<commit>|<rollback>'
+                    let type = toupper(str)
+                elseif str =~ '\v^\s+$'
+                    let type = 'whitespace'
+                elseif str == ';'
+                    let type = 'semicolon'
+                elseif str == '/'
+                    let type = 'slash'
+                elseif str =~ '\v\n'
+                    let type = 'line break'
+                elseif str =~ '\v\c<and>|<or>|<in>|<between>|<is>|<not>|<null>'
+                    let type = toupper(str)
+                elseif str =~ '\v\c[<>=!,.@&]'
+                    let type = 'sign'
+                else
+                    let type = 'unkonwn'
+                endif
+            endif
+            if type == 'sub'
+                let ac = dbiclient#parseSQL2(str[1:len(str)-2]).getData()
+                call insert(ac, ['sign', '('])
+                call add(ac, ['sign', ')'])
+                call add(data, [type, ac])
+            else
+                call add(data, [type, join(ac,'')])
+            endif
+            let ac = []
+            let type = ''
+        endif
+    endfor
+    if !empty(ac)
+        call add(data, join(ac,''))
+    endif
+    let dic.data = data
+
+    function dic.getData()
+        return self.data
+    endfunction
+
+    function! s:getSql(data)
+        return join(map(a:data[:],{_,x -> type(x[1]) == v:t_list ? s:getSql(x[1]) : x[1]}),'')
+    endfunction
+
+    function dic.getSql()
+        return s:getSql(self.data)
+    endfunction
+
+    function! s:getSqlLineDelComment2(data)
+        return join(map(filter(a:data[:],{_,x -> x[0] != 'comment'}),{_,x -> type(x[1]) == v:t_list ? s:getSql(x[1]) : x[1]}),'')
+    endfunction
+
+    function dic.getSqlLineDelComment()
+        return s:getSqlLineDelComment2(self.data)
+    endfunction
+
+    return dic
+endfunction
+
+
 function! s:extendquery(alignFlg,extend) abort
     let [select,ijoin,where,order,group] = [get(a:extend,'select',''),get(a:extend,'ijoin',''),get(a:extend,'where',''),get(a:extend,'order',''),get(a:extend,'group','')]
     let port = s:getPort()
@@ -2460,7 +2573,7 @@ function! s:extendquery(alignFlg,extend) abort
     let sql = substitute(sql,'\v(\r\n|\r|\n)+\_$','','')
     let select = select ==# '' ? '*' : select
     let asTableNm = get(get(dbiclient_bufmap.data,'tableJoinNmWithAs',[]),0).AS
-    let asTableNm = asTableNm == '' ? 'T' : asTableNm
+    "let asTableNm = asTableNm == '' ? 'T' : asTableNm
     if get(dbiclient_bufmap.data,'single_table','') ==# ''
         let sql = 'SELECT ' . select . "\n" . 'FROM (/*PRESQL*/ ' . "\n" . sql . "\n" . ' /*PRESQL*/) ' . "\n" . join(filter([where, group, order],{_,x -> trim(x) !=# ''}),"\n")
     else
