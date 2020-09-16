@@ -1092,17 +1092,19 @@ function! s:splitSql(sqllist,delim) abort
     let delim = a:delim
     let list = filter(list,{_,x -> trim(x) !=# ''})
     let sql = join(list,"\n")
-    let delsql = s:split(s:getSqlLineDelComment(sql), "\n")
-    let matchlist = map(delsql[:], {_,x -> match(x, '\v' . delim . '\s*$')})
-    let sql = join(map(list[:], {i,x -> matchlist[i] !=# -1 
-                \ ? (matchlist[i] ==# 0 
-                    \ ? '###DELEMITER###'
-                    \ : x[0:matchlist[i] - 1] . '###DELEMITER###') 
-                \ : x}), "\n")
-    let sqllist = s:split(sql, '###DELEMITER###')
-    let sqllist = filter(sqllist, {_,x -> trim(s:getSqlLineDelComment(x)) !=# ''})
-    call s:debugLog(sqllist)
-    return sqllist
+    "let delsql = s:split(s:getSqlLineDelComment(sql), "\n")
+    "let matchlist = map(delsql[:], {_,x -> match(x, '\v' . delim . '\s*$')})
+    "let sql = join(map(list[:], {i,x -> matchlist[i] !=# -1 
+    "            \ ? (matchlist[i] ==# 0 
+    "                \ ? '###DELEMITER###'
+    "                \ : x[0:matchlist[i] - 1] . '###DELEMITER###') 
+    "            \ : x}), "\n")
+    "let sqllist = s:split(sql, '###DELEMITER###')
+    "let sqllist = filter(sqllist, {_,x -> trim(s:getSqlLineDelComment(x)) !=# ''})
+    "call s:debugLog(sqllist)
+
+    "return sqllist
+    return dbiclient#parseSQL2(sql,'').splitSql(delim)
 endfunction
 
 function! s:getQuerySync(sql,callback,limitrows,opt,port) abort
@@ -2269,28 +2271,7 @@ function! s:getSqlLineDelComment(sql) abort
     let port = s:getCurrentPort()
     let connInfo = get(s:params,port,{})
     let dsn = matchstr(get(connInfo,'dsn',''),'\v\s*\zs\w+')
-    let commentStrList = ['--']
-
-    if dsn =~? 'mysql'
-        call add(commentStrList,'#')
-    endif
-
-    for commentStr in commentStrList
-        let ret = map(split(a:sql,"\n"),{_,x -> substitute(x,'\v^\s*' . commentStr . '.*$',{m -> repeat(' ', strdisplaywidth(m[0]))},'')})
-        let ret = map(ret,{_,x -> substitute(x,'\v''(''''|[^'']){-}''', {m -> substitute(m[0],commentStr,'###HYPEN###','g')}, 'g')})
-        let ret = map(ret,{_,x -> substitute(x,'\v"(""|[^"]){-}"', {m -> substitute(m[0],commentStr,'###HYPEN###','g')}, 'g')})
-        if dsn =~? 'oracle'
-            let ret = map(ret,{_,x -> substitute(x,'\vq''[(\[{<]\zs.{-}\ze[)\]}>]''', {m -> substitute(m[0],commentStr,'###HYPEN###','g')}, 'g')})
-            let ret = map(ret,{_,x -> substitute(x,'\vq''(.)\zs.{-}\ze\1''', {m -> substitute(m[0],commentStr,'###HYPEN###','g')}, 'g')})
-        endif
-        let ret = map(ret,{_,x -> substitute(x,'\v' . commentStr . '.*$',{m -> repeat(' ', strdisplaywidth(m[0]))},'')})
-        "echom string(ret)
-        let ret = map(ret,{_,x -> substitute(x,'\V###HYPEN###', commentStr,'g')})
-    endfor
-    let ret = join(ret,"\n")
-    let ret = substitute(ret,'\v(/\*).{-}(\*/)','','g')
-    return ret
-    "return dbiclient#parseSQL2(a:sql).getSqlLineDelComment()
+    return dbiclient#parseSQL2(a:sql,dsn).getSqlLineDelComment()
 endfunction
 
 function! s:getSqlLine(sql) abort
@@ -2441,107 +2422,52 @@ function! s:parseSQL(sql,cols) abort
     return map(filter(parseSQL,{_,x -> trim(x[1]) !=# ''}),{_,x -> x[0] . trim(x[1])})
 endfunction
 
-function! dbiclient#parseSQL2(sql) abort
+let s:hardparseDict = {}
+function! dbiclient#parseSQL2(sql,dsn) abort
     let dic = {}
-    let data = []
-    let ac = []
-    let sqflg = 0
-    let dqflg = 0
-    let cmt1flg = 0
-    let cmt2flg = 0
-    let subflg = 0
-    let type = ''
-    for c in split(a:sql, '\v<|>|(--)@=|(\/\*)@=|(\*\/)@<=|(''''|'')@=|(''''|'')@<=|(\s+)@=|(\s+)@<=|(\n)@=|(\n)@<=')
-        let loopflg = sqflg + dqflg + cmt1flg + cmt2flg + subflg
-        if !loopflg && c == "'"
-            let sqflg = 1
-            let type = 'single quote'
-        elseif !loopflg && (c == '"' || c == '`' || c == '[')
-            let dqflg = 1
-            let type = 'double quote'
-        elseif !loopflg && c == '--'
-            let cmt1flg = 1
-            let type = 'comment'
-        elseif !loopflg && c == '#'
-            let cmt1flg = 1
-            let type = 'comment'
-        elseif !loopflg && c == '/*'
-            let cmt2flg = 1
-            let type = 'comment'
-        "elseif !loopflg && c == '('
-        "    let subflg = 1
-        "    let type = 'sub'
-        elseif sqflg && c == "'"
-            let sqflg = 0
-        elseif dqflg && (c == '"' || c == '`' || c == ']')
-            let dqflg = 0
-        elseif cmt1flg && c == "\n"
-            let cmt1flg = 0
-        elseif cmt2flg && c == '*/'
-            let cmt2flg = 0
-        "elseif subflg && c == ')'
-        "    let subflg = 0
-        endif
-        let loopflg = sqflg + dqflg + cmt1flg + cmt2flg + subflg
-
-        call add(ac,c)
-        if loopflg
-        else
-            let str = join(ac,'')
-            if empty(type)
-                if str =~ '\v\c<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<by>|<group>|<having>|<into>|<join>|<on>|<left>|<inner>|<right>|<cross>|<natural>|<full>'
-                    let type = toupper(str)
-                elseif str =~ '\v\c<create>|<drop>|<alter>'
-                    let type = toupper(str)
-                elseif str =~ '\v\c<grant>|<revoke>|<commit>|<rollback>'
-                    let type = toupper(str)
-                elseif str =~ '\v^\s+$'
-                    let type = 'whitespace'
-                elseif str == ';'
-                    let type = 'semicolon'
-                elseif str == '/'
-                    let type = 'slash'
-                elseif str =~ '\v\n'
-                    let type = 'line break'
-                elseif str =~ '\v\c<and>|<or>|<in>|<between>|<is>|<not>|<null>'
-                    let type = toupper(str)
-                elseif str =~ '\v\c[<>=!,.@&]'
-                    let type = 'sign'
-                else
-                    let type = 'unkonwn'
-                endif
-            endif
-            if type == 'sub'
-                let ac = dbiclient#parseSQL2(str[1:len(str)-2]).getData()
-                call insert(ac, ['sign', '('])
-                call add(ac, ['sign', ')'])
-                call add(data, [type, ac])
-            else
-                call add(data, [type, join(ac,'')])
-            endif
-            let ac = []
-            let type = ''
-        endif
-    endfor
-    if !empty(ac)
-        call add(data, join(ac,''))
+    let hash = sha256(a:sql)
+    let data = get(s:hardparseDict,hash,[])
+    if empty(data)
+        let data = s:parseSqlLogic(a:sql,a:dsn)
+        let s:hardparseDict[hash] = data
     endif
     let dic.data = data
 
-    function dic.getData()
-        return self.data
-    endfunction
-
     function! s:getSql(data)
         return join(map(a:data[:],{_,x -> type(x[1]) == v:t_list ? s:getSql(x[1]) : x[1]}),'')
+    endfunction
+
+    function! s:getSqlLineDelComment2(data)
+        return join(map(filter(a:data[:],{_,x -> x[0] != 'comment'}),{_,x -> type(x[1]) == v:t_list ? s:getSql(x[1]) : x[1]}),'')
+    endfunction
+
+    function! s:splitSql2(data,delim)
+        let type = a:delim == ';' ? 'semicolon' : a:delim == '/' ? 'slash' : ''
+        let indexes = filter(map(a:data[:],{i,x -> x[0] == type ? i : ''}),{_,x -> x != ''})
+        let ret = []
+        let start = 0
+        if empty(indexes)
+            call add(ret,s:getSql(a:data))
+        else
+            for i in indexes
+                call add(ret,s:getSql(a:data[start:i-1]))
+                let start = i+1
+            endfor
+        endif
+        return ret
+    endfunction
+
+    function dic.getData()
+        return self.data
     endfunction
 
     function dic.getSql()
         return s:getSql(self.data)
     endfunction
 
-    function! s:getSqlLineDelComment2(data)
-        return join(map(filter(a:data[:],{_,x -> x[0] != 'comment'}),{_,x -> type(x[1]) == v:t_list ? s:getSql(x[1]) : x[1]}),'')
+    function dic.splitSql(delim)
+        let sql = s:splitSql2(self.data,a:delim)
+        return sql
     endfunction
 
     function dic.getSqlLineDelComment()
@@ -2551,6 +2477,109 @@ function! dbiclient#parseSQL2(sql) abort
     return dic
 endfunction
 
+function! s:parseSqlLogic(sql,dsn) abort
+    let data = []
+    let ac = []
+    let qqflg = 0
+    let sqflg = 0
+    let dqflg = 0
+    let cmt1flg = 0
+    let cmt2flg = 0
+    let subflg = 0
+    let type = ''
+    let regex = '\v\c<|>'
+    "let regex .= '|(--)@=|(\/\*)@=|(\*\/)@<=|(''|"|`)@=|(''|"|`)@<=|(\s+)@=|(\s+)@<=|(\n)@=|(\n)@<=|[.]@=|[.]@<=|(<q''[<{[])@=|(<q''[<{[])@<=|([>}\]]'')@=|([>}\]]'')@<='
+    let regex .= '|(--)@=|(\/\*)@=|(\*\/)@<=|(''|"|`|\s+|\n|\.)@=|(''|"|`|\s+|\n|\.)@<='
+    let tokenList = split(a:sql, regex)
+    for i in range(len(tokenList))
+        let token = tokenList[i]
+        call add(ac,token)
+        let str = join(ac,'')
+        let ptoken = i == 0 ? '' : tokenList[i - 1]
+        let ntoken = i == len(tokenList) - 1 ? '' : tokenList[i + 1]
+        let loopflg = sqflg + qqflg + dqflg + cmt1flg + cmt2flg
+        if !loopflg && token == "'"
+            let sqflg = 1
+            let type = 'single-quote'
+        elseif !loopflg && token =~? "\v\cq'[<{[(]" && a:dsn =~? 'oracle'
+            let qqflg = 1
+            let type = 'q-quote'
+        elseif !loopflg && token == '"'
+            let dqflg = 1
+            let type = 'double-quote'
+        elseif !loopflg && token == '`'
+            let dqflg = 1
+            let type = 'back-quote'
+        elseif !loopflg && token == '['
+            let dqflg = 1
+            let type = 'bracket'
+        elseif !loopflg && token == '--'
+            let cmt1flg = 1
+            let type = 'comment'
+        elseif !loopflg && token == '#' && a:dsn =~? 'mysql'
+            let cmt1flg = 1
+            let type = 'comment'
+        elseif !loopflg && token == '/*'
+            let cmt2flg = 1
+            let type = 'comment'
+        elseif token == '('
+            let subflg += 1
+            let type = 'subs' . subflg
+        elseif sqflg && token == "'"
+            let sqflg += 1
+        elseif qqflg && token =~? "\v\c[>}\])]'"
+            let qqflg = 0
+        elseif dqflg && (token == '"' || token == '`' || token == ']')
+            let dqflg = 0
+        elseif cmt1flg && token == "\n"
+            let cmt1flg = 0
+        elseif cmt2flg && token == '*/'
+            let cmt2flg = 0
+        elseif subflg && token == ')'
+            let type = 'sube' . subflg
+            let subflg -= 1
+        endif
+
+        if sqflg && token == "'" && ntoken != "'" && sqflg % 2 == 0
+            let sqflg = 0
+        endif
+        let loopflg = sqflg + dqflg + cmt1flg + cmt2flg
+
+        if loopflg
+            continue
+        endif
+        if empty(type)
+            if str =~ '\v\c<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<by>|<group>|<having>|<into>|<join>|<on>|<left>|<inner>|<right>|<cross>|<natural>|<full>|<as>'
+                let type = toupper(str)
+            elseif str =~ '\v\c<create>|<drop>|<alter>'
+                let type = toupper(str)
+            elseif str =~ '\v\c<grant>|<revoke>|<commit>|<rollback>'
+                let type = toupper(str)
+            elseif str =~ '\v^\s+$'
+                let type = 'whitespace'
+            elseif str == ';'
+                let type = 'semicolon'
+            elseif str == '/'
+                let type = 'slash'
+            elseif str =~ '\v\n'
+                let type = 'CR'
+            elseif str =~ '\v\c<and>|<or>|<in>|<between>|<is>|<not>|<null>'
+                let type = toupper(str)
+            elseif str =~ '\v\c[<>=!,.@&]'
+                let type = 'sign'
+            else
+                let type = 'token'
+            endif
+        endif
+        call add(data, [type, join(ac,'')])
+        let ac = []
+        let type = ''
+    endfor
+    if !empty(ac)
+        call add(data, join(ac,''))
+    endif
+    return data
+endfunction
 
 function! s:extendquery(alignFlg,extend) abort
     let [select,ijoin,where,order,group] = [get(a:extend,'select',''),get(a:extend,'ijoin',''),get(a:extend,'where',''),get(a:extend,'order',''),get(a:extend,'group','')]
