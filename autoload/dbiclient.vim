@@ -2414,7 +2414,10 @@ function! dbiclient#parseSQL2(sql) abort
     let hash = sha256(a:sql)
     let data = get(s:hardparseDict,hash,[])
     if empty(data)
-        let data = s:parseSqlLogic(a:sql)
+        let data = []
+        let regex = '\v\c<|>|(--)@=|(\/\*)@=|(\*\/)@<=|(''|"|`|\s+|\n|\.|[()[\]{}<>])@=|(''|"|`|\s+|\n|\.|[()[\]{}<>])@<='
+        let tokenList = split(a:sql, regex)
+        let data = s:parseSqlLogicR(tokenList,0,0)
         let s:hardparseDict[hash] = data
     endif
     let dic.data = data
@@ -2471,6 +2474,10 @@ function! dbiclient#parseSQL2(sql) abort
     return dic
 endfunction
 
+function! s:lenR(list) abort
+    return s:f2.Foldl({x,y -> x + y}, 0, map(a:list[:], {_,x -> type(x) == v:t_list && type(get(x,1,'')) == v:t_string && get(x,1,'') =~? '^subs' ? s:lenR(get(x,2,[])) : 1}))
+endfunction
+
 function! s:parseSqlLogicR(tokenList,index,subflg) abort
     let tokenList = a:tokenList
     let data = []
@@ -2492,13 +2499,15 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
         let token = tokenList[index]
         call add(ac,token)
         let str = join(ac,'')
-        if token =~ '\v\c^(<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
-            let maintype = toupper(token)
-        endif
         let ptoken = index ==# 0 ? '' : tokenList[index - 1]
         let ntoken = index ==# len(tokenList) - 1 ? '' : tokenList[index + 1]
         let nntoken = index >=# len(tokenList) - 2 ? '' : tokenList[index + 2]
         let loopflg = sqflg + qqflg + dqflg + cmt1flg + cmt2flg
+
+        if !loopflg && token =~ '\v\c^(<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
+            let maintype = toupper(token)
+        endif
+
         if loopflg
             let loopcnt += 1
         else
@@ -2526,13 +2535,16 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
         elseif !loopflg && token ==# '('
             let subdata = s:parseSqlLogicR(tokenList,index + 1,subflg + 1)
             if !empty(subdata)
-                call insert(subdata,[maintype, 'bracket','('])
-                call add(subdata,[maintype, 'bracket',')'])
+                let size = s:lenR(subdata)
+                call insert(subdata,['', 'bracket','(',index])
+                call add(subdata,['', 'bracket',')', index + size + 1])
                 call add(data, [maintype, 'subs' . subflg, subdata])
-                let index += (len(subdata))
+                let index += (size + 2)
                 let ac = []
                 continue
             endif
+        elseif !loopflg && subflg && token ==# ')'
+            return data
         elseif sqflg && token ==# "'"
             let sqflg += 1
         elseif qqflg && str =~? '\v\c[>}\])]''$'
@@ -2543,8 +2555,6 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
             let cmt1flg = 0
         elseif cmt2flg && token ==# '*/'
             let cmt2flg = 0
-        elseif subflg && token ==# ')'
-            return data
         endif
 
         if sqflg && token ==# "'" && ntoken != "'" && sqflg % 2 ==# 0
@@ -2579,7 +2589,7 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
         else
             let type = 'token'
         endif
-        call add(data, [maintype, type, token])
+        call add(data, [maintype, type, token, index])
         if !loopflg
             let ac = []
         endif
@@ -2588,14 +2598,6 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
     if subflg
         return []
     endif
-    return data
-endfunction
-
-function! s:parseSqlLogic(sql) abort
-    let data = []
-    let regex = '\v\c<|>|(--)@=|(\/\*)@=|(\*\/)@<=|(''|"|`|\s+|\n|\.)@=|(''|"|`|\s+|\n|\.)@<='
-    let tokenList = split(a:sql, regex)
-    let data = s:parseSqlLogicR(tokenList,0,0)
     return data
 endfunction
 
