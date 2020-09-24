@@ -2388,14 +2388,13 @@ function! s:parseSQL(sql,cols) abort
     let data = dbiclient#parseSQL2(a:sql)
     let parseSQL={}
     let parseSQL.select=['',matchstr(data.getMaintype('SELECT'),'\v\c<select>\zs.{-}\ze<from>')]
-    let parseSQL.select[1]=parseSQL.select[1] =~? '\v\*' ? '' : parseSQL.select[1]
     let parseSQL.table=['',s:getTableName(a:sql,'')]
     let parseSQL.ijoin=['', matchstr(data.getMaintype('JOIN'),'\v\c\zs(<inner>|<left>|<right>)?\s*(<outer>)?\s*<join>.{-}\ze(<where>|<group>|<order>|$)')]
     let parseSQL.where=['WHERE ',matchstr(data.getMaintype('WHERE'),'\v\c<where>\zs.{-}\ze(<group>|<order>|$)')]
     let parseSQL.group=['GROUP BY ',matchstr(data.getMaintype('GROUP'),'\v\c<group>\s+<by>\zs.{-}\ze(<order>|$)')]
     let parseSQL.order=['ORDER BY ',matchstr(data.getMaintype('ORDER'),'\v\c<order>\s+<by>\zs.{-}\ze($)')]
     let from = matchstr(data.getMaintype('FROM'),'\v<from>.{-}(<join>|<where>|$)')
-    if from =~? '\v[()]' || parseSQL.select[1] =~? '\v[()]' || parseSQL.table[1] =~? '\v[()]' || parseSQL.group[1] =~? '\v[()]' || parseSQL.order[1] =~? '\v[()]'
+    if !empty(data.getMaintype('WITH')) || !empty(data.getMaintype('HAVING')) || from =~? '\v[()]' || parseSQL.select[1] =~? '\v[()]' || parseSQL.table[1] =~? '\v[()]' || parseSQL.group[1] =~? '\v[()]' || parseSQL.order[1] =~? '\v[()]'
         return {}
     endif
     let selectStr = filter(split(parseSQL.select[1], ','), {_,x -> match(a:cols,'\V' . trim(x)) == -1})
@@ -2421,6 +2420,22 @@ function! dbiclient#parseSQL2(sql) abort
         let s:hardparseDict[hash] = data
     endif
     let dic.data = data
+
+    function! s:searchJoinIndex(data,index)
+        let index = a:index
+        while index > 0
+            let index -= 1
+            let val = a:data[index]
+            if val[1] !=# 'whitespace' && val[1] !=# 'CR'
+                if val[0] =~? '\v\c^(<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'
+                    return index
+                else
+                    break
+                endif
+            endif
+        endwhile
+        return -1
+    endfunction
 
     function! s:getMaintype(data,mtype)
         return filter(a:data[:],{_,x -> x[0] ==# a:mtype})
@@ -2504,8 +2519,11 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
         let nntoken = index >=# len(tokenList) - 2 ? '' : tokenList[index + 2]
         let loopflg = sqflg + qqflg + dqflg + cmt1flg + cmt2flg
 
-        if !loopflg && token =~ '\v\c^(<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
+        if !loopflg && token =~ '\v\c^(<with>|<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
             let maintype = toupper(token)
+        endif
+        if !loopflg && token =~ '\v\c^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'
+            let maintype = 'JOIN'
         endif
 
         if loopflg
