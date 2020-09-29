@@ -524,8 +524,8 @@ function! s:doDeleteInsert() abort
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
     let where = get(get(get(dbiclient_bufmap,'opt',{}),'extend',{}),'where','')
-    let list2 = extend(['DELETE FROM ' . tableNm . ' ' . where . ';'], s:createInsert(cols,list,tableNm))
-    let sqllist = s:splitSql(list2[:], ';')
+    let list2 = extend(['DELETE FROM ' . tableNm . ' ' . where . g:dbiclient_sql_delimiter1], s:createInsert(cols,list,tableNm))
+    let sqllist = s:splitSql(list2[:], g:dbiclient_sql_delimiter1)
     call s:dBCommandAsync({"doText":list2[:],"do":sqllist},'s:cb_do',g:dbiclient_col_delimiter,port)
 endfunction
 
@@ -1786,11 +1786,14 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
     if empty(get(dbiclient_bufmap.opt,'extend',[])) || updateColsFlg
         let dbiclient_bufmap.opt.extend={}
         let dbiclient_bufmap.opt.extend.select = get(parseSQL, 'select', '')
+        let dbiclient_bufmap.opt.extend.table = get(parseSQL, 'table', '')
+        let dbiclient_bufmap.opt.extend.from = get(parseSQL, 'from', '')
         let dbiclient_bufmap.opt.extend.dblink = get(parseSQL, 'dblink', '')
         let dbiclient_bufmap.opt.extend.ijoin = get(parseSQL, 'ijoin', '')
         let dbiclient_bufmap.opt.extend.where = get(parseSQL, 'where', '')
         let dbiclient_bufmap.opt.extend.order = get(parseSQL, 'order', '')
         let dbiclient_bufmap.opt.extend.group = get(parseSQL, 'group', '')
+        let dbiclient_bufmap.opt.extend.having = get(parseSQL, 'having', '')
 
         if !updateColsFlg && !empty(get(dbiclient_bufmap.opt,'where',[]))
             let where = dbiclient_bufmap.opt.where[:]
@@ -1809,23 +1812,27 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         let F1 = {x -> matchstr(x,'\v^\s*\zs.+\ze\s*')}
         let F2 = {x -> trim(substitute(matchstr(x,'\v^\s*\zs.+\ze\s*'),'\v(ASC|DESC)\s*$','',''))}
 
-        let selectStr = split(dbiclient_bufmap.opt.extend.select, '\v\s*,\s*')
+        let selectStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.select,'\n',' ','g'),'\v\c<select> \zs.{-}\ze\s*$'), '\v\s*,\s*'),{_,x -> trim(x)})
+        let selectStr = filter(selectStr,{_,x -> x !=# '*'})
         let dbiclient_bufmap.opt.select = {}
         let dbiclient_bufmap.opt.select.selectdict = s:f2.Foldl({x,y -> extend(x,y)},{},map(selectStr[:],{i,x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.select.selectdictstr = s:f2.Foldl({x,y -> extend(x,y)},{},map(selectStr[:],{i,x -> {F1(x) : '*' . (i+1) . ' ' . F1(x)}}))
         let dbiclient_bufmap.opt.select.selectdictAscDesc = s:f2.Foldl({x,y -> extend(x,y)},{},map(selectStr[:],{i,x -> {F1(x) : 0}}))
+        let dbiclient_bufmap.opt.select.selectUnmatchCols = uniq(sort(filter(selectStr[:],{i,x -> match(cols,'\V' . trim(x)) == -1})))
 
-        let orderStr = split(matchstr(dbiclient_bufmap.opt.extend.order,'\v\corder by \zs.*'),'\v\s*,\s*')
+        let orderStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.order,'\n',' ','g'),'\v\c<order>\s+<by> \zs.{-}\ze\s*$'),'\v\s*,\s*'),{_,x -> trim(x)})
         let dbiclient_bufmap.opt.order = {}
         let dbiclient_bufmap.opt.order.selectdict = s:f2.Foldl({x,y -> extend(x,y)},{},map(orderStr[:],{i,x -> {F2(x) : i+1}}))
         let dbiclient_bufmap.opt.order.selectdictstr = s:f2.Foldl({x,y -> extend(x,y)},{},map(orderStr[:],{i,x -> {F2(x) : (x =~? '\v\c<desc>' ? '[DESC]' : '[ASC]') . (i+1) . ' ' . F2(x)}}))
         let dbiclient_bufmap.opt.order.selectdictAscDesc = s:f2.Foldl({x,y -> extend(x,y)},{},map(orderStr[:],{i,x -> {F2(x) : x =~? '\v\c<desc>' ? 1 : 0}}))
+        let dbiclient_bufmap.opt.order.selectUnmatchCols = uniq(sort(filter(orderStr[:],{i,x -> match(cols,'\V' . trim(substitute(x,'\v\c\s+(<desc>|<asc>)','',''))) == -1})))
 
-        let groupStr = split(matchstr(dbiclient_bufmap.opt.extend.group,'\v\cgroup by \zs.*'),'\v\s*,\s*')
+        let groupStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.group,'\n',' ','g'),'\v\c<group>\s+<by> \zs.{-}\ze\s*$'),'\v\s*,\s*'),{_,x -> trim(x)})
         let dbiclient_bufmap.opt.group = {}
         let dbiclient_bufmap.opt.group.selectdict = s:f2.Foldl({x,y -> extend(x,y)},{},map(groupStr[:],{i,x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.group.selectdictstr = s:f2.Foldl({x,y -> extend(x,y)},{},map(groupStr[:],{i,x -> {F1(x) : '*' . (i+1) . ' ' . F1(x)}}))
         let dbiclient_bufmap.opt.group.selectdictAscDesc = s:f2.Foldl({x,y -> extend(x,y)},{},map(groupStr[:],{i,x -> {F1(x) : 0}}))
+        let dbiclient_bufmap.opt.group.selectUnmatchCols = uniq(sort(filter(groupStr[:],{i,x -> match(cols,'\V' . trim(x)) == -1})))
     endif
     if get(a:dict,"status",9) !=# 9 && get(a:dict,'restoreFlg',0) !=# 1 && !empty(get(a:dict.data, 'sql',''))
         let path = s:getHistoryPathCmd(port)
@@ -2387,24 +2394,19 @@ endfunction
 function! s:parseSQL(sql,cols) abort
     let data = dbiclient#parseSQL2(a:sql)
     let parseSQL={}
-    let parseSQL.select=['',matchstr(data.getMaintype('SELECT'),'\v\c<select>\zs.{-}\ze<from>')]
-    let parseSQL.table=['',s:getTableName(a:sql,'')]
-    let parseSQL.ijoin=['', matchstr(data.getMaintype('JOIN'),'\v\c\zs(<inner>|<left>|<right>)?\s*(<outer>)?\s*<join>.{-}\ze(<where>|<group>|<order>|$)')]
-    let parseSQL.where=['WHERE ',matchstr(data.getMaintype('WHERE'),'\v\c<where>\zs.{-}\ze(<group>|<order>|$)')]
-    let parseSQL.group=['GROUP BY ',matchstr(data.getMaintype('GROUP'),'\v\c<group>\s+<by>\zs.{-}\ze(<order>|$)')]
-    let parseSQL.order=['ORDER BY ',matchstr(data.getMaintype('ORDER'),'\v\c<order>\s+<by>\zs.{-}\ze($)')]
-    let from = matchstr(data.getMaintype('FROM'),'\v<from>.{-}(<join>|<where>|$)')
-    if !empty(data.getMaintype('WITH')) || !empty(data.getMaintype('HAVING')) || from =~? '\v[()]' || parseSQL.select[1] =~? '\v[()]' || parseSQL.table[1] =~? '\v[()]' || parseSQL.group[1] =~? '\v[()]' || parseSQL.order[1] =~? '\v[()]'
-        return {}
-    endif
-    let selectStr = filter(split(parseSQL.select[1], ','), {_,x -> match(a:cols,'\V' . trim(x)) == -1})
-    let orderStr  = filter(split(parseSQL.order[1] , ','), {_,x -> match(a:cols,'\V' . substitute(trim(x),'\v\c\s*(asc|desc)','','')) == -1})
-    let groupStr  = filter(split(parseSQL.group[1] , ','), {_,x -> match(a:cols,'\V' . trim(x)) == -1})
-    if len(selectStr) > 0 || len(orderStr) > 0 || len(groupStr) > 0
+    let parseSQL.select=data.getMaintype('SELECT')
+    let parseSQL.table=s:getTableName(a:sql,'')
+    let parseSQL.from=data.getMaintype('FROM')
+    let parseSQL.ijoin=data.getMaintype('JOIN')
+    let parseSQL.where=data.getMaintype('WHERE')
+    let parseSQL.group=data.getMaintype('GROUP')
+    let parseSQL.order=data.getMaintype('ORDER')
+    let parseSQL.having=data.getMaintype('HAVING')
+    if len(data.getNotMaintype('\v\c<(select|from|join|where|group|order|having)>')) > 0
         return {}
     endif
     call s:debugLog(string(parseSQL))
-    return map(filter(parseSQL,{_,x -> trim(x[1]) !=# ''}),{_,x -> x[0] . trim(x[1])})
+    return parseSQL
 endfunction
 
 let s:hardparseDict = {}
@@ -2426,7 +2428,7 @@ function! dbiclient#parseSQL2(sql) abort
         while index > 0
             let index -= 1
             let val = a:data[index]
-            if val[1] !=# 'whitespace' && val[1] !=# 'CR'
+            if val[1] !=# 'whitespace' && val[1] !=# 'CR' 
                 if val[0] =~? '\v\c^(<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'
                     return index
                 else
@@ -2437,8 +2439,12 @@ function! dbiclient#parseSQL2(sql) abort
         return -1
     endfunction
 
+    function! s:getNotMaintype(data,mtype)
+        return filter(a:data[:],{_,x -> x[0] !~? a:mtype})
+    endfunction
+
     function! s:getMaintype(data,mtype)
-        return filter(a:data[:],{_,x -> x[0] ==# a:mtype})
+        return filter(a:data[:],{_,x -> x[0] =~? a:mtype})
     endfunction
 
     function! s:getSql(data)
@@ -2450,7 +2456,7 @@ function! dbiclient#parseSQL2(sql) abort
     endfunction
 
     function! s:splitSql2(data,delim)
-        let type = a:delim ==# ';' ? 'semicolon' : a:delim ==# '/' ? 'slash' : ''
+        let type = a:delim ==# g:dbiclient_sql_delimiter1 ? 'semicolon' : a:delim ==# g:dbiclient_sql_delimiter2 ? 'slash' : ''
         let indexes = filter(map(a:data[:],{i,x -> x[1] ==# type ? i : ''}),{_,x -> x != ''})
         let ret = []
         let start = 0
@@ -2475,6 +2481,10 @@ function! dbiclient#parseSQL2(sql) abort
 
     function dic.getMaintype(mtype)
         return s:getSqlLineDelComment2(s:getMaintype(self.data,a:mtype))
+    endfunction
+
+    function dic.getNotMaintype(mtype)
+        return s:getSqlLineDelComment2(s:getNotMaintype(self.data,a:mtype))
     endfunction
 
     function dic.splitSql(delim)
@@ -2519,8 +2529,12 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
         let nntoken = index >=# len(tokenList) - 2 ? '' : tokenList[index + 2]
         let loopflg = sqflg + qqflg + dqflg + cmt1flg + cmt2flg
 
-        if !loopflg && token =~ '\v\c^(<with>|<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
-            let maintype = toupper(token)
+        if !loopflg && token =~ '\v\c^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
+            if maintype =~ '\v\c<select>' && token !~ '\v\c<from>'
+                let maintype = maintype
+            else
+                let maintype = toupper(token)
+            endif
         endif
         if !loopflg && token =~ '\v\c^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'
             let maintype = 'JOIN'
@@ -2594,9 +2608,9 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
             let type = 'bracket'
         elseif str =~ '\v^(--)|#|\/\*'
             let type = 'comment'
-        elseif str ==# ';'
+        elseif str ==# g:dbiclient_sql_delimiter1
             let type = 'semicolon'
-        elseif str ==# '/'
+        elseif str ==# g:dbiclient_sql_delimiter2
             let type = 'slash'
         elseif str =~ '\v\n'
             let type = 'CR'
@@ -2620,7 +2634,7 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
 endfunction
 
 function! s:extendquery(alignFlg,extend) abort
-    let [select,ijoin,where,order,group] = [get(a:extend,'select',''),get(a:extend,'ijoin',''),get(a:extend,'where',''),get(a:extend,'order',''),get(a:extend,'group','')]
+    let [select,from,ijoin,where,order,group,having] = [get(a:extend,'select',''),get(a:extend,'from',''),get(a:extend,'ijoin',''),get(a:extend,'where',''),get(a:extend,'order',''),get(a:extend,'group',''),get(a:extend,'having','')]
     let port = s:getPort()
     if s:error2CurrentBuffer(port)
         return
@@ -2628,32 +2642,30 @@ function! s:extendquery(alignFlg,extend) abort
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
     let limitrows = dbiclient_bufmap.data.limitrows
-    let sql = dbiclient_bufmap.data.sql
-    let dblink = s:getDblinkName(sql)
-    if dblink !=# ''
-        let dblink = '@' . dblink
-    endif
-    if sql =~? '\v\/\*PRESQL\*\/\zs\_.{-}\ze\/\*PRESQL\*\/'
-        let sql = matchstr(sql,'\v\/\*PRESQL\*\/\s*\zs\_.{-}\ze\s*\/\*PRESQL\*\/')
-    endif
-    let sql = substitute(sql,'\v\_^(\r\n|\r|\n)+','','')
-    let sql = substitute(sql,'\v(\r\n|\r|\n)+\_$','','')
-    let select = select ==# '' ? '*' : select
-    let asTableNm = get(get(dbiclient_bufmap.data,'tableJoinNmWithAs',[]),0).AS
+    "let sql = dbiclient_bufmap.data.sql
+    "let dblink = s:getDblinkName(sql)
+    "if dblink !=# ''
+    "    let dblink = '@' . dblink
+    "endif
+    "if sql =~? '\v\/\*PRESQL\*\/\zs\_.{-}\ze\/\*PRESQL\*\/'
+    "    let sql = matchstr(sql,'\v\/\*PRESQL\*\/\s*\zs\_.{-}\ze\s*\/\*PRESQL\*\/')
+    "endif
+    "let sql = substitute(sql,'\v\_^(\r\n|\r|\n)+','','')
+    "let sql = substitute(sql,'\v(\r\n|\r|\n)+\_$','','')
+    let select = trim(select) ==# '' ? 'SELECT *' : select
+    "let asTableNm = get(get(dbiclient_bufmap.data,'tableJoinNmWithAs',[]),0).AS
     "let asTableNm = asTableNm == '' ? 'T' : asTableNm
-    if get(dbiclient_bufmap.data,'single_table','') ==# ''
-        let sql = 'SELECT ' . select . "\n" . 'FROM (/*PRESQL*/ ' . "\n" . sql . "\n" . ' /*PRESQL*/) ' . "\n" . join(filter([where, group, order],{_,x -> trim(x) !=# ''}),"\n")
-    else
-        let sql = 'SELECT ' . select . "\n" . 'FROM ' . get(dbiclient_bufmap.data,'single_table','') . dblink . ' ' . asTableNm . "\n" . join(filter([ijoin,where, group, order],{_,x -> trim(x) !=# ''}),"\n")
-    endif
+    let sql = join(filter(split(join([select,from,ijoin,where, group,having, order],"\n"),"\n"),{_,x -> trim(x) != ''}),"\n")
     let opt = dbiclient_bufmap.opt
     "let opt.where = get(dbiclient_bufmap,'where',[])
     let opt.extend={}
     let opt.extend.select = select
+    let opt.extend.from = from
     let opt.extend.ijoin = ijoin
     let opt.extend.where = where
     let opt.extend.order = order
     let opt.extend.group = group
+    let opt.extend.having = having
     let dbiclient_bufmap.data.sql = sql
     call setbufvar(dbiclient_bufmap.data.reloadBufnr,'dbiclient_bufmap',dbiclient_bufmap)
     call s:reload(dbiclient_bufmap.data.reloadBufnr)
@@ -2720,6 +2732,7 @@ function! s:order() abort
         endif
         let selectdict = getbufvar(bufnr,'selectdict',{})
         let selectdictAscDesc = getbufvar(bufnr,'selectdictAscDesc',{})
+        let selectUnmatchCols = getbufvar(bufnr,'selectUnmatchCols',[])
         let selectdictstr = getbufvar(bufnr,'selectdictstr',{})
         if empty(selectdict)
             let dbiclient_bufmap.opt.extend.order = ''
@@ -2732,6 +2745,7 @@ function! s:order() abort
         let dbiclient_bufmap.opt.order.selectdict = selectdict
         let dbiclient_bufmap.opt.order.selectdictstr = selectdictstr
         let dbiclient_bufmap.opt.order.selectdictAscDesc = selectdictAscDesc
+        let dbiclient_bufmap.opt.order.selectUnmatchCols = selectUnmatchCols
         let extend = dbiclient_bufmap.opt.extend
         call s:extendquery(a:alignFlg,extend)
     endfunction
@@ -2774,18 +2788,20 @@ function! s:select() abort
         endif
         let selectdict = getbufvar(bufnr,'selectdict',{})
         let selectdictAscDesc = getbufvar(bufnr,'selectdictAscDesc',{})
+        let selectUnmatchCols = getbufvar(bufnr,'selectUnmatchCols',[])
         let selectdictstr = getbufvar(bufnr,'selectdictstr',{})
         if empty(selectdict)
             let dbiclient_bufmap.opt.extend.select = ''
         else
             let list1 = s:selectValues(selectdict)
-            let select = join(list1,",")
+            let select = 'SELECT ' . join(list1,",")
             let dbiclient_bufmap.opt.extend.select = select
         endif
         let dbiclient_bufmap.opt.select = {}
         let dbiclient_bufmap.opt.select.selectdict = selectdict
         let dbiclient_bufmap.opt.select.selectdictstr = selectdictstr
         let dbiclient_bufmap.opt.select.selectdictAscDesc = selectdictAscDesc
+        let dbiclient_bufmap.opt.select.selectUnmatchCols = selectUnmatchCols
         let extend = dbiclient_bufmap.opt.extend
         call s:extendquery(a:alignFlg,extend)
     endfunction
@@ -2821,20 +2837,22 @@ function! s:group() abort
         endif
         let selectdict = getbufvar(bufnr,'selectdict',{})
         let selectdictAscDesc = getbufvar(bufnr,'selectdictAscDesc',{})
+        let selectUnmatchCols = getbufvar(bufnr,'selectUnmatchCols',[])
         let selectdictstr = getbufvar(bufnr,'selectdictstr',{})
         if empty(selectdict)
             let dbiclient_bufmap.opt.extend.group = ''
-            let dbiclient_bufmap.opt.extend.select = ''
         else
             let list1 = s:selectValues(selectdict)
             let group = 'GROUP BY ' . join(list1,",")
             let dbiclient_bufmap.opt.extend.group = group
-            let dbiclient_bufmap.opt.extend.select = join(list1, ',')
+            let select = 'SELECT ' . join(list1,",")
+            let dbiclient_bufmap.opt.extend.select = select
         endif
         let dbiclient_bufmap.opt.group = {}
         let dbiclient_bufmap.opt.group.selectdict = selectdict
         let dbiclient_bufmap.opt.group.selectdictstr = selectdictstr
         let dbiclient_bufmap.opt.group.selectdictAscDesc = selectdictAscDesc
+        let dbiclient_bufmap.opt.group.selectUnmatchCols = selectUnmatchCols
         let extend = dbiclient_bufmap.opt.extend
         call s:extendquery(a:alignFlg,extend)
     endfunction
@@ -3282,7 +3300,7 @@ function! s:selectValues(selectdict) abort
     let bufnr = s:bufnr('%')
     let selectdictAscDesc = getbufvar(bufnr,'selectdictAscDesc',0)
     let list = sort(items(a:selectdict),{x,y -> x[1] ==# y[1] ? 0 : x[1] > y[1] ? 1 : -1})
-    return map(map(list,{_,x->[x[1],x[0]]}),{_,x-> ((strdisplaywidth(x[1]) ==# len(x[1]) && trim(x[1]) !~# ' ') ? x[1] : '"' . x[1] . '"') . (selectdictAscDesc[x[1]] ? ' DESC' : '')})
+    return map(map(list,{_,x->[x[1],x[0]]}),{_,x-> x[1] . (selectdictAscDesc[x[1]] ? ' DESC' : '')})
 endfunction
 
 function! s:SelectLines(orderFlg) range abort
@@ -3309,6 +3327,7 @@ function! s:SelectLineOrder(line) abort
     let str = getbufline(bufnr,line)[0]
     let selectdict = getbufvar(bufnr,'selectdict',{})
     let selectdictAscDesc = getbufvar(bufnr,'selectdictAscDesc',{})
+    let selectUnmatchCols = getbufvar(bufnr,'selectUnmatchCols',[])
     let selectdictstr = getbufvar(bufnr,'selectdictstr',{})
     if str !~# '\v^(\[ASC\]|\[DESC\])'
         let selectdict[str] = max(selectdict)+1
@@ -3339,13 +3358,14 @@ function! s:SelectLineOrder(line) abort
     call s:deletebufline(bufnr,1,'$')
     call s:appendbufline(bufnr,'$',map(lines, {_,x -> substitute(x,'\v^(\[ASC\]|\[DESC\])+[0-9]+\s','','')}))
     for [key,val] in items(selectdictstr)
-        call s:setbufline(bufnr,searchpos('^' . key . '$','cn')[0],val)
+        call s:setbufline(bufnr,searchpos('^\V' . key . '\v$','cn')[0],val)
     endfor
     call s:f.readonly(bufnr)
     call setbufvar(bufnr,'dbiclient_matches',matchadds)
     call setbufvar(bufnr,'selectdict',selectdict)
     call setbufvar(bufnr,'selectdictstr',selectdictstr)
     call setbufvar(bufnr,'selectdictAscDesc',selectdictAscDesc)
+    call setbufvar(bufnr,'selectUnmatchCols',selectUnmatchCols)
     call s:sethl(bufnr)
     call setpos('.', save_cursor)
 endfunction
@@ -3361,6 +3381,7 @@ function! s:SelectLine(line) abort
     let str = getbufline(bufnr,line)[0]
     let selectdict = getbufvar(bufnr,'selectdict',{})
     let selectdictAscDesc = getbufvar(bufnr,'selectdictAscDesc',{})
+    let selectUnmatchCols = getbufvar(bufnr,'selectUnmatchCols',[])
     let selectdictstr = getbufvar(bufnr,'selectdictstr',{})
     if str !~# '^[*]'
         let selectdict[str] = max(selectdict)+1
@@ -3386,13 +3407,14 @@ function! s:SelectLine(line) abort
     call s:deletebufline(bufnr,1,'$')
     call s:appendbufline(bufnr,'$',map(lines, {_,x -> substitute(x,'\v^[*]+[0-9]+\s','','')}))
     for [key,val] in items(selectdictstr)
-        call s:setbufline(bufnr,searchpos('^' . key . '$','cn')[0],val)
+        call s:setbufline(bufnr,searchpos('^\V' . key . '\v$','cn')[0],val)
     endfor
     call s:f.readonly(bufnr)
     call setbufvar(bufnr,'dbiclient_matches',matchadds)
     call setbufvar(bufnr,'selectdict',selectdict)
     call setbufvar(bufnr,'selectdictstr',selectdictstr)
     call setbufvar(bufnr,'selectdictAscDesc',selectdictAscDesc)
+    call setbufvar(bufnr,'selectUnmatchCols',selectUnmatchCols)
     call s:sethl(bufnr)
     call setpos('.', save_cursor)
 endfunction
@@ -3405,7 +3427,7 @@ function! s:selectExtends(bufname,orderflg,dict) abort
     call add(matchadds,['Comment','\v^(\[ASC\]|\[DESC\]).*'])
     let dbiclient_bufmap = getbufvar(curbufnr,'dbiclient_bufmap',{})
     let opt = get(dbiclient_bufmap,'opt',{})
-    let cols = get(dbiclient_bufmap.data,'cols',[])[:]
+    let cols = extend(get(dbiclient_bufmap.data,'cols',[])[:],get(a:dict,'selectUnmatchCols',[]))
     if has_key(a:dict,'selectdict')
         let list=[]
         for key in cols
@@ -3428,6 +3450,7 @@ function! s:selectExtends(bufname,orderflg,dict) abort
     call setbufvar(bufnr,'selectdict',get(a:dict,'selectdict',{}))
     call setbufvar(bufnr,'selectdictstr',get(a:dict,'selectdictstr',{}))
     call setbufvar(bufnr,'selectdictAscDesc',get(a:dict,'selectdictAscDesc',{}))
+    call setbufvar(bufnr,'selectUnmatchCols',get(a:dict,'selectUnmatchCols',[]))
     call s:sethl(bufnr)
     norm gg
 endfunction
