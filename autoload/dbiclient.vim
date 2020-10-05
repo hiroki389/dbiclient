@@ -2458,16 +2458,16 @@ function! dbiclient#parseSQL2(sql) abort
     function! s:splitSql2(data,delim)
         let type = a:delim ==# g:dbiclient_sql_delimiter1 ? 'semicolon' : a:delim ==# g:dbiclient_sql_delimiter2 ? 'slash' : ''
         let indexes = filter(map(a:data[:],{i,x -> x[1] ==# type ? i : ''}),{_,x -> x != ''})
+        call add(indexes,0)
         let ret = []
         let start = 0
-        if empty(indexes)
-            call add(ret,s:getSql(a:data))
-        else
-            for i in indexes
-                call add(ret,s:getSql(a:data[start:i-1]))
-                let start = i+1
-            endfor
-        endif
+        for i in indexes
+            let sql = s:getSql(a:data[start:i-1])
+            if !empty(trim(sql))
+                call add(ret,sql)
+            endif
+            let start = i+1
+        endfor
         return ret
     endfunction
 
