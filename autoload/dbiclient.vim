@@ -1800,10 +1800,22 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         if !updateColsFlg && !empty(get(dbiclient_bufmap.opt,'where',[]))
             let where = dbiclient_bufmap.opt.where[:]
         endif
-        let extendWhere = substitute(get(dbiclient_bufmap.opt.extend,'where',''),'\v\c^\s*<where>\s*','','')
-        call filter(where,{i,x -> !(i ==# 0 && x =~? '\v^\s*\(')})
-        if !empty(extendWhere)
-            call insert(where,'(' . matchstr(extendWhere,'\v^\s*\(\zs.*\ze\)\s*$|^\s*\zs.*\ze\s*$') . ')',0)
+
+        let parseSQLwhere = substitute(substitute(dbiclient#parseSQL2(a:dict.data.sql).getMaintype('WHERE'),'\v\c^\s*<where>\s*','',''),'\n',' ','g')
+        let parseSQLwhereList = []
+        if parseSQLwhere !~? '\v\c(<or>)'
+            let parseSQLwhereList = map(split(parseSQLwhere, '\v\c<and>'), {_,x -> map(split(trim(x),'\v\c\ze(\=|<in>|<between>)'),{_,xx -> trim(xx)})})
+            let parseSQLwhereDict = s:f2.Foldl({x,y -> extend(x,y)},{},map(parseSQLwhereList, {i,xx -> get(xx,1,'') ==# '' ? {} : {get(xx,0,'') : get(xx,1,'')}}))
+        endif
+        if !empty(parseSQLwhereList) && len(parseSQLwhereList) ==# len(items(parseSQLwhereDict))
+            let where = map(where, {_,x -> has_key(parseSQLwhereDict,matchstr(x,'\v^.{-}\ze\s*\|')) ? matchstr(x,'\v^.{-}\s*\|\s*') . get(parseSQLwhereDict,matchstr(x,'\v^.{-}\ze\s*\|'),'') : x})
+        else
+            let extendWhere = substitute(get(dbiclient_bufmap.opt.extend,'where',''),'\v\c^\s*<where>\s*','','')
+
+            call filter(where,{i,x -> !(i ==# 0 && x =~? '\v^\s*\(')})
+            if !empty(extendWhere)
+                call insert(where,'(' . matchstr(extendWhere,'\v^\s*\(\zs.*\ze\)\s*$|^\s*\zs.*\ze\s*$') . ')',0)
+            endif
         endif
 
         let dbiclient_bufmap.opt.ijoin = ijoin
@@ -2404,11 +2416,15 @@ function! s:parseSQL(sql,cols) abort
     let parseSQL.group=data.getMaintype('GROUP')
     let parseSQL.order=data.getMaintype('ORDER')
     let parseSQL.having=data.getMaintype('HAVING')
-    if len(data.getNotMaintype('\v\c<(select|from|join|where|group|order|having)>')) > 0
+    if len(data.getNotMaintype('\v\c<(nop|select|from|join|where|group|order|having)>')) > 0
         return {}
     endif
     call s:debugLog(string(parseSQL))
     return parseSQL
+endfunction
+
+function! dbiclient#getHardparseDict() abort
+    return s:hardparseDict
 endfunction
 
 let s:hardparseDict = {}
@@ -2517,7 +2533,7 @@ function! s:parseSqlLogicR(tokenList,index,subflg) abort
     let loopflg = 0
     let loopcnt = 0
     let type = ''
-    let maintype = ''
+    let maintype = 'NOP'
     let index = a:index
     let loopindex = 0
     let token = ''
