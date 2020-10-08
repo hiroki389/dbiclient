@@ -1019,7 +1019,7 @@ function! s:selectRangeSQL(delim,alignFlg,limitrows) range abort
     let defineKeys = join(uniq(sort(keys(defineDict))),'|')
 
     let sqllist = s:splitSql(sqllist, a:delim)
-    let sqllist = map(sqllist,{_,x -> substitute(x,'\v\c\&\&' . defineKeys . '\.?' ,'\=get(defineDict,matchstr(submatch(0),''\v\c\&\&\zs[[:alnum:]_]+\ze\.?''), submatch(0))','g')})
+    let sqllist = map(sqllist,{_,x -> substitute(x,'\v\c\&\&' . defineKeys . '\.?' ,{m -> get(defineDict,matchstr(m[0],'\v\c\&\&\zs[[:alnum:]_]+\ze\.?'), m[0])},'g')})
     let channellist=[]
     let cnt = 0
 
@@ -1077,7 +1077,7 @@ function! s:dBExecRangeSQLDo(delim,bang) range abort
     let defineKeys = join(uniq(sort(keys(defineDict))),'|')
 
     let sqllist = s:splitSql(sqllist, a:delim)
-    let sqllist = map(sqllist,{_,x -> substitute(x,'\v\c\&\&' . defineKeys . '\.?' ,'\=get(defineDict,matchstr(submatch(0),''\v\c\&\&\zs[[:alnum:]_]+\ze\.?''), submatch(0))','g')})
+    let sqllist = map(sqllist,{_,x -> substitute(x,'\v\c\&\&' . defineKeys . '\.?' ,{m -> get(defineDict,matchstr(m[0],'\v\c\&\&\zs[[:alnum:]_]+\ze\.?'), m[0])},'g')})
     "echom 'test2'
     call s:dBCommandAsync({"doText":list[:],"do":sqllist,"continue":(a:bang ==# '!' ? 1 : 0)},'s:cb_do',a:delim,port)
 endfunction
@@ -1695,9 +1695,11 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
                 let tableRemarks = remarks
             endif
             if empty(tableRemarks)
-                call extend(matchadds,s:appendbufline(bufnr,'$',[a:dict.data.tableJoinNm],'Identifier'))
+                call s:appendbufline(bufnr,'$',[a:dict.data.tableJoinNm])
+                call add(matchadds,['Identifier','\v%' . (s:endbufline(bufnr)) . 'l\V' . a:dict.data.tableJoinNm])
             else
-                call extend(matchadds,s:appendbufline(bufnr,'$',[a:dict.data.tableJoinNm . ' (' . tableRemarks . ')'],'Identifier'))
+                call s:appendbufline(bufnr,'$',[a:dict.data.tableJoinNm . ' (' . tableRemarks . ')'])
+                call add(matchadds,['Identifier','\v%' . (s:endbufline(bufnr)) . 'l\V' . a:dict.data.tableJoinNm . ' (' . tableRemarks . ')'])
             endif
             call add(disableline,s:endbufline(bufnr))
         endif
@@ -1712,8 +1714,8 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
                     call add(disableline,s:endbufline(bufnr))
                     let dbiclient_remarks_flg = 1
                     if len(head) > 0
-                        let matchkeys = head[:]
-                        call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l' . '(' . join(map(sort(matchkeys,{x,y -> len(x) ==# len(y) ? 0 : len(x) < len(y) ? 1 : -1}),{_,x -> '<\V' . x . '\v>'}),'|') . ')'])
+                        call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l^.*$'])
+                        call add(matchadds,['Delimiter','\v%' . (s:endbufline(bufnr)) . 'l\V' . g:dbiclient_col_delimiter_align])
                     endif
                     if !empty(get(a:dict,'maxcols',[]))
                         call map(a:dict.maxcols,{i,size -> strdisplaywidth(head[i]) > size ? strdisplaywidth(head[i]) : size})
@@ -1727,8 +1729,8 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
             endif
             call add(disableline,s:endbufline(bufnr))
             if len(cols) > 0
-                let matchkeys = cols[:]
-                call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l' . '(' . join(map(sort(matchkeys,{x,y -> len(x) ==# len(y) ? 0 : len(x) < len(y) ? 1 : -1}),{_,x -> '<\V' . x . '\v>'}),'|') . ')'])
+                call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l^.*$'])
+                call add(matchadds,['Delimiter','\v%' . (s:endbufline(bufnr)) . 'l\V' . g:dbiclient_col_delimiter_align])
             endif
             if len(get(a:dict,'primary_key',[])) > 0
                 let matchkeys = get(a:dict,'primary_key',[])[:]
@@ -3503,7 +3505,7 @@ function! s:endbufline(bufnr) abort
     return line('$',winid)
 endfunction
 
-function! s:appendbufline(bufnr,line,list,...) abort
+function! s:appendbufline(bufnr,line,list) abort
     let winid = s:f.getwid(a:bufnr)
     "let old_undolevels = &undolevels
     "setl undolevels=-1
@@ -3516,13 +3518,7 @@ function! s:appendbufline(bufnr,line,list,...) abort
     endif
     "silent! call s:deletebuflineOfFilter(a:bufnr, '^$')
     "let &undolevels = old_undolevels
-    let matchadds=[]
-    if a:0 ==# 1
-        for val in a:list
-            call add(matchadds,[a:1,'\v%' . (s:endbufline(a:bufnr)) . 'l' . '^\V'.escape(val,'/') . '\v$'])
-        endfor
-    endif
-    return matchadds
+    return
 endfunction
 
 function! s:readfile(file) abort
@@ -3751,3 +3747,4 @@ let &cpo = s:cpo_save
 unlet s:cpo_save
 
 " vim:fdm=marker:nowrap:ts=4:expandtab:
+
