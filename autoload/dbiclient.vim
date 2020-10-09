@@ -585,6 +585,9 @@ function! s:createUpdate(vallist,beforevallist,tableNm,port) abort
     if a:tableNm ==# ""
         return []
     endif
+    if len(a:beforevallist) < len(a:vallist)
+        return []
+    endif
     let result=[]
     let i=0
     for items in a:vallist
@@ -1714,8 +1717,8 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
                     call add(disableline,s:endbufline(bufnr))
                     let dbiclient_remarks_flg = 1
                     if len(head) > 0
-                        call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l^.*$'])
-                        call add(matchadds,['Delimiter','\v%' . (s:endbufline(bufnr)) . 'l\V' . g:dbiclient_col_delimiter_align])
+                        "call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l^.*$'])
+                        "call add(matchadds,['Delimiter','\v%' . (s:endbufline(bufnr)) . 'l\V' . g:dbiclient_col_delimiter_align])
                     endif
                     if !empty(get(a:dict,'maxcols',[]))
                         call map(a:dict.maxcols,{i,size -> strdisplaywidth(head[i]) > size ? strdisplaywidth(head[i]) : size})
@@ -1724,18 +1727,20 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
             endif
             let colsstr = join(cols,"\t")
             call s:appendbufline(bufnr,'$',[colsstr])
+            call add(disableline,s:endbufline(bufnr))
             if dbiclient_col_line ==# -1
                 let dbiclient_col_line = s:endbufline(bufnr)
             endif
-            call add(disableline,s:endbufline(bufnr))
             if len(cols) > 0
-                call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l^.*$'])
-                call add(matchadds,['Delimiter','\v%' . (s:endbufline(bufnr)) . 'l\V' . g:dbiclient_col_delimiter_align])
+                "call add(matchadds,['Type','\v%' . (s:endbufline(bufnr)) . 'l^.*$'])
+                "call add(matchadds,['Delimiter','\v%' . (s:endbufline(bufnr)) . 'l\V' . g:dbiclient_col_delimiter_align])
             endif
             if len(get(a:dict,'primary_key',[])) > 0
                 let matchkeys = get(a:dict,'primary_key',[])[:]
                 call add(matchadds,['Title','\v%' . (s:endbufline(bufnr)) . 'l' . '(' . join(map(sort(matchkeys,{x,y -> len(x) ==# len(y) ? 0 : len(x) < len(y) ? 1 : -1}),{_,x -> '<\V' . x . '\v>'}),'|') . ')'])
             endif
+            call s:appendbufline(bufnr,'$',['-'])
+            call add(disableline,s:endbufline(bufnr))
         endif
         if get(a:dict.data,'column_info',0) ==# 1
             if len(get(a:dict,'primary_key',[])) > 0
@@ -1802,13 +1807,15 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
         endif
 
         let parseSQLwhere = substitute(substitute(dbiclient#parseSQL2(a:dict.data.sql).getMaintype('WHERE'),'\v\c^\s*<where>\s*','',''),'\n',' ','g')
-        let parseSQLwhereList = []
+        let andlist = []
         if parseSQLwhere !~? '\v\c(<or>)'
-            let parseSQLwhereList = map(split(parseSQLwhere, '\v\c<and>'), {_,x -> map(split(trim(x),'\v\c\ze(\=|<in>|<between>)'),{_,xx -> trim(xx)})})
-            let parseSQLwhereDict = s:f2.Foldl({x,y -> extend(x,y)},{},map(parseSQLwhereList, {i,xx -> get(xx,1,'') ==# '' ? {} : {get(xx,0,'') : get(xx,1,'')}}))
+            let andlist = split(parseSQLwhere, '\v\c<and>')
+            let colsRegex = '\v\c^\s*(' . join(map(cols[:],{_,x -> '<\V' . x}),'\v>|') . '\v)\zs'
+            let parseSQLwhereList = map(andlist[:], {_,x -> map(split(trim(x), colsRegex),{_,xx -> trim(xx)})})
+            let parseSQLwhereDict = s:f2.Foldl({x,y -> extend(x,y)},{},map(parseSQLwhereList, {i,xx -> get(xx,1,'') ==# '' ? {} : {toupper(get(xx,0,'')) : get(xx,1,'')}}))
         endif
-        if !empty(parseSQLwhereList) && len(parseSQLwhereList) ==# len(items(parseSQLwhereDict))
-            let where = map(where, {_,x -> has_key(parseSQLwhereDict,matchstr(x,'\v^.{-}\ze\s*\|')) ? matchstr(x,'\v^.{-}\s*\|\s*') . get(parseSQLwhereDict,matchstr(x,'\v^.{-}\ze\s*\|'),'') : x})
+        if !empty(andlist) && len(andlist) ==# len(items(parseSQLwhereDict))
+            let where = map(where, {_,x -> has_key(parseSQLwhereDict, toupper(matchstr(x,'\v^.{-}\ze\s*\|'))) ? matchstr(x,'\v^.{-}\s*\|\s*') . get(parseSQLwhereDict,toupper(matchstr(x,'\v^.{-}\ze\s*\|')),'') : x})
         else
             let extendWhere = substitute(get(dbiclient_bufmap.opt.extend,'where',''),'\v\c^\s*<where>\s*','','')
 
@@ -2078,11 +2085,17 @@ function! s:align(alignFlg,bufnr, preCr) abort
         else
             let lines = s:getalignlist(dbiclient_lines_tmp)
         endif
+        let headstr = get(lines,0,'')
+        let border = join(map(split(headstr,g:dbiclient_col_delimiter_align),{_,x -> repeat('-', strdisplaywidth(x))}),'+')
     else
         let surr='\V'
         let dbiclient_lines_tmp = map(dbiclient_lines_tmp, {_,line -> substitute(substitute(line, surr . a:preCr . '\v|\V' . a:preCr . surr,'','g'), s:tab_placefolder, "\t", 'g')})
         let lines = dbiclient_lines_tmp
+        let headstr = get(lines,0,'')
+        let border = join(map(split(headstr,'\t'),{_,x -> repeat('-', strdisplaywidth(x))}),"\t")
     endif
+    call remove(lines,1)
+    call insert(lines,border,1)
     call s:appendbufline(bufnr,'$',lines)
     if dbiclient_bufmap.alignFlg
         "call s:f.readonly(bufnr)
@@ -3192,6 +3205,9 @@ function! s:getParams() abort
 endfunction
 
 function! s:getTableNameSchem(port) abort
+    if s:isDisableline()
+        return ''
+    endif
     let bufnr = s:bufnr('%')
     let remarkrow = getbufvar(bufnr,'dbiclient_remarks_flg',0)
     let dbiclient_col_line = getbufvar(bufnr,'dbiclient_col_line',0) - remarkrow
