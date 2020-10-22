@@ -18,6 +18,7 @@ let s:dbi_job_port=-1
 let s:limitrows = 1000
 let s:jobs={}
 let s:params={}
+let s:hardparseDict = {}
 let s:shadowpass=''
 let s:msg={
             \ 'EO01':'The specified buffer was not found.'
@@ -247,6 +248,10 @@ function! dbiclient#createTestdata(tableNm) abort
     let res .= join(map(cols,{i,x -> "'" . get(g:dbiclient_testdata_fixedmap,x,i) . "'" }),',')
     let res .= ");"
     return res
+endfunction
+
+function! dbiclient#getHardparseDict() abort
+    return s:hardparseDict
 endfunction
 
 function! s:debugLog(msg) abort
@@ -515,9 +520,11 @@ function! s:doDeleteInsert() abort
     if s:error1CurrentPort() || s:error3()
         return
     endif
-    let offset = getbufvar(s:bufnr('%'),'dbiclient_col_line',0)
-    let list = getline(offset+1, '$')
-    let dbiclient_bufmap = getbufvar(s:bufnr('%'),'dbiclient_bufmap',{})
+    let bufnr = s:bufnr('%')
+    let remarkrow = getbufvar(bufnr,'dbiclient_remarks_flg',0)
+    let dbiclient_col_line = getbufvar(bufnr,'dbiclient_col_line',0) - remarkrow
+    let list = getline(dbiclient_col_line + 2, '$')
+    let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
     if dbiclient_bufmap.alignFlg
         let list = map(list,{_,line -> join(map(split(line,g:dbiclient_col_delimiter_align),{_,x -> trim(x)}),g:dbiclient_col_delimiter)})
     endif
@@ -1095,7 +1102,7 @@ function! s:splitSql(sqllist,delim) abort
     let delim = a:delim
     let list = filter(list,{_,x -> trim(x) !=# ''})
     let sql = join(list,"\n")
-    return dbiclient#parseSQL2(sql).splitSql(delim)
+    return s:parseSQL2(sql).splitSql(delim)
 endfunction
 
 function! s:getQuerySync(sql,callback,limitrows,opt,port) abort
@@ -1442,84 +1449,80 @@ function! s:cb_do(ch,dict) abort
     let bufnr = s:bufnr(get(get(a:dict,'data',{}),'reloadBufnr',-1))
     let ro = getbufvar(bufnr, '&readonly', 0)
     let matchadds=[]
-    if type(a:dict) ==# v:t_dict
-        if has_key(a:dict,'commit')
-            if get(a:dict,"status",9) ==# 1
-                call s:echoMsg('IO13')
-            endif
-        elseif has_key(a:dict,'rollback')
-            if get(a:dict,"status",9) ==# 1
-                call s:echoMsg('IO14')
-            endif
-        else
-            let ymdhms = strftime("%Y%m%d%H%M%S",localtime())
-            let bufname = get(a:dict.data,'reloadBufname','')
-            if get(a:dict,'restoreFlg',0) ==# 1
-                let bufnr = s:bufnr(bufname)
-                "let bufname = bufname . '_HISTORY_PREVIEW'
-            endif
-            if s:f.getwid(bufnr) ==# -1
-                let bufnr = s:newBuffer(bufname)
-                let a:dict.data.reloadBufnr = bufnr
-                call s:nmap(get(g:,'dbiclient_nmap_do_PR',s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
-                call add(s:bufferList,bufnr)
-            else
-                call s:f.noreadonly(bufnr)
-                call s:deletebufline(bufnr,1,'$')
-                call setbufvar(bufnr,'dbiclient_bufmap',{})
-                call setbufvar(bufnr,'dbiclient_col_line',0)
-                call setbufvar(bufnr,'dbiclient_header',[])
-                call setbufvar(bufnr,'dbiclient_lines',[])
-                call setbufvar(bufnr,'dbiclient_matches',[])
-            endif
-            let status = s:getStatus(port,connInfo)
-            let tupleList = []
-            let msgList = []
-            call add(msgList, ['PID', '=' . get(connInfo,'process','')])
-            call add(msgList, ['PORT', '=' . port])
-            call add(msgList, ['SCHEMA', '=' . s:getuser(connInfo)])
-            call add(msgList, ['DSN', '=' . s:getdsn(connInfo.dsn)])
-            call add(msgList, ['STATUS', '=' . (connInfo.port ==# s:getCurrentPort() ? status . '*' : status)])
-            call add(tupleList, s:Tuple('"Connection info',msgList))
-            let msgList = []
-            call add(msgList, ['COUNT', '=' . get(a:dict,'cnt',-1)])
-            call add(msgList, ['START', '=' . get(a:dict,'startdate','')])
-            call add(msgList, ['END', '=' . get(a:dict,'enddate','')])
-            call add(msgList, ['SQL', '=' . get(a:dict,'sqltime',0) . 'ms'])
-            call add(tupleList, s:Tuple('"Response info',msgList))
-            let msgList = []
-            call add(msgList, [get(g:,'dbiclient_nmap_do_PR',s:nmap_do_PR), ':' . 'SQL_PREVIEW'])
-            call add(tupleList, s:Tuple('"Quick Help<nmap>',msgList))
-            call setbufvar(bufnr,'dbiclient_tupleList',tupleList)
-            let maxsize = max(map(deepcopy(tupleList),{_,x -> len(x.Get1())}))
-            for tuple in tupleList
-                let info = tuple.Get1() . (repeat(' ', maxsize - len(tuple.Get1())) . ' :')
-                let info .= s:f2.Foldl({x,y -> x . y},"",map(tuple.Get2(),{_,val -> ' [' . val[0] . val[1] . ']'}))
-                call s:appendbufline(bufnr,'$',[info])
-            endfor
-            call add(matchadds,['Comment','\v%1l^".{-}:'])
-            call add(matchadds,['Comment','\v%2l^".{-}:'])
-            call add(matchadds,['String','\v%1l^".{-}:\zs.*$'])
-            call add(matchadds,['String','\v%2l^".{-}:\zs.*$'])
-            call add(matchadds,['Function','\v%1l( \[)@<=.{-}(\=)@='])
-            call add(matchadds,['Function','\v%2l( \[)@<=.{-}(\=)@='])
-            call add(matchadds,['Comment','\v%3l^".{-}:'])
-            call add(matchadds,['String','\v%3l^".{-}:\zs.*$'])
-            call add(matchadds,['Function','\v%3l( \[)@<=.{-}(\:)@='])
-            let i = 0
-            let strlines = s:readfile(a:dict.data.tempfile)
-            call s:appendbufline(bufnr,'$',strlines)
-
-            if get(a:dict,"status",9) ==# 1
-                let lines = map(s:readfile(a:dict.data.tempfile . '.err'),{_,str -> substitute(str, '\v at (( at )@!.)*$', '', 'g')})
-                call map(lines,{i,x -> iconv(x,get(connInfo,'encoding',&enc),g:dbiclient_buffer_encoding)})
-                if !empty(lines)
-                    call s:appendbufline(bufnr,'$',lines)
-                endif
-            endif
+    if has_key(a:dict,'commit')
+        if get(a:dict,"status",9) ==# 1
+            call s:echoMsg('IO13')
+        endif
+    elseif has_key(a:dict,'rollback')
+        if get(a:dict,"status",9) ==# 1
+            call s:echoMsg('IO14')
         endif
     else
-        call s:echoMsg('EO04',port,'')
+        let ymdhms = strftime("%Y%m%d%H%M%S",localtime())
+        let bufname = get(a:dict.data,'reloadBufname','')
+        if get(a:dict,'restoreFlg',0) ==# 1
+            let bufnr = s:bufnr(bufname)
+            "let bufname = bufname . '_HISTORY_PREVIEW'
+        endif
+        if s:f.getwid(bufnr) ==# -1
+            let bufnr = s:newBuffer(bufname)
+            let a:dict.data.reloadBufnr = bufnr
+            call s:nmap(get(g:,'dbiclient_nmap_do_PR',s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
+            call add(s:bufferList,bufnr)
+        else
+            call s:f.noreadonly(bufnr)
+            call s:deletebufline(bufnr,1,'$')
+            call setbufvar(bufnr,'dbiclient_bufmap',{})
+            call setbufvar(bufnr,'dbiclient_col_line',0)
+            call setbufvar(bufnr,'dbiclient_header',[])
+            call setbufvar(bufnr,'dbiclient_lines',[])
+            call setbufvar(bufnr,'dbiclient_matches',[])
+        endif
+        let status = s:getStatus(port,connInfo)
+        let tupleList = []
+        let msgList = []
+        call add(msgList, ['PID', '=' . get(connInfo,'process','')])
+        call add(msgList, ['PORT', '=' . port])
+        call add(msgList, ['SCHEMA', '=' . s:getuser(connInfo)])
+        call add(msgList, ['DSN', '=' . s:getdsn(connInfo.dsn)])
+        call add(msgList, ['STATUS', '=' . (connInfo.port ==# s:getCurrentPort() ? status . '*' : status)])
+        call add(tupleList, s:Tuple('"Connection info',msgList))
+        let msgList = []
+        call add(msgList, ['COUNT', '=' . get(a:dict,'cnt',-1)])
+        call add(msgList, ['START', '=' . get(a:dict,'startdate','')])
+        call add(msgList, ['END', '=' . get(a:dict,'enddate','')])
+        call add(msgList, ['SQL', '=' . get(a:dict,'sqltime',0) . 'ms'])
+        call add(tupleList, s:Tuple('"Response info',msgList))
+        let msgList = []
+        call add(msgList, [get(g:,'dbiclient_nmap_do_PR',s:nmap_do_PR), ':' . 'SQL_PREVIEW'])
+        call add(tupleList, s:Tuple('"Quick Help<nmap>',msgList))
+        call setbufvar(bufnr,'dbiclient_tupleList',tupleList)
+        let maxsize = max(map(deepcopy(tupleList),{_,x -> len(x.Get1())}))
+        for tuple in tupleList
+            let info = tuple.Get1() . (repeat(' ', maxsize - len(tuple.Get1())) . ' :')
+            let info .= s:f2.Foldl({x,y -> x . y},"",map(tuple.Get2(),{_,val -> ' [' . val[0] . val[1] . ']'}))
+            call s:appendbufline(bufnr,'$',[info])
+        endfor
+        call add(matchadds,['Comment','\v%1l^".{-}:'])
+        call add(matchadds,['Comment','\v%2l^".{-}:'])
+        call add(matchadds,['String','\v%1l^".{-}:\zs.*$'])
+        call add(matchadds,['String','\v%2l^".{-}:\zs.*$'])
+        call add(matchadds,['Function','\v%1l( \[)@<=.{-}(\=)@='])
+        call add(matchadds,['Function','\v%2l( \[)@<=.{-}(\=)@='])
+        call add(matchadds,['Comment','\v%3l^".{-}:'])
+        call add(matchadds,['String','\v%3l^".{-}:\zs.*$'])
+        call add(matchadds,['Function','\v%3l( \[)@<=.{-}(\:)@='])
+        let i = 0
+        let strlines = s:readfile(a:dict.data.tempfile)
+        call s:appendbufline(bufnr,'$',strlines)
+
+        if get(a:dict,"status",9) ==# 1
+            let lines = map(s:readfile(a:dict.data.tempfile . '.err'),{_,str -> substitute(str, '\v at (( at )@!.)*$', '', 'g')})
+            call map(lines,{i,x -> iconv(x,get(connInfo,'encoding',&enc),g:dbiclient_buffer_encoding)})
+            if !empty(lines)
+                call s:appendbufline(bufnr,'$',lines)
+            endif
+        endif
     endif
     if get(a:dict,"status",9) !=# 9 && get(a:dict,'restoreFlg',0) !=# 1 && !empty(get(a:dict.data, 'do',[]))
         let path = s:getHistoryPathCmd(port)
@@ -1637,7 +1640,9 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
                 call add(msgList, [get(g:,'dbiclient_nmap_result_WH',s:nmap_result_WH), ':WHERE'])
                 call add(msgList, [get(g:,'dbiclient_nmap_result_OR',s:nmap_result_OR), ':ORDER'])
                 call add(msgList, [get(g:,'dbiclient_nmap_result_GR',s:nmap_result_GR), ':GROUP'])
-                call add(msgList, [get(g:,'dbiclient_nmap_result_DI',s:nmap_result_DI), ':DELETE INSERT'])
+                if get(a:dict,'hasnext',0) ==# 0
+                    call add(msgList, [get(g:,'dbiclient_nmap_result_DI',s:nmap_result_DI), ':DELETE INSERT'])
+                endif
             endif
             call add(msgList, [get(g:,'dbiclient_nmap_result_RE',s:nmap_result_RE), ':RELOAD'])
             call add(msgList, [get(g:,'dbiclient_nmap_result_AL',s:nmap_result_AL), ':ALIGN'])
@@ -1739,7 +1744,7 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
                 let matchkeys = get(a:dict,'primary_key',[])[:]
                 call add(matchadds,['Title','\v%' . (s:endbufline(bufnr)) . 'l' . '(' . join(map(sort(matchkeys,{x,y -> len(x) ==# len(y) ? 0 : len(x) < len(y) ? 1 : -1}),{_,x -> '<\V' . x . '\v>'}),'|') . ')'])
             endif
-            call s:appendbufline(bufnr,'$',['-'])
+            call s:appendbufline(bufnr,'$',['dummy'])
             call add(disableline,s:endbufline(bufnr))
         endif
         if get(a:dict.data,'column_info',0) ==# 1
@@ -1806,7 +1811,7 @@ function! s:cb_outputResultCmn(ch,dict,bufnr) abort
             let where = dbiclient_bufmap.opt.where[:]
         endif
 
-        let parseSQLwhere = substitute(substitute(dbiclient#parseSQL2(a:dict.data.sql).getMaintype('WHERE'),'\v\c^\s*<where>\s*','',''),'\n',' ','g')
+        let parseSQLwhere = substitute(substitute(s:parseSQL2(a:dict.data.sql).getMaintype('WHERE'),'\v\c^\s*<where>\s*','',''),'\n',' ','g')
         let andlist = []
         if parseSQLwhere !~? '\v\c(<or>)'
             let andlist = split(parseSQLwhere, '\v\c<and>')
@@ -1918,7 +1923,9 @@ function! s:cb_outputResult(ch,dict) abort
             call s:nmap(get(g:,'dbiclient_nmap_result_GR',s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
             call s:nmap(get(g:,'dbiclient_nmap_result_OR',s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
             call s:nmap(get(g:,'dbiclient_nmap_result_AL',s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap,"alignFlg",0),<SID>bufnr("%"),<SID>getprelinesep())<CR>')
-            call s:nmap(get(g:,'dbiclient_nmap_result_DI',s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+            if get(a:dict,'hasnext',0) ==# 0
+                call s:nmap(get(g:,'dbiclient_nmap_result_DI',s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+            endif
             call s:nmap(get(g:,'dbiclient_nmap_result_ED',s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
             call s:vmap(get(g:,'dbiclient_vmap_result_IN',s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
             call s:vmap(get(g:,'dbiclient_vmap_result_DE',s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
@@ -1990,7 +1997,9 @@ function! s:cb_outputResultEasyAlign(ch,dict) abort
             call s:nmap(get(g:,'dbiclient_nmap_result_GR',s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
             call s:nmap(get(g:,'dbiclient_nmap_result_OR',s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
             call s:nmap(get(g:,'dbiclient_nmap_result_AL',s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap,"alignFlg",0),<SID>bufnr("%"),<SID>getprelinesep())<CR>')
-            call s:nmap(get(g:,'dbiclient_nmap_result_DI',s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+            if get(a:dict,'hasnext',0) ==# 0
+                call s:nmap(get(g:,'dbiclient_nmap_result_DI',s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+            endif
             call s:nmap(get(g:,'dbiclient_nmap_result_ED',s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
             call s:vmap(get(g:,'dbiclient_vmap_result_IN',s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
             call s:vmap(get(g:,'dbiclient_vmap_result_DE',s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
@@ -2086,7 +2095,11 @@ function! s:align(alignFlg,bufnr, preCr) abort
             let lines = s:getalignlist(dbiclient_lines_tmp)
         endif
         let headstr = get(lines,0,'')
-        let border = join(map(split(headstr,g:dbiclient_col_delimiter_align),{_,x -> repeat('-', strdisplaywidth(x))}),'+')
+        if !empty(get(dbiclient_bufmap,'maxcols',[]))
+            let border = join(map(dbiclient_bufmap.maxcols[:],{_,x -> repeat('-', x)}),'-+-')
+        else
+            let border = join(map(split(headstr,g:dbiclient_col_delimiter_align),{_,x -> repeat('-', strdisplaywidth(x))}),'+')
+        endif
     else
         let surr='\V'
         let dbiclient_lines_tmp = map(dbiclient_lines_tmp, {_,line -> substitute(substitute(line, surr . a:preCr . '\v|\V' . a:preCr . surr,'','g'), s:tab_placefolder, "\t", 'g')})
@@ -2291,7 +2304,7 @@ function! s:getSqlLineDelComment(sql) abort
         return ''
     endif
     let port = s:getCurrentPort()
-    return dbiclient#parseSQL2(a:sql).getSqlLineDelComment()
+    return s:parseSQL2(a:sql).getSqlLineDelComment()
 endfunction
 
 function! s:getSqlLine(sql) abort
@@ -2419,7 +2432,7 @@ function! s:selectHistory(port) abort
 endfunction
 
 function! s:parseSQL(sql,cols) abort
-    let data = dbiclient#parseSQL2(a:sql)
+    let data = s:parseSQL2(a:sql)
     let parseSQL={}
     let parseSQL.select=data.getMaintype('SELECT')
     let parseSQL.table=s:getTableName(a:sql,'')
@@ -2436,12 +2449,7 @@ function! s:parseSQL(sql,cols) abort
     return parseSQL
 endfunction
 
-function! dbiclient#getHardparseDict() abort
-    return s:hardparseDict
-endfunction
-
-let s:hardparseDict = {}
-function! dbiclient#parseSQL2(sql) abort
+function! s:parseSQL2(sql) abort
     let dic = {}
     let hash = sha256(a:sql)
     let data = get(s:hardparseDict,hash,[])

@@ -486,6 +486,7 @@ sub exec_sql{
         cancel();
     }
     $result->{sqltime}=int((Time::HiRes::time - $start_time)*1000);
+    $result->{hasnext}=0;
 
     my $fetch_start_time = Time::HiRes::time; 
     outputlog("FETCH START" , $g_port);
@@ -513,18 +514,23 @@ sub exec_sql{
     my $cbrcnt=50000;
     my $brcnt=$cbrcnt;
     $result->{cnt}=0;
-    while($brcnt >= $cbrcnt){
+    while($brcnt >= $cbrcnt && $g_limitrows != 0){
         $brcnt=1;
         my @list=();
         while(my @arr = $g_sth->fetchrow_array()){
             push @list,\@arr;
-            last if $g_limitrows != -1 && $cnt++>=$g_limitrows;
+            last if $g_limitrows > 0 && $cnt++ >= $g_limitrows;
             if ($brcnt++>=$cbrcnt) {
                 my $t_offset = int((Time::HiRes::time - $fetch_start_time)*1000);
-                outputlog("EXEC WHILE: TIME(${t_offset}ms) COUNT(" . ($cnt-1) . ")" . " LIMITROWS($g_limitrows) " . $tempfile , $g_port);
+                outputlog("EXEC WHILE: TIME(${t_offset}ms) COUNT(" . ($cnt - 1) . ")" . " LIMITROWS($g_limitrows) " . $tempfile , $g_port);
                 last;
             }
         }
+        eval {
+            if ($g_sth->rows > $g_limitrows || $g_sth->rows < 0) {
+                $result->{hasnext}=1;
+            }
+        };
         $result->{cnt}+=@list;
         if(@{$result->{cols}}){
             my $rows="";
