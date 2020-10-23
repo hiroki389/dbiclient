@@ -521,8 +521,7 @@ function! s:doDeleteInsert() abort
         return
     endif
     let bufnr = s:bufnr('%')
-    let remarkrow = getbufvar(bufnr,'dbiclient_remarks_flg',0)
-    let dbiclient_col_line = getbufvar(bufnr,'dbiclient_col_line',0) - remarkrow
+    let dbiclient_col_line = getbufvar(bufnr,'dbiclient_col_line',0)
     let list = getline(dbiclient_col_line + 2, '$')
     let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
     if dbiclient_bufmap.alignFlg
@@ -2107,8 +2106,7 @@ function! s:align(alignFlg,bufnr, preCr) abort
         let headstr = get(lines,0,'')
         let border = join(map(split(headstr,'\t'),{_,x -> repeat('-', strdisplaywidth(x))}),"\t")
     endif
-    call remove(lines,1)
-    call insert(lines,border,1)
+    let lines[1 + remarkrow] = border 
     call s:appendbufline(bufnr,'$',lines)
     if dbiclient_bufmap.alignFlg
         "call s:f.readonly(bufnr)
