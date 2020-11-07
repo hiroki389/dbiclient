@@ -19,6 +19,7 @@ let s:limitrows = 1000
 let s:jobs={}
 let s:params={}
 let s:hardparseDict = {}
+let s:lastparse = {}
 let s:shadowpass=''
 let s:msg={
             \ 'EO01':'The specified buffer was not found.'
@@ -251,7 +252,7 @@ function! dbiclient#createTestdata(tableNm) abort
 endfunction
 
 function! dbiclient#getHardparseDict() abort
-    return s:hardparseDict
+    return s:lastparse
 endfunction
 
 function! s:debugLog(msg) abort
@@ -2447,34 +2448,74 @@ function! s:parseSQL(sql,cols) abort
     return parseSQL
 endfunction
 
+function! s:lex(sql) abort
+    let tokenList = []
+    let start = 0
+    while start > -1
+        let regex  = '\v^\_s+|'
+        let regex .= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+        let regex .= '\v^[qQ]''(.)\_.{-}\1''|'
+        let regex .= '\v^\/\*\_.{-}\*\/|'
+        let regex .= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+        let regex .= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+        let regex .= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+        let regex .= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+        let regex .= '\v^%([^[:punct:][:space:]]|[_$])+|'
+        let regex .= '\v[[:punct:]]\ze'
+        let msp = matchstrpos(a:sql,regex, start)
+        call add(tokenList, [s:resolveToken(msp[0]),msp[0]])
+        let start = msp[2]
+    endwhile
+    return filter(tokenList,{_,x -> x[1] !~ '^$'})
+endfunction
+
+function! s:resolveToken(token) abort
+    let patternList = 
+                \[['WHITESPACE',   '\v^\s+$']
+                \,['SINGLE-QUOTE', '\v^''']
+                \,['Q-QUOTE',      '\v^[qQ]''']
+                \,['DOUBLE-QUOTE', '\v^"']
+                \,['BACK-QUOTE',   '\v^\`']
+                \,['COMMENT',      '\v^(--|#|\/\*)']
+                \,['SEMICOLON',    '\V' . g:dbiclient_sql_delimiter1]
+                \,['SLASH',        '\V' . g:dbiclient_sql_delimiter2]
+                \,['CR',           '\v^\n']
+                \,['LO',           '\v<and>|<or>|<in>|<between>|<is>|<not>']
+                \,['RW',           '\v<null>|<as>|<by>|<into>|<on>']
+                \,['CLAUSE',       '\v^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<from>|<where>|<order>|<group>|<having>)$']
+                \,['JOIN',         '\v^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$']
+                \,['DOT',          '\V.']
+                \,['COMMA',        '\V,']
+                \,['AT',           '\V@']
+                \,['EQ',           '\V=']
+                \,['LT',           '\V<']
+                \,['GT',           '\V>']
+                \,['LE',           '\V<=']
+                \,['GE',           '\V>=']
+                \,['NE',           '\V<>']
+                \,['NE',           '\V!=']
+                \,['AMP',          '\V&']
+                \,['BRACKET',      '\V[']
+                \,['BRACKET',      '\V]']
+                \,['ASTER',        '\V*']
+                \,['PARENTHESES',  '\V(']
+                \,['PARENTHESES',  '\V)']
+                \]
+
+    let pattern = filter(patternList,{_,x -> a:token =~? x[1]})
+    return get(get(pattern, 0,[]), 0, 'TOKEN')
+endfunction
+
 function! s:parseSQL2(sql) abort
     let dic = {}
     let hash = sha256(a:sql)
     let data = get(s:hardparseDict,hash,[])
     if empty(data)
-        let data = []
-        let regex = '\v\c<|>|(--)@=|(\/\*)@=|(\*\/)@<=|(''|"|`|\s+|\n|\.|[()[\]{}<>])@=|(''|"|`|\s+|\n|\.|[()[\]{}<>])@<='
-        let tokenList = split(a:sql, regex)
-        let data = s:parseSqlLogicR(tokenList,0,0)
+        let tokens = s:lex(a:sql)
+        let data = s:parseSqlLogicR(tokens,0,0)
         let s:hardparseDict[hash] = data
     endif
     let dic.data = data
-
-    function! s:searchJoinIndex(data,index)
-        let index = a:index
-        while index > 0
-            let index -= 1
-            let val = a:data[index]
-            if val[1] !=# 'whitespace' && val[1] !=# 'CR' 
-                if val[0] =~? '\v\c^(<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'
-                    return index
-                else
-                    break
-                endif
-            endif
-        endwhile
-        return -1
-    endfunction
 
     function! s:getNotMaintype(data,mtype)
         return filter(a:data[:],{_,x -> x[0] !~? a:mtype})
@@ -2489,11 +2530,11 @@ function! s:parseSQL2(sql) abort
     endfunction
 
     function! s:getSqlLineDelComment2(data)
-        return join(map(filter(a:data[:],{_,x -> x[1] != 'comment'}),{_,x -> type(x[2]) ==# v:t_list ? s:getSql(x[2]) : x[2]}),'')
+        return join(map(filter(a:data[:],{_,x -> x[1] != 'COMMENT'}),{_,x -> type(x[2]) ==# v:t_list ? s:getSql(x[2]) : x[2]}),'')
     endfunction
 
     function! s:splitSql2(data,delim)
-        let type = a:delim ==# g:dbiclient_sql_delimiter1 ? 'semicolon' : a:delim ==# g:dbiclient_sql_delimiter2 ? 'slash' : ''
+        let type = a:delim ==# g:dbiclient_sql_delimiter1 ? 'SEMICOLON' : a:delim ==# g:dbiclient_sql_delimiter2 ? 'SLASH' : ''
         let indexes = filter(map(a:data[:],{i,x -> x[1] ==# type ? i : ''}),{_,x -> x != ''})
         call add(indexes,0)
         let ret = []
@@ -2510,6 +2551,10 @@ function! s:parseSQL2(sql) abort
 
     function dic.getData()
         return self.data
+    endfunction
+
+    function dic.getTokens()
+        return map(self.data[:],{_,x -> x[2]})
     endfunction
 
     function dic.getSql()
@@ -2532,136 +2577,51 @@ function! s:parseSQL2(sql) abort
     function dic.getSqlLineDelComment()
         return s:getSqlLineDelComment2(self.data)
     endfunction
+    let s:lastparse = dic
 
     return dic
 endfunction
 
 function! s:lenR(list) abort
-    return s:f2.Foldl({x,y -> x + y}, 0, map(a:list[:], {_,x -> type(x) == v:t_list && type(get(x,1,'')) == v:t_string && get(x,1,'') =~? '^subs' ? s:lenR(get(x,2,[])) : 1}))
+    return s:f2.Foldl({x,y -> x + y}, 0, map(a:list[:], {_,x -> type(x) == v:t_list && type(get(x,1,'')) == v:t_string && get(x,1,'') =~? '^SUBS' ? s:lenR(get(x,2,[])) : 1}))
 endfunction
 
 function! s:parseSqlLogicR(tokenList,index,subflg) abort
     let tokenList = a:tokenList
     let data = []
-    let ac = []
-    let qqflg = 0
-    let sqflg = 0
-    let dqflg = 0
-    let cmt1flg = 0
-    let cmt2flg = 0
-    let loopflg = 0
-    let loopcnt = 0
-    let type = ''
     let maintype = 'NOP'
     let index = a:index
-    let loopindex = 0
-    let token = ''
     let subflg = a:subflg
     while len(tokenList) > index
-        let token = tokenList[index]
-        call add(ac,token)
-        let str = join(ac,'')
-        let ptoken = index ==# 0 ? '' : tokenList[index - 1]
-        let ntoken = index ==# len(tokenList) - 1 ? '' : tokenList[index + 1]
-        let nntoken = index >=# len(tokenList) - 2 ? '' : tokenList[index + 2]
-        let loopflg = sqflg + qqflg + dqflg + cmt1flg + cmt2flg
+        let tokenName = tokenList[index][0]
+        let token = tokenList[index][1]
 
-        if !loopflg && token =~ '\v\c^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<insert>|<update>|<delete>|<merge>|<truncate>|<from>|<where>|<order>|<group>|<having>|<create>|<drop>|<alter>|<grant>|<revoke>)$'
+        if tokenName ==# 'CLAUSE'
             if maintype =~ '\v\c<select>' && token !~ '\v\c<from>'
                 let maintype = maintype
             else
                 let maintype = toupper(token)
             endif
         endif
-        if !loopflg && token =~ '\v\c^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'
+        if tokenName ==# 'JOIN'
             let maintype = 'JOIN'
         endif
 
-        if loopflg
-            let loopcnt += 1
-        else
-            let loopcnt = 0
-        endif
-        if loopcnt == 1
-            let loopindex = index
-        endif
-        if !loopflg && token ==# "'"
-            let sqflg = 1
-        elseif !loopflg && (token . ntoken . nntoken) =~? '\v\cq''[<{[(]'
-            let qqflg = 1
-        elseif !loopflg && token ==# '"'
-            let dqflg = 1
-        elseif !loopflg && token ==# '`'
-            let dqflg = 1
-        elseif !loopflg && token ==# '['
-            let dqflg = 1
-        elseif !loopflg && token ==# '--'
-            let cmt1flg = 1
-        elseif !loopflg && token ==# '#'
-            let cmt1flg = 1
-        elseif !loopflg && token ==# '/*'
-            let cmt2flg = 1
-        elseif !loopflg && token ==# '('
+        if token ==# '('
             let subdata = s:parseSqlLogicR(tokenList,index + 1,subflg + 1)
             if !empty(subdata)
                 let size = s:lenR(subdata)
-                call insert(subdata,['', 'bracket','(',index])
-                call add(subdata,['', 'bracket',')', index + size + 1])
-                call add(data, [maintype, 'subs' . subflg, subdata])
+                call insert(subdata,[maintype, tokenName,'(',index])
+                call add(subdata,[maintype, tokenName,')', index + size + 1])
+                call add(data, [maintype, 'SUBS' . subflg, subdata])
                 let index += (size + 2)
-                let ac = []
                 continue
             endif
-        elseif !loopflg && subflg && token ==# ')'
+        elseif subflg && token ==# ')'
             return data
-        elseif sqflg && token ==# "'"
-            let sqflg += 1
-        elseif qqflg && str =~? '\v\c[>}\])]''$'
-            let qqflg = 0
-        elseif dqflg && (token ==# '"' || token ==# '`' || token ==# ']')
-            let dqflg = 0
-        elseif cmt1flg && token ==# "\n"
-            let cmt1flg = 0
-        elseif cmt2flg && token ==# '*/'
-            let cmt2flg = 0
         endif
 
-        if sqflg && token ==# "'" && ntoken != "'" && sqflg % 2 ==# 0
-            let sqflg = 0
-        endif
-        let loopflg = sqflg + qqflg + dqflg + cmt1flg + cmt2flg
-
-        if str =~ '\v^\s+$'
-            let type = 'whitespace'
-        elseif str =~ '\v^'''
-            let type = 'single-quote'
-        elseif str =~ '\v\cq''[<{[(]' || (token . ntoken . nntoken) =~ '\v\cq''[<{[(]'
-            let type = 'q-quote'
-        elseif str =~ '\v^"'
-            let type = 'double-quote'
-        elseif str =~ '\v^\`'
-            let type = 'back-quote'
-        elseif str =~ '\v^\['
-            let type = 'bracket'
-        elseif str =~ '\v^(--)|#|\/\*'
-            let type = 'comment'
-        elseif str ==# g:dbiclient_sql_delimiter1
-            let type = 'semicolon'
-        elseif str ==# g:dbiclient_sql_delimiter2
-            let type = 'slash'
-        elseif str =~ '\v\n'
-            let type = 'CR'
-        elseif str =~ '\v\c<and>|<or>|<in>|<between>|<is>|<not>|<null>|<as>|<by>|<into>|<on>|<commit>|<rollback>'
-            let type = toupper(str)
-        elseif str =~ '\v\c[<>=!,.@&]'
-            let type = 'sign'
-        else
-            let type = 'token'
-        endif
-        call add(data, [maintype, type, token, index])
-        if !loopflg
-            let ac = []
-        endif
+        call add(data, [maintype, tokenName, token, index])
         let index += 1
     endwhile
     if subflg
@@ -2679,22 +2639,9 @@ function! s:extendquery(alignFlg,extend) abort
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = getbufvar(bufnr,'dbiclient_bufmap',{})
     let limitrows = dbiclient_bufmap.data.limitrows
-    "let sql = dbiclient_bufmap.data.sql
-    "let dblink = s:getDblinkName(sql)
-    "if dblink !=# ''
-    "    let dblink = '@' . dblink
-    "endif
-    "if sql =~? '\v\/\*PRESQL\*\/\zs\_.{-}\ze\/\*PRESQL\*\/'
-    "    let sql = matchstr(sql,'\v\/\*PRESQL\*\/\s*\zs\_.{-}\ze\s*\/\*PRESQL\*\/')
-    "endif
-    "let sql = substitute(sql,'\v\_^(\r\n|\r|\n)+','','')
-    "let sql = substitute(sql,'\v(\r\n|\r|\n)+\_$','','')
     let select = trim(select) ==# '' ? 'SELECT *' : select
-    "let asTableNm = get(get(dbiclient_bufmap.data,'tableJoinNmWithAs',[]),0).AS
-    "let asTableNm = asTableNm == '' ? 'T' : asTableNm
     let sql = join(filter(split(join([select,from,ijoin,where, group,having, order],"\n"),"\n"),{_,x -> trim(x) != ''}),"\n")
     let opt = dbiclient_bufmap.opt
-    "let opt.where = get(dbiclient_bufmap,'where',[])
     let opt.extend={}
     let opt.extend.select = select
     let opt.extend.from = from
