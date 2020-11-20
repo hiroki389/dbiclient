@@ -1,6 +1,6 @@
 scriptencoding utf-8
 
-if exists('g:loaded_dbiclient')
+if exists('g:loaded_dbiclient') || v:version < 802
     finish
 endif
 let g:loaded_dbiclient = 1
@@ -20,7 +20,7 @@ let g:dbiclient_null                   = get(g:,'dbiclient_null', '')
 let g:dbiclient_linesep                = get(g:,'dbiclient_linesep', "\n")
 let g:dbiclient_surround               = get(g:,'dbiclient_surround', '')
 let g:dbiclient_new_window_hight       = get(g:,'dbiclient_new_window_hight', '')
-let g:dbiclient_previewwindow          = get(g:,'dbiclient_previewwindow', 0      )
+let g:dbiclient_previewwindow          = get(g:,'dbiclient_previewwindow', 1)
 let g:dbiclient_perl_binmode           = get(g:,'dbiclient_perl_binmode', 'utf8')
 let g:dbiclient_buffer_encoding        = get(g:,'dbiclient_buffer_encoding', 'utf8')
 let g:dbiclient_disp_remarks           = get(g:,'dbiclient_disp_remarks', 1)
@@ -28,6 +28,7 @@ let g:dbiclient_prelinesep             = get(g:,'dbiclient_prelinesep', '<<CRR>>
 let g:dbiclient_hist_cnt               = get(g:,'dbiclient_hist_cnt', 1000)
 let g:dbiclient_testdata_fixedmap      = get(g:,'dbiclient_testdata_fixedmap', {})
 let g:Dbiclient_call_after_connected   = get(g:,'Dbiclient_call_after_connected', {-> dbiclient#userTablesMain()})
+let g:dbiclient_disp_headerline        = get(g:,'dbiclient_disp_headerline', 1)
 
 " connect opt default 
 let g:dbiclient_connect_opt_columninfoflg     = get(g:,'dbiclient_connect_opt_columninfoflg', 0)
@@ -48,16 +49,12 @@ command! -nargs=1 DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args
 
 command! DBICommit :call dbiclient#commit()
 command! DBIRollback :call dbiclient#rollback()
-command! -nargs=? DBICancel :call dbiclient#cancel(<f-args>)
-
-command! DBIHistoryAll :call dbiclient#dbhistoryAllCmd()
 
 command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRangeSQL('',"<bang>" == '!' ? 0 : 1,<f-args>)
 command! -bang -range -nargs=? DBISelectSemicolon :<line1>,<line2>call dbiclient#selectRangeSQL(g:dbiclient_sql_delimiter1,"<bang>" == '!' ? 0 : 1,<f-args>)
 command! -bang -range -nargs=? DBISelectSlash :<line1>,<line2>call dbiclient#selectRangeSQL(g:dbiclient_sql_delimiter2,"<bang>" == '!' ? 0 : 1,<f-args>)
 command! -bang -nargs=1 -complete=customlist,dbiclient#getTables DBISelectFrom :call dbiclient#selectTable("<bang>" == '!' ? 0 : 1,1,<q-args>)
 
-command! -bang -nargs=? DBIReload :call dbiclient#reloadMain("<bang>" == '!' ? 0 : 1,<f-args>)
 command! -nargs=? -complete=customlist,dbiclient#getTables DBIColumnsTable :call dbiclient#selectColumnsTable(1,1,<q-args>)
 
 command! -bang -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDo('',"<bang>")

@@ -265,39 +265,27 @@ function! {s:_plugin_name}#funclib#new()
         return map(getline(0,'$'),{i,x->iconv(x,a:from,a:to)})
     endfunction
     " 
-    function! s:res.edit(bufname,line,enc)
-        return s:res.newBufferBase(a:bufname,a:line,a:enc,1,0)
+    function! s:res.edit(editcmd, bufname,enc)
+        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,1,0)
     endfunction
-    function! s:res.editWrite(bufname,line,enc)
-        return s:res.newBufferBase(a:bufname,a:line,a:enc,0,0)
-    endfunction
-    function! s:res.editBase(bufname,line,enc,roflg)
-        silent! exe "bo " . a:line . "sp ++enc=" . a:enc . " " . a:bufname
-        let bufnr=bufnr('%')
-        if a:roflg
-            setlocal buftype=nowrite
-        endif
-        setlocal noswapfile          "スワップファイルを作成しない
-        setlocal bufhidden=wipe      "バッファがウィンドウ内から表示されなくなったら削除
-        setlocal nowrap              "ラップしない
-        let s:lastbufnrDict[bufnr] = bufnr
-        return bufnr
+    function! s:res.editWrite(editcmd, bufname,enc)
+        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,0,0)
     endfunction
     " 一時バッファーを作成
-    function! s:res.newBuffer(bufname,line,enc,previewFlg)
-        return s:res.newBufferBase(a:bufname,a:line,a:enc,1,a:previewFlg)
+    function! s:res.newBuffer(editcmd, bufname,enc,previewFlg)
+        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,1,a:previewFlg)
     endfunction
-    function! s:res.newBufferWrite(bufname,line,enc,previewFlg)
-        return s:res.newBufferBase(a:bufname,a:line,a:enc,0,a:previewFlg)
+    function! s:res.newBufferWrite(editcmd, bufname,enc,previewFlg)
+        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,0,a:previewFlg)
     endfunction
-    function! s:res.newBufferBase(bufname,line,enc,roflg,previewFlg)
+    function! s:res.newBufferBase(editcmd, bufname,enc,roflg,previewFlg)
+        let cbufnr = bufnr('%')
         let bufnr=bufnr(a:bufname)
         call s:res.delbuf(bufnr)
+        let wid = s:res.getwid(bufnr('%'))
+        keepjumps silent! exe a:editcmd . " ++enc=" . a:enc . " " . a:bufname
         if a:previewFlg
-            silent! exe "bo " . "pedit ++enc=" . a:enc . " " . a:bufname
             wincmd P
-        else
-            silent! exe "bo " . a:line . "new ++enc=" . a:enc . " " . a:bufname
         endif
         call s:res.chngeBuftype(a:roflg)
         let bufnr=bufnr('%')
@@ -305,7 +293,12 @@ function! {s:_plugin_name}#funclib#new()
         let s:lastbufnrDict[bufnr] = a:bufname
         "setlocal readonly            "読み込み専用
         call clearmatches()
-        return bufnr
+        if a:previewFlg
+            if wid != -1
+                call win_gotoid(wid)
+            endif
+        endif
+        return [bufnr, cbufnr]
     endfunction
     function! s:res.getLastBufnr(bufnr)
         let bufnr = get(s:lastbufnrDict,a:bufnr,-1)
@@ -314,13 +307,14 @@ function! {s:_plugin_name}#funclib#new()
         endif
         return bufnr
     endfunction
-    function! s:res.enew(bufname,roflg)
-        silent! exe "enew"
-        silent! exe "file " . a:bufname
+    function! s:res.enew(bufname, enc, roflg)
+        let bufnr=bufnr(a:bufname)
+        call s:res.delbuf(bufnr)
+        keepjumps silent! exe "edit ++enc=" .. a:enc .. ' ' .. a:bufname
+        setlocal buftype=nofile
+        setlocal nobuflisted
         let bufnr=bufnr('%')
         call s:res.chngeBuftype(a:roflg)
-        let s:lastbufnrDict[bufnr] = a:bufname
-        "setlocal readonly            "読み込み専用
         return bufnr
     endfunction
     function! s:res.chngeBuftype(roflg)
@@ -329,7 +323,7 @@ function! {s:_plugin_name}#funclib#new()
             setlocal nobuflisted
         endif
         setlocal noswapfile          "スワップファイルを作成しない
-        setlocal bufhidden=wipe      "バッファがウィンドウ内から表示されなくなったら削除
+        "setlocal bufhidden=wipe      "バッファがウィンドウ内から表示されなくなったら削除
         setlocal nowrap              "ラップしない
         "setlocal readonly            "読み込み専用
         call add(s:funclibbuflist,bufnr('%'))

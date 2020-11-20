@@ -79,16 +79,14 @@ postgreの例
 | :DBIExecuteSlash[!]            | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はスラッシュ)             |
 | :DBICommit                     | コミットする                                                                       |
 | :DBIRollback                   | ロールバックする                                                                   |
-| :DBICancel [port]              | 実行中のSQLをキャンセルする                                                        |
 | :DBIHistory                    | SQL履歴を表示する                                                                  |
-| :DBIHistoryAll                 | すべてのSQL履歴を表示する                                                          |
 | :DBISetSecurePassword [name]   | パスワードファイルを作成する                                                       |
 
 # 各種設定方法
 |  global variable                  |  Default                         |  Description                                                  |
 |  :----------------------------    |  :----------                     |  :----------------------------------------------------------- |
 |  g:dbiclient_col_delimiter        |  "\t"                            |  未整列状態のカラム区切り文字                                 |
-|  g:dbiclient_col_delimiter_align  |  "&#124;"                             |  整列状態のカラム区切り文字                                   |
+|  g:dbiclient_col_delimiter_align  |  "&#124;"                        |  整列状態のカラム区切り文字                                   |
 |  g:dbiclient_null                 |  ''                              |  NULLの表示文字                                               |
 |  g:dbiclient_linesep              |  "\n"                            |  改行コードの表示文字                                         |
 |  g:dbiclient_surround             |  ''                              |  カラムの囲い文字                                             |
@@ -97,6 +95,7 @@ postgreの例
 |  g:dbiclient_buffer_encoding      |  'utf8'                          |  vimの文字エンコーディング                                    |
 |  g:dbiclient_hist_cnt             |  1000                            |  SQL履歴の最大保持件数                                        |
 |  g:dbiclient_disp_remarks         |  1                               |  カラム名の表示可否                                           |
+|  g:dbiclient_previewwindow        |  1                               |  プレビューウィンドウに結果を出力する                         |
 |  g:dbiclient_prelinesep           |  '&lt;&lt;CRR&gt;&gt;'           |  改行コードの一時変換文字                                     |
 |  g:Dbiclient_call_after_connected |  {-> dbiclient#userTablesMain()} |  DB接続後に実行する関数                                       |
 

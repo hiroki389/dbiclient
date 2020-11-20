@@ -353,26 +353,13 @@ sub rutine{
                 eval {
                     $g_dbh->func(1000000,'dbms_output_enable');
                 };
+                my @tableJoinNm = split(/ /, $data->{tableJoinNm});
                 my $sql = $data->{sql};
                 $sql =~ s/\r\n|\r|\n/\n/gm;
                 my $lsql = $sql;
                 $lsql =~ s/(\t|\r\n|\r|\n)+/ /gm;
                 $lsql =~ s/^ +//m;
                 next if $lsql eq "";
-                my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my @schema_list = ($schem);
-                push(@schema_list, @{$g_schema_list});
-                foreach my $schem2 (@schema_list){
-                    if ($g_primarykeyflg == 1) {
-                        my @primary_key = ();
-                        @primary_key=$g_dbh->primary_key( undef, $schem2, $data->{tableNm});
-                        outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
-                        if (@primary_key > 0) {
-                            $result->{primary_key}=\@primary_key;
-                            last;
-                        }
-                    }
-                }
                 $g_sth=$g_dbh->prepare($sql);
                 outputlog("EXEC SQL START " . substr($lsql,0,100), $g_port);
                 exec_sql($data,$sig,$tempfile,$result,$start_time,1);
@@ -394,19 +381,30 @@ sub rutine{
                 };
 
                 my $column_start_time = Time::HiRes::time; 
-                if ($result->{status} == 1 && $g_columninfoflg == 1) {
-                    my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                    my @schema_list = ($schem);
-                    push(@schema_list, @{$g_schema_list});
-                    foreach my $schem2 (@schema_list){
-                        $g_sth=$g_dbh->table_info( undef, $schem2, $data->{tableNm}, undef );
-                        $result->{table_info}=$g_sth->fetchall_arrayref({});
-                        $g_sth->finish();
-                        $g_sth=$g_dbh->column_info( undef, $schem2, $data->{tableNm}, undef );
-                        $result->{column_info}=$g_sth->fetchall_arrayref({});
-                        $g_sth->finish();
-                        if ($#{$result->{column_info}} > 0) {
-                            last;
+                my $schem = $data->{schem} eq '' ? $user : $data->{schem};
+                my @schema_list = ($schem);
+                push(@schema_list, @{$g_schema_list});
+                foreach my $schem2 (@schema_list){
+                    $result->{primary_key}=[];
+                    $result->{table_info}=[];
+                    $result->{column_info}=[];
+                    foreach my $table (@tableJoinNm){
+                        if ($g_primarykeyflg == 1) {
+                            foreach my $pkey ($g_dbh->primary_key( undef, $schem2, $table)){
+                                push (@{$result->{primary_key}}, $pkey);
+                            }
+                        }
+                        if ($result->{status} == 1 && $g_columninfoflg == 1) {
+                            $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
+                            foreach my $row1 (@{$g_sth->fetchall_arrayref({})}){
+                                push(@{$result->{table_info}}, $row1);
+                            }
+                            $g_sth->finish();
+                            $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
+                            foreach my $row2 (@{$g_sth->fetchall_arrayref({})}){
+                                push(@{$result->{column_info}}, $row2);
+                            }
+                            $g_sth->finish();
                         }
                     }
                 }
@@ -496,7 +494,6 @@ sub exec_sql{
         $result->{cnt}=$g_sth->rows;
         return;
     }
-    my $tableJoinNm=$data->{tableJoinNm};
     my $i=0;
     $result->{cols}=[];
     $result->{maxcols}=[];
