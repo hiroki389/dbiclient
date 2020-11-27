@@ -265,20 +265,20 @@ function! {s:_plugin_name}#funclib#new()
         return map(getline(0,'$'),{i,x->iconv(x,a:from,a:to)})
     endfunction
     " 
-    function! s:res.edit(editcmd, bufname,enc)
+    function! s:res.edit(editcmd, hight, bufname,enc)
         return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,1,0)
     endfunction
-    function! s:res.editWrite(editcmd, bufname,enc)
-        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,0,0)
+    function! s:res.editWrite(editcmd, hight, bufname,enc)
+        return s:res.newBufferBase(a:editcmd, a:hight, a:bufname,a:enc,0,0)
     endfunction
     " 一時バッファーを作成
-    function! s:res.newBuffer(editcmd, bufname,enc,previewFlg)
-        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,1,a:previewFlg)
+    function! s:res.newBuffer(editcmd, hight, bufname,enc,previewFlg)
+        return s:res.newBufferBase(a:editcmd, a:hight, a:bufname,a:enc,1,a:previewFlg)
     endfunction
-    function! s:res.newBufferWrite(editcmd, bufname,enc,previewFlg)
-        return s:res.newBufferBase(a:editcmd, a:bufname,a:enc,0,a:previewFlg)
+    function! s:res.newBufferWrite(editcmd, hight, bufname,enc,previewFlg)
+        return s:res.newBufferBase(a:editcmd, a:hight, a:bufname,a:enc,0,a:previewFlg)
     endfunction
-    function! s:res.newBufferBase(editcmd, bufname,enc,roflg,previewFlg)
+    function! s:res.newBufferBase(editcmd, hight, bufname,enc,roflg,previewFlg)
         let cbufnr = bufnr('%')
         let bufnr=bufnr(a:bufname)
         call s:res.delbuf(bufnr)
@@ -293,6 +293,9 @@ function! {s:_plugin_name}#funclib#new()
         let s:lastbufnrDict[bufnr] = a:bufname
         "setlocal readonly            "読み込み専用
         call clearmatches()
+        if string(a:hight) =~ '\v[0-9]+'
+            exe 'resize ' .. a:hight
+        endif
         if a:previewFlg
             if wid != -1
                 call win_gotoid(wid)
