@@ -724,16 +724,20 @@ function s:joblist(moveFlg) abort
         let bufnr = s:enewBuffer(bufname)
         call s:f.noreadonly(bufnr)
         let save_cursor = getcurpos()
-        call s:nmap(get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\v^\*?\zs\d+''), 1)<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':<C-u>call <SID>dbhistoryCmd(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
     else
         call s:f.gotoWinCurrentTab(bufnr)
         let save_cursor = getcurpos()
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
     endif
+    if getbufvar(bufnr, '&previewwindow')
+        call setbufvar(bufnr, '&previewwindow', 0)
+    endif
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\v^\*?\zs\d+''), 1)<CR>')
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':<C-u>call <SID>dbhistoryCmd(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
+    call s:setallmap(bufnr)
     let msgList = []
     call add(msgList, [get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':' .. 'CHANGE'])
     call add(msgList, [get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':' .. 'STOP'])
@@ -1219,33 +1223,37 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         call setbufvar(bufnr, 'dbiclient_header', [])
         call setbufvar(bufnr, 'dbiclient_lines', [])
         call setbufvar(bufnr, 'dbiclient_matches', [])
+        call setbufvar(bufnr, 'dbiclient_nmap', [])
+        call setbufvar(bufnr, 'dbiclient_vmap', [])
         let cbufnr = bufnr('%')
     endif
-    call s:f.gotoWin(bufnr)
     if sql !=# ''
-        call s:nmap(get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
     elseif get(a:opt, 'column_info', 0) ==# 1
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+    elseif get(a:opt, 'table_info', 0) ==# 1
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
     endif
-    call s:f.gotoWin(cbufnr)
     call s:appendbufline(bufnr, '$', ['Now loading...'])
-    redraw
     if !empty(get(a:opt, 'reloadBufname', ''))
         call s:f.gotoWin(bufnr)
     endif
@@ -1436,15 +1444,15 @@ function s:dBCommandAsync(command, callback, delim, port) abort
             call setbufvar(bufnr, 'dbiclient_header', [])
             call setbufvar(bufnr, 'dbiclient_lines', [])
             call setbufvar(bufnr, 'dbiclient_matches', [])
+            call setbufvar(bufnr, 'dbiclient_nmap', [])
+            call setbufvar(bufnr, 'dbiclient_vmap', [])
             let cbufnr = bufnr('%')
         endif
-        call s:f.gotoWin(bufnr)
-        call s:nmap(get(g:, 'dbiclient_nmap_do_PR', s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
-        call s:f.gotoWin(cbufnr)
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_PR', s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setallmap(bufnr)
         call s:appendbufline(bufnr, '$', ['Now loading...'])
-        redraw
         exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ')'
         if ro
             call s:f.readonly(bufnr)
@@ -1496,13 +1504,14 @@ function s:cb_do(ch, dict) abort
             call setbufvar(bufnr, 'dbiclient_header', [])
             call setbufvar(bufnr, 'dbiclient_lines', [])
             call setbufvar(bufnr, 'dbiclient_matches', [])
+            call setbufvar(bufnr, 'dbiclient_nmap', [])
+            call setbufvar(bufnr, 'dbiclient_vmap', [])
             let cbufnr = bufnr('%')
         endif
-        call s:f.gotoWin(bufnr)
-        call s:nmap(get(g:, 'dbiclient_nmap_do_PR', s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:f.gotoWin(cbufnr)
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_PR', s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setallmap(bufnr)
         let status = s:getStatus(port, connInfo)
         let tupleList = []
         let msgList = []
@@ -1919,6 +1928,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
     call setbufvar(bufnr, 'dbiclient_col_line', dbiclient_col_line)
     call setbufvar(bufnr, 'dbiclient_remarks_flg', dbiclient_remarks_flg)
     call setbufvar(bufnr, 'dbiclient_disableline', disableline)
+    call s:setallmap(bufnr)
     if !empty(matchadds)
         call setbufvar(bufnr, 'dbiclient_matches', matchadds)
         call s:sethl(bufnr)
@@ -1949,33 +1959,38 @@ function s:cb_outputResult(ch, dict) abort
         call setbufvar(bufnr, 'dbiclient_header', [])
         call setbufvar(bufnr, 'dbiclient_lines', [])
         call setbufvar(bufnr, 'dbiclient_matches', [])
+        call setbufvar(bufnr, 'dbiclient_nmap', [])
+        call setbufvar(bufnr, 'dbiclient_vmap', [])
         let cbufnr = bufnr('%')
     endif
-    call s:f.gotoWin(bufnr)
     if a:dict.data.sql !=# ''
-        call s:nmap(get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
         if get(a:dict, 'hasnext', 0) ==# 0
-            call s:nmap(get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+            call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
         endif
-        call s:nmap(get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
     elseif get(a:dict.data, 'column_info', 0) ==# 1
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+    elseif get(a:dict.data, 'table_info', 0) ==# 1
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
     endif
-    call s:f.gotoWin(cbufnr)
     call s:cb_outputResultCmn(a:ch, a:dict, bufnr)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     let dbiclient_bufmap.alignFlg = 0
@@ -2031,33 +2046,38 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
         call setbufvar(bufnr, 'dbiclient_header', [])
         call setbufvar(bufnr, 'dbiclient_lines', [])
         call setbufvar(bufnr, 'dbiclient_matches', [])
+        call setbufvar(bufnr, 'dbiclient_nmap', [])
+        call setbufvar(bufnr, 'dbiclient_vmap', [])
         let cbufnr = bufnr('%')
     endif
-    call s:f.gotoWin(bufnr)
     if a:dict.data.sql !=# ''
-        call s:nmap(get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
         if get(a:dict, 'hasnext', 0) ==# 0
-            call s:nmap(get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
+            call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
         endif
-        call s:nmap(get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
-        call s:vmap(get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
+        call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
     elseif get(a:dict.data, 'column_info', 0) ==# 1
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+    elseif get(a:dict.data, 'table_info', 0) ==# 1
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
     endif
-    call s:f.gotoWin(cbufnr)
     call s:cb_outputResultCmn(a:ch, a:dict, bufnr)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     let dbiclient_bufmap.alignFlg = 1
@@ -2095,18 +2115,6 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
         call s:f.readonly(bufnr)
     endif
     return 0
-endfunction
-
-function s:nmap(char, command) abort
-    if empty(maparg(a:char, 'n', 0, 1))
-        exe 'nmap <buffer> <nowait> <silent> ' .. a:char .. ' ' a:command
-    endif
-endfunction
-
-function s:vmap(char, command) abort
-    if empty(maparg(a:char, 'v', 0, 1))
-        exe 'vmap <buffer> <nowait> <silent> ' .. a:char .. ' ' a:command
-    endif
 endfunction
 
 function s:align(alignFlg, bufnr, preCr) abort
@@ -2396,15 +2404,20 @@ function s:selectHistory(port) abort
     if s:f.getwidCurrentTab(bufnr) ==# -1
         let bufnr = s:enewBuffer(bufname)
         call s:f.noreadonly(bufnr)
-        call s:nmap(get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
-        "call s:nmap(get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':call <SID>dbhistoryCmd(<SID>getPort())<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmd(<SID>getPort()), line(".")  - len(b:dbiclient_disableline) - 1, 1)<CR>:call <SID>dbhistoryCmd(<SID>getPort())<CR>')
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
         call setbufvar(bufnr, 'dbiclient_bufmap', {})
     endif
+    if getbufvar(bufnr, '&previewwindow')
+        call setbufvar(bufnr, '&previewwindow', 0)
+    endif
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
+    "call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':call <SID>dbhistoryCmd(<SID>getPort())<CR>')
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmd(<SID>getPort()), line(".")  - len(b:dbiclient_disableline) - 1, 1)<CR>:call <SID>dbhistoryCmd(<SID>getPort())<CR>')
+    call s:setallmap(bufnr)
+
     let dbiclient_bufmap = {}
     let dbiclient_bufmap.data = {}
     let dbiclient_bufmap.data.connInfo = s:params[port]
@@ -2708,8 +2721,9 @@ function s:editSql() abort
     let bufnr = s:vsNewBuffer(bufname)
     call s:appendbufline(bufnr, 0, split(dbiclient_bufmap.data.sql, "\n"))
     norm gg
-    call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:nmap(get(g:, 'dbiclient_nmap_edit_SQ', s:nmap_edit_SQ), ':<C-u>call <SID>editSqlQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_edit_SQ', s:nmap_edit_SQ), ':<C-u>call <SID>editSqlQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call s:setallmap(bufnr)
 endfunction
 
 function s:order() abort
@@ -2757,8 +2771,10 @@ function s:order() abort
         return
     endif
     call s:selectExtends(bufname .. '_SQL_ORDER', 1, get(dbiclient_bufmap.opt, 'order', {}))
-    call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:nmap(get(g:, 'dbiclient_nmap_order_SQ', s:nmap_order_SQ), ':<C-u>call <SID>orderQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    let bufnr = s:bufnr('%')
+    call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_order_SQ', s:nmap_order_SQ), ':<C-u>call <SID>orderQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call s:setallmap(bufnr)
 endfunction
 
 function s:count(schemtable, port) abort
@@ -2813,8 +2829,10 @@ function s:select() abort
         return
     endif
     call s:selectExtends(bufname .. '_SQL_SELECT', 0, get(dbiclient_bufmap.opt, 'select', {}))
-    call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:nmap(get(g:, 'dbiclient_nmap_select_SQ', s:nmap_select_SQ), ':<C-u>call <SID>selectQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    let bufnr = s:bufnr('%')
+    call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_select_SQ', s:nmap_select_SQ), ':<C-u>call <SID>selectQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call s:setallmap(bufnr)
 endfunction
 
 function s:group() abort
@@ -2864,8 +2882,10 @@ function s:group() abort
         return
     endif
     call s:selectExtends(bufname .. '_SQL_GROUP', 0, get(dbiclient_bufmap.opt, 'group', {}))
-    call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:nmap(get(g:, 'dbiclient_nmap_group_SQ', s:nmap_group_SQ), ':<C-u>call <SID>groupQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    let bufnr = s:bufnr('%')
+    call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_group_SQ', s:nmap_group_SQ), ':<C-u>call <SID>groupQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call s:setallmap(bufnr)
 endfunction
 
 function s:ijoin(prefix) abort
@@ -2907,8 +2927,9 @@ function s:ijoin(prefix) abort
         inoremap <buffer> <silent> <CR> <ESC>
         call s:appendbufline(bufnr, 0, ijoin)
         norm gg
-        call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-        call s:nmap(get(g:, 'dbiclient_nmap_ijoin_SQ', s:nmap_ijoin_SQ), ':<C-u>call <SID>ijoinQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+        call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_ijoin_SQ', s:nmap_ijoin_SQ), ':<C-u>call <SID>ijoinQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+        call s:setallmap(bufnr)
     endfunction
     function! s:ijoinQuery(alignFlg) abort
         let port = s:getPort()
@@ -2971,9 +2992,11 @@ function s:ijoin(prefix) abort
         endif
     endfor
     call s:selectJoinTable()
+    let bufnr = s:bufnr('%')
     norm gg$
-    call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:nmap(get(g:, 'dbiclient_nmap_ijoin_SQ', s:nmap_ijoin_SQ), ':<C-u>call <SID>selectIjoin(getline("."))<CR>')
+    call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_ijoin_SQ', s:nmap_ijoin_SQ), ':<C-u>call <SID>selectIjoin(getline("."))<CR>')
+    call s:setallmap(bufnr)
 endfunction
 
 function s:where() abort
@@ -3041,9 +3064,11 @@ function s:where() abort
         return
     endif
     call s:selectWhere()
+    let bufnr = s:bufnr('%')
     norm gg$
-    call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:nmap(get(g:, 'dbiclient_nmap_where_SQ', s:nmap_where_SQ), ':<C-u>call <SID>whereQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_where_SQ', s:nmap_where_SQ), ':<C-u>call <SID>whereQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+    call s:setallmap(bufnr)
 endfunction
 
 function s:dbhistoryCmd(port) abort
@@ -3225,10 +3250,6 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
         let bufnr = s:enewBuffer(bufname)
         call s:f.noreadonly(bufnr)
         call add(s:bufferList, bufnr)
-        call s:nmap(get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
-        call s:nmap(get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
@@ -3237,6 +3258,11 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
         call setbufvar(bufnr, 'dbiclient_header', [])
         call setbufvar(bufnr, 'dbiclient_lines', [])
         call setbufvar(bufnr, 'dbiclient_matches', [])
+        call setbufvar(bufnr, 'dbiclient_nmap', [])
+        call setbufvar(bufnr, 'dbiclient_vmap', [])
+    endif
+    if getbufvar(bufnr, '&previewwindow')
+        call setbufvar(bufnr, '&previewwindow', 0)
     endif
 
     let opt = {
@@ -3250,8 +3276,8 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
                 \, 'table_name'    : tableNm
                 \, 'reloadBufname' : bufname
                 \, 'reloadBufnr'   : bufnr}
-    "call s:appendbufline(bufnr, '$', ['Now loading...'])
-    "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ')'
+    call s:appendbufline(bufnr, '$', ['Now loading...'])
+    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ')'
     call s:f.readonly(bufnr)
     call s:f.gotoWin(bufnr)
     call s:getQueryAsync('', s:callbackstr(a:alignFlg), -1, opt, a:port)
@@ -3460,12 +3486,14 @@ function s:selectExtends(bufname, orderflg, dict) abort
     let bufnr = s:vsNewBuffer(bufname)
     call s:appendbufline(bufnr, 0, list)
     if a:orderflg
-        call s:nmap('<SPACE>', ':<C-u>call <SID>SelectLineOrder(line("."))<CR>')
-        call s:vmap('<SPACE>', ':call <SID>SelectLines(1)<CR>')
+        call s:setnmap(bufnr, '<SPACE>', ':<C-u>call <SID>SelectLineOrder(line("."))<CR>')
+        call s:setvmap(bufnr, '<SPACE>', ':call <SID>SelectLines(1)<CR>')
     else
-        call s:nmap('<SPACE>', ':<C-u>call <SID>SelectLine(line("."))<CR>')
-        call s:vmap('<SPACE>', ':call <SID>SelectLines(0)<CR>')
+        call s:setnmap(bufnr, '<SPACE>', ':<C-u>call <SID>SelectLine(line("."))<CR>')
+        call s:setvmap(bufnr, '<SPACE>', ':call <SID>SelectLines(0)<CR>')
     endif
+    call s:setallmap(bufnr)
+
     call s:f.readonly(bufnr)
     call setbufvar(bufnr, 'dbiclient_matches', matchadds)
     call setbufvar(bufnr, 'selectdict', get(a:dict, 'selectdict', {}))
@@ -3630,6 +3658,44 @@ function s:bufnr(bufname) abort
     else
         return bufnr(a:bufname)
     endif
+endfunction
+
+function s:setnmap(bufnr, char, command) abort
+    let nmap = getbufvar(a:bufnr, 'dbiclient_nmap', [])
+    call add(nmap, [a:char, a:command])
+    call setbufvar(a:bufnr, 'dbiclient_nmap', nmap)
+endfunction
+
+function s:setvmap(bufnr, char, command) abort
+    let vmap = getbufvar(a:bufnr, 'dbiclient_vmap', [])
+    call add(vmap, [a:char, a:command])
+    call setbufvar(a:bufnr, 'dbiclient_vmap', vmap)
+endfunction
+
+function s:nmap(char, command) abort
+    if empty(maparg(a:char, 'n', 0, 1))
+        exe 'nmap <buffer> <nowait> <silent> ' .. a:char .. ' ' a:command
+    endif
+endfunction
+
+function s:vmap(char, command) abort
+    if empty(maparg(a:char, 'v', 0, 1))
+        exe 'vmap <buffer> <nowait> <silent> ' .. a:char .. ' ' a:command
+    endif
+endfunction
+
+function s:setallmap(bufnr) abort
+    let cbufnr = bufnr('%')
+    call s:gotoWin(a:bufnr)
+    let nmap = getbufvar(a:bufnr, 'dbiclient_nmap', [])
+    for x in nmap
+        call s:nmap(x[0], x[1])
+    endfor
+    let vmap = getbufvar(a:bufnr, 'dbiclient_vmap', [])
+    for x in vmap
+        call s:vmap(x[0], x[1])
+    endfor
+    call s:gotoWin(cbufnr)
 endfunction
 
 function s:Tuple(a, b) abort

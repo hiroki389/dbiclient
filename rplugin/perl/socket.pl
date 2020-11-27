@@ -173,6 +173,11 @@ while(1){
     }
     outputlog("READY",$g_port);
     $g_client_socket = $g_server_socket->accept;
+
+    if (!defined($g_client_socket)) {
+        next;
+    }
+
     outputlog("PROC START",$g_port);
     $g_cancelFlg = 0;
     my $hersockaddr    = getpeername($g_client_socket);
