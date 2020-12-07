@@ -823,13 +823,13 @@ endfunction
 function s:setSecurePassword(name) abort
     let shadowpath = s:Filepath.join(s:getRootPath(), 'SECPASS_') .. a:name
     if filereadable(shadowpath)
-        if toupper(input('Confirm deletion of file<' .. shadowpath .. '> [(y)es, (n)o] ', '')) ==# 'Y'
+        if toupper(s:input('Confirm deletion of file<' .. shadowpath .. '> [(y)es, (n)o] ', '')) ==# 'Y'
             call delete(shadowpath)
         else
             return
         endif
     endif
-    keepjumps silent! exe 'bd! ' .. shadowpath
+    keepjumps silent! exe 'bwipeout! ' .. shadowpath
     redraw
     redrawstatus
     keepjumps silent! exe 'e ' .. shadowpath
@@ -840,7 +840,9 @@ function s:setSecurePassword(name) abort
     keepjumps silent! exe 'b#'
     keepjumps call setline(1, 'shadow:' .. pass)
     keepjumps silent! write
-    keepjumps bwipeout!
+    let bufnr = bufnr('%')
+    keepjumps silent! exe 'b#'
+    keepjumps silent! exe "bwipeout! " .. bufnr
 endfunction
 
 function s:getUnusedPort() abort
@@ -1230,7 +1232,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     if sql !=# ''
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
@@ -1250,8 +1252,8 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     elseif get(a:opt, 'table_info', 0) ==# 1
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , <SID>input("TABLE_NAME:", get(<SID>getParams(), "table_name", "")) , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , <SID>input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", "")) , <SID>getPort())<CR>')
     endif
     call s:appendbufline(bufnr, '$', ['Now loading...'])
     if !empty(get(a:opt, 'reloadBufname', ''))
@@ -1966,7 +1968,7 @@ function s:cb_outputResult(ch, dict) abort
     if a:dict.data.sql !=# ''
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
@@ -1988,8 +1990,8 @@ function s:cb_outputResult(ch, dict) abort
     elseif get(a:dict.data, 'table_info', 0) ==# 1
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , <SID>input("TABLE_NAME:", get(<SID>getParams(), "table_name", "")) , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , <SID>input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", "")) , <SID>getPort())<CR>')
     endif
     call s:cb_outputResultCmn(a:ch, a:dict, bufnr)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
@@ -2053,7 +2055,7 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
     if a:dict.data.sql !=# ''
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
@@ -2075,8 +2077,8 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
     elseif get(a:dict.data, 'table_info', 0) ==# 1
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , input("TABLE_NAME:", get(<SID>getParams(), "table_name", ""), "customlist, dbiclient#getTables") , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", ""), "customlist, dbiclient#getTypes") , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , <SID>input("TABLE_NAME:", get(<SID>getParams(), "table_name", "")) , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , <SID>input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", "")) , <SID>getPort())<CR>')
     endif
     call s:cb_outputResultCmn(a:ch, a:dict, bufnr)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
@@ -2906,7 +2908,7 @@ function s:ijoin(prefix) abort
     endfunction
     function! s:selectIjoin(tableNm) abort
         let s:tableNm = a:tableNm
-        let s:asTableNm = input(a:tableNm .. ' as ', '')
+        let s:asTableNm = s:input(a:tableNm .. ' as ', '')
         if trim(s:asTableNm) !~? '\v^[a-zA-Z0-9]+$'
             return
         endif
@@ -3644,7 +3646,7 @@ endfunction
 
 function s:belowPeditBuffer(bufname, ...) abort
     if g:dbiclient_previewwindow
-        let [bufnr, cbufnr] = s:f.newBuffer('below pedit', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
+        let [bufnr, cbufnr] = s:f.newBuffer('bo pedit', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
     else
         let [bufnr, cbufnr] = s:f.newBuffer('below new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
     endif
