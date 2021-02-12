@@ -61,22 +61,19 @@ postgreの例
 | connect_opt_schema_flg        | g:dbiclient_connect_opt_schema_flg = 0       | スキーマ名付与フラグ                                         |
 | connect_opt_schema_list       | g:dbiclient_connect_opt_schema_list = []     | 同一インスタンス内の別スキーマからカラム名を取得する         |
 | connect_opt_history_data_flg  | g:dbiclient_connect_opt_history_data_flg = 0 | SQL結果の履歴保持フラグ、一時領域の逼迫及びセキュリティの観点からデフォルトではOFFになっている                                      |
+| connect_opt_columninfoflg     | g:dbiclient_connect_opt_columninfoflg = 0    | カラム名の表示設定                                      |
 
 # exコマンド
 | excommand                      | Description                                                                        |
 | :----------------------        | :-----------------------------------------------------------------------           |
 | :DBIJobList                    | 接続中のDB情報一覧を表示する                                                       |
-| :DBIClose [port]               | DBを切断する                                                                       |
+| :DBIClose [port]               | DBを切断する ※vim終了時は自動的にすべてのコネクションを切断する                                                                       |
 | :DBITables                     | テーブル一覧を表示する                                                             |
-| :DBISelect[!] [count]          | ビジュアルモードで選択したSQLを一つ実行し結果を表示する                            |
-| :DBISelectSemicolon[!] [count] | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字はセミコロン) |
-| :DBISelectSlash[!] [count]     | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字はスラッシュ) |
+| :DBISelect[!] [count]          | ビジュアルモードで選択したSQLを複数実行し結果を表示する(SQL区切り文字は / または ;)                            |
 | :DBISelectFrom[!] [tableNm]    | テーブル名を指定し、SQLを実行する                                                  |
-| :DBIReload[!] [count]          | カレントウィンドウのSQLを再実行する                                                |
 | :DBIColumnsTable [tableNm]     | テーブル名を指定し、カラム情報を取得する                                           |
-| :DBIExecute[!]                 | ビジュアルモードで選択したSQLを一つ実行する                                        |
-| :DBIExecuteSmicolon[!]         | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はセミコロン)             |
-| :DBIExecuteSlash[!]            | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字はスラッシュ)             |
+| :DBIExecute[!]                 | ビジュアルモードで選択したSQLを複数実行する(SQL区切り文字は / または ;)                                        |
+| :DBIExecuteNoSplit[!]          | ビジュアルモードで選択したSQLを一つ実行する             |
 | :DBICommit                     | コミットする                                                                       |
 | :DBIRollback                   | ロールバックする                                                                   |
 | :DBIHistory                    | SQL履歴を表示する                                                                  |
@@ -94,7 +91,8 @@ postgreの例
 |  g:dbiclient_perl_binmode         |  'utf8'                          |  perlの文字エンコーディング                                   |
 |  g:dbiclient_buffer_encoding      |  'utf8'                          |  vimの文字エンコーディング                                    |
 |  g:dbiclient_hist_cnt             |  1000                            |  SQL履歴の最大保持件数                                        |
-|  g:dbiclient_disp_remarks         |  1                               |  カラム名の表示可否                                           |
+|  g:dbiclient_disp_headerline      |  1                               |  カラム名の下に罫線表示                                           |
+|  g:dbiclient_disp_remarks         |  1                               |  カラム名の表示可否(connect_opt_columninfoflgがonの場合)                                           |
 |  g:dbiclient_previewwindow        |  1                               |  プレビューウィンドウに結果を出力する                         |
 |  g:dbiclient_prelinesep           |  '&lt;&lt;CRR&gt;&gt;'           |  改行コードの一時変換文字                                     |
 |  g:Dbiclient_call_after_connected |  {-> dbiclient#userTablesMain()} |  DB接続後に実行する関数                                       |

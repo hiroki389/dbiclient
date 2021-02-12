@@ -1,5 +1,5 @@
-scriptencoding utf-8
 "vim9script
+scriptencoding utf-8
 
 if !exists('g:loaded_dbiclient') || v:version < 802
     finish
@@ -12,6 +12,7 @@ let s:loaded = 0
 let s:sendexprList = []
 let s:bufferList = []
 let s:bufferList2 = []
+let s:currentBuf = -1
 let s:f = dbiclient#funclib#new()
 let s:f2 = dbiclient#funclib#new2()
 let s:Filepath = vital#dbiclient#new().import('System.Filepath')
@@ -131,12 +132,16 @@ function dbiclient#kill_job(...) abort
     return s:kill_job(get(a:, 1, s:getCurrentPort()))
 endfunction
 
-function dbiclient#selectRangeSQL(delim, alignFlg, ...) range abort
-    return s:selectRangeSQL(a:delim, a:alignFlg, get(a:, 1, s:getLimitrows()))
+function dbiclient#selectRangeSQL(alignFlg, ...) range abort
+    return s:selectRangeSQL(a:alignFlg, get(a:, 1, s:getLimitrows()))
 endfunction
 
-function dbiclient#dBExecRangeSQLDo(delim, bang) range abort
-    return s:dBExecRangeSQLDo(a:delim, a:bang)
+function dbiclient#dBExecRangeSQLDo(bang) range abort
+    return s:dBExecRangeSQLDo(a:bang, 1)
+endfunction
+
+function dbiclient#dBExecRangeSQLDoNoSplit(bang) range abort
+    return s:dBExecRangeSQLDo(a:bang, 0)
 endfunction
 
 function dbiclient#getQuery(sql, limitrows, opt) abort
@@ -171,8 +176,8 @@ function dbiclient#dBCommandMain(command) abort
     return s:dBCommandMain(a:command)
 endfunction
 
-function dbiclient#dBCommandAsync(command, callback, delim, port) abort
-    return s:dBCommandAsync(a:command, a:callback, a:delim, a:port)
+function dbiclient#dBCommandAsync(command, callback, port) abort
+    return s:dBCommandAsync(a:command, a:callback, a:port)
 endfunction
 
 function dbiclient#alignMain(preCr) abort
@@ -250,6 +255,7 @@ function s:bufnext(port, cbufnr) abort
     "let bufnr = s:bufsearch(get(get(s:params, a:port, {}), 'buflist', []), a:cbufnr)
     let bufnr = s:bufsearch(map(s:bufferList2[:], {_, x -> x[1]}), a:cbufnr)
     if bufnr != -1
+        let s:currentBuf = bufnr
         exe 'b ' .. bufnr
         call s:sethl(bufnr('%'))
     endif
@@ -259,9 +265,35 @@ function s:bufprev(port, cbufnr) abort
     "let bufnr = s:bufsearch(reverse(get(get(s:params, a:port, {}), 'buflist', [])[:]), a:cbufnr)
     let bufnr = s:bufsearch(reverse(map(s:bufferList2[:], {_, x -> x[1]})), a:cbufnr)
     if bufnr != -1
+        let s:currentBuf = bufnr
         exe 'b ' .. bufnr
         call s:sethl(bufnr('%'))
     endif
+endfunction
+
+function s:addbufferlist(port, bufnr) abort
+    let idx = s:bufindexsearch(s:bufferList2, s:currentBuf)
+    if idx == -1 || idx == len(s:bufferList2) - 1
+        let bufferList2Tmp1 = s:bufferList2[:]
+        let bufferList2Tmp2 = []
+    else
+        let bufferList2Tmp1 = s:bufferList2[0:idx]
+        let bufferList2Tmp2 = s:bufferList2[idx + 1:]
+    endif
+    call add(bufferList2Tmp1, [a:port, a:bufnr])
+    let s:bufferList2 = extend(bufferList2Tmp1, bufferList2Tmp2)
+    let s:currentBuf = a:bufnr
+endfunction
+
+function s:bufindexsearch(buflist, cbufnr) abort
+    let idx = 0
+    for [port, bufnr] in a:buflist
+        if bufnr == a:cbufnr
+            return idx
+        endif
+        let idx += 1
+    endfor
+    return -1
 endfunction
 
 function s:bufsearch(buflist, cbufnr) abort
@@ -335,9 +367,7 @@ function s:deleteHistory(sqlpath, no, removefile) abort
         endif
     endif
     call remove(sqllist, no)
-    call s:debugLog('TEST7')
     call writefile(sqllist, sqlpath)
-    call s:debugLog('TEST8')
 endfunction
 
 function s:loadQueryHistoryCmd(port) abort
@@ -534,8 +564,8 @@ function s:doDeleteInsert() abort
     let tableNm = dbiclient_bufmap.data.tableNm
     let where = get(get(get(dbiclient_bufmap, 'opt', {}), 'extend', {}), 'where', '')
     let list2 = extend(['DELETE FROM ' .. tableNm .. ' ' .. as .. ' ' .. where .. g:dbiclient_sql_delimiter1], s:createInsert(cols, list, tableNm))
-    let sqllist = s:splitSql(list2[:], g:dbiclient_sql_delimiter1)
-    call s:dBCommandAsync({"doText":list2[:], "do":sqllist}, 's:cb_do', g:dbiclient_col_delimiter, port)
+    let sqllist = s:splitSql(list2[:], 1)
+    call s:dBCommandAsync({"doText":list2[:], "do":sqllist}, 's:cb_do', port)
 endfunction
 
 function s:createInsert(keys, vallist, tableNm) abort
@@ -1019,7 +1049,7 @@ function s:cancel(port) abort
     endif
 endfunction
 
-function s:selectRangeSQL(delim, alignFlg, limitrows) range abort
+function s:selectRangeSQL(alignFlg, limitrows) range abort
     let port = s:getCurrentPort()
     if s:error1CurrentPort()
         return {}
@@ -1036,7 +1066,7 @@ function s:selectRangeSQL(delim, alignFlg, limitrows) range abort
     let defineDict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(deflist[:], {_, x -> s:getDefinedKeyValue(x)}))
     let defineKeys = join(uniq(sort(keys(defineDict))), '|')
 
-    let sqllist = s:splitSql(sqllist, a:delim)
+    let sqllist = s:splitSql(sqllist, 0)
     let sqllist = map(sqllist, {_, x -> substitute(x, '\v\c\&\&(%(' .. defineKeys .. ')>\.?)' , {m -> get(defineDict, matchstr(m[1], '\v^.{-}\ze\.?$'), m[0])}, 'g')})
 
     if len(sqllist) > 10
@@ -1080,7 +1110,7 @@ function s:echoMsg(id, ...) abort
     echohl None
 endfunction
 
-function s:dBExecRangeSQLDo(delim, bang) range abort
+function s:dBExecRangeSQLDo(bang, splitFlg) range abort
     let port = s:getCurrentPort()
     let list = s:f.getRangeCurList(getpos("'<"), getpos("'>"))
     if empty(trim(join(list)))
@@ -1092,22 +1122,38 @@ function s:dBExecRangeSQLDo(delim, bang) range abort
     let defineDict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(deflist[:], {_, x -> s:getDefinedKeyValue(x)}))
     let defineKeys = join(uniq(sort(keys(defineDict))), '|')
 
-    let sqllist = s:splitSql(sqllist, a:delim)
+    if a:splitFlg
+        let sqllist = s:splitSql(sqllist, 1)
+    endif
     let sqllist = map(sqllist, {_, x -> substitute(x, '\v\c\&\&(%(' .. defineKeys .. ')>\.?)' , {m -> get(defineDict, matchstr(m[1], '\v^.{-}\ze\.?$'), m[0])}, 'g')})
-    call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0)}, 's:cb_do', a:delim, port)
+    call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0)}, 's:cb_do', port)
 endfunction
 
-function s:splitSql(sqllist, delim) abort
-    if empty(a:delim)
-        let list = a:sqllist[:]
-        let list = filter(list, {_, x -> trim(x) !=# ''})
-        return [substitute(join(list, "\n"), '\v[;]\s*$', '', '')]
+function s:splitSql(sqllist, doFlg) abort
+    if len(filter(a:sqllist[:], {_, x -> trim(x) ==# g:dbiclient_sql_delimiter2})) > 0
+        let delim = g:dbiclient_sql_delimiter2
+    else
+        let delim = g:dbiclient_sql_delimiter1
     endif
     let list = a:sqllist[:]
-    let delim = a:delim
-    let list = filter(list, {_, x -> trim(x) !=# ''})
+    let list = filter(list, {_, x -> !empty(trim(x))})
     let sql = join(list, "\n")
-    return s:parseSQL2(sql).splitSql(delim)
+    if a:doFlg && delim ==# g:dbiclient_sql_delimiter2
+        let ret = []
+        let start = 0
+        while start > -1
+            let msp = matchstrpos(sql, '\v^.{-}\n\s*\' .. delim .. '\s*(\n|$)', start)
+            if msp[2] > -1
+                call add(ret, substitute(trim(msp[0]), '\v\' .. delim .. '\s*%$', '', ''))
+            else
+                call add(ret, substitute(trim(sql[start:]), '\v\' .. delim .. '\s*%$', '', ''))
+            endif
+            let start = msp[2]
+        endwhile
+        return filter(ret, {_, x -> !empty(trim(x))})
+    else
+        return s:parseSQL2(sql).splitSql(delim)
+    endif
 endfunction
 
 function s:getQuerySync(sql, callback, limitrows, opt, port) abort
@@ -1217,7 +1263,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     if s:f.getwid(bufnr) ==# -1
         let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
         call add(s:bufferList, bufnr)
-        call add(s:bufferList2, [a:port, bufnr])
+        call s:addbufferlist(a:port, bufnr)
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
@@ -1298,12 +1344,12 @@ endfunction
 
 function s:commit() abort
     let port = s:getCurrentPort()
-    call s:dBCommandAsync({"commit":"1", "nodisplay":1}, 's:cb_do', '', port)
+    call s:dBCommandAsync({"commit":"1", "nodisplay":1}, 's:cb_do', port)
 endfunction
 
 function s:rollback() abort
     let port = s:getCurrentPort()
-    call s:dBCommandAsync({"rollback":"1", "nodisplay":1}, 's:cb_do', '', port)
+    call s:dBCommandAsync({"rollback":"1", "nodisplay":1}, 's:cb_do', port)
 endfunction
 
 function s:set(key, value) abort
@@ -1416,7 +1462,7 @@ function s:dBCommandMain(command) abort
     return s:dBCommand(port, a:command)
 endfunction
 
-function s:dBCommandAsync(command, callback, delim, port) abort
+function s:dBCommandAsync(command, callback, port) abort
     let port = a:port
     if s:error1(port)
         return {}
@@ -1430,7 +1476,6 @@ function s:dBCommandAsync(command, callback, delim, port) abort
     endif
     let command = a:command
     let command.tempfile = s:tempname()
-    let command.delimiter = a:delim
     let command.connInfo = s:params[port]
     if get(command, "nodisplay", 0) !=# 1 
         let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
@@ -1440,7 +1485,7 @@ function s:dBCommandAsync(command, callback, delim, port) abort
         if s:f.getwid(bufnr) ==# -1
             let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
             call add(s:bufferList, bufnr)
-            call add(s:bufferList2, [port, bufnr])
+            call s:addbufferlist(port, bufnr)
         else
             call s:f.noreadonly(bufnr)
             call s:deletebufline(bufnr, 1, '$')
@@ -1498,7 +1543,7 @@ function s:cb_do(ch, dict) abort
             let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
             let a:dict.data.reloadBufnr = bufnr
             call add(s:bufferList, bufnr)
-            call add(s:bufferList2, [port, bufnr])
+            call s:addbufferlist(port, bufnr)
         else
             call s:f.noreadonly(bufnr)
             call s:deletebufline(bufnr, 1, '$')
@@ -1953,7 +1998,7 @@ function s:cb_outputResult(ch, dict) abort
         let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
         let a:dict.data.reloadBufnr = bufnr
         call add(s:bufferList, bufnr)
-        call add(s:bufferList2, [port, bufnr])
+        call s:addbufferlist(port, bufnr)
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
@@ -2014,7 +2059,7 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
         let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
         let a:dict.data.reloadBufnr = bufnr
         call add(s:bufferList, bufnr)
-        call add(s:bufferList2, [port, bufnr])
+        call s:addbufferlist(port, bufnr)
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
@@ -2425,61 +2470,64 @@ function s:parseSQL(sql, cols) abort
     return parseSQL
 endfunction
 
+"def s:lex(sql: string): list<string>
 function s:lex(sql) abort
+    let sql = a:sql
     let tokenList = []
     let start = 0
+    let regex  = '\v^\_s+|'
+    let regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+    let regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
+    let regex ..= '\v^\/\*\_.{-}\*\/|'
+    let regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+    let regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+    let regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+    let regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+    let regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
+    let regex ..= '\v^[[:punct:]]\ze'
+    let msp = []
     while start > -1
-        let regex  = '\v^\_s+|'
-        let regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
-        let regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
-        let regex ..= '\v^\/\*\_.{-}\*\/|'
-        let regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
-        let regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
-        let regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
-        let regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
-        let regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
-        let regex ..= '\v[[:punct:]]\ze'
-        let msp = matchstrpos(a:sql, regex, start)
-        call add(tokenList, [s:resolveToken(msp[0]), msp[0]])
+        let msp = matchstrpos(sql, regex, start)
+        call add(tokenList, msp[0])
         let start = msp[2]
     endwhile
-    return filter(tokenList, {_, x -> x[1] !~ '^$'})
+    return filter(tokenList, {_, x -> x !~ '^$'})
 endfunction
 
+"def s:resolveToken(token: string): string
 function s:resolveToken(token) abort
-    let patternList = 
-                \[['WHITESPACE',   '\v^\s+$']
-                \, ['SINGLE-QUOTE', '\v^''']
-                \, ['Q-QUOTE',      '\v^[qQ]''']
-                \, ['DOUBLE-QUOTE', '\v^"']
-                \, ['BACK-QUOTE',   '\v^\`']
-                \, ['COMMENT',      '\v^(--|#|\/\*)']
-                \, ['SEMICOLON',    '\V' .. g:dbiclient_sql_delimiter1]
-                \, ['SLASH',        '\V' .. g:dbiclient_sql_delimiter2]
-                \, ['CR',           '\v^\n']
-                \, ['LO',           '\v<and>|<or>|<in>|<between>|<is>|<not>']
-                \, ['RW',           '\v<null>|<as>|<by>|<into>|<on>']
-                \, ['CLAUSE',       '\v^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<from>|<where>|<order>|<group>|<having>)$']
-                \, ['JOIN',         '\v^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$']
-                \, ['DOT',          '\V.']
-                \, ['COMMA',        '\V,']
-                \, ['AT',           '\V@']
-                \, ['EQ',           '\V=']
-                \, ['LT',           '\V<']
-                \, ['GT',           '\V>']
-                \, ['LE',           '\V<=']
-                \, ['GE',           '\V>=']
-                \, ['NE',           '\V<>']
-                \, ['NE',           '\V!=']
-                \, ['AMP',          '\V&']
-                \, ['BRACKET',      '\V[']
-                \, ['BRACKET',      '\V]']
-                \, ['ASTER',        '\V*']
-                \, ['PARENTHESES',  '\V(']
-                \, ['PARENTHESES',  '\V)']
-                \]
+    let token = a:token
+    let patternList = [['WHITESPACE',   '\v^\s+$'],
+                \ ['SINGLE-QUOTE', '\v^'''],
+                \ ['Q-QUOTE',      '\v^[qQ]'''],
+                \ ['DOUBLE-QUOTE', '\v^"'],
+                \ ['BACK-QUOTE',   '\v^\`'],
+                \ ['COMMENT',      '\v^(--|#|\/\*)'],
+                \ ['SEMICOLON',    '^\V' .. g:dbiclient_sql_delimiter1],
+                \ ['SLASH',        '^\V' .. g:dbiclient_sql_delimiter2],
+                \ ['CR',           '\v^\n'],
+                \ ['LO',           '\v^<and>|<or>|<in>|<between>|<is>|<not>'],
+                \ ['RW',           '\v^<null>|<as>|<by>|<into>|<on>'],
+                \ ['CLAUSE',       '\v^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<from>|<where>|<order>|<group>|<having>)$'],
+                \ ['JOIN',         '\v^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'],
+                \ ['DOT',          '^\V.'],
+                \ ['COMMA',        '^\V,'],
+                \ ['AT',           '^\V@'],
+                \ ['EQ',           '^\V='],
+                \ ['LT',           '^\V<'],
+                \ ['GT',           '^\V>'],
+                \ ['LE',           '^\V<='],
+                \ ['GE',           '^\V>='],
+                \ ['NE',           '^\V<>'],
+                \ ['NE',           '^\V!='],
+                \ ['AMP',          '^\V&'],
+                \ ['BRACKET',      '^\V['],
+                \ ['BRACKET',      '^\V]'],
+                \ ['ASTER',        '^\V*'],
+                \ ['PARENTHESES',  '^\V('],
+                \ ['PARENTHESES',  '^\V)']]
 
-    let pattern = filter(patternList, {_, x -> a:token =~? x[1]})
+    let pattern = filter(patternList, {_, x -> token =~? x[1]})
     return get(get(pattern, 0, []), 0, 'TOKEN')
 endfunction
 
@@ -2489,6 +2537,7 @@ function s:parseSQL2(sql) abort
     let data = get(s:hardparseDict, hash, [])
     if empty(data)
         let tokens = s:lex(a:sql)
+        let tokens = map(tokens, {_, x -> [s:resolveToken(x), x]})
         let data = s:parseSqlLogicR(tokens, 0, 0)
         let s:hardparseDict[hash] = data
     endif
@@ -2848,7 +2897,7 @@ function s:ijoin(prefix) abort
         let port = s:getPort()
         let bufnr = s:bufnr('%')
         let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-        let bufname = bufname('%') .. '_SQL_IJOIN'
+        let bufname = bufname('%') .. '_SQL_JOIN'
         let bufnr = s:vsNewBuffer(bufname)
         inoremap <buffer> <silent> <CR> <ESC>
         call s:appendbufline(bufnr, 0, get(s:params[port], 'table_list', []))
@@ -2864,13 +2913,13 @@ function s:ijoin(prefix) abort
         let port = s:getPort()
         let bufnr = s:bufnr('%')
         let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-        let ijoin = dbiclient_bufmap.opt.ijoin
+        let ijoin = dbiclient_bufmap.opt.ijoin[:]
         let cols = []
         let cols = map(s:getColumns(s:tableNm, port), {_, x -> s:asTableNm .. '.' .. x})
         let maxcol = max(map(cols[:], {_, x -> strdisplaywidth(x)}))
         let ijoin = extend(ijoin, map(cols[:], {_, x -> x .. repeat(' ' , maxcol - strdisplaywidth(x) +1) .. '| ='}))
 
-        let bufname = bufname('%') .. '_' .. s:tableNm
+        let bufname = bufname('%')
         quit
         exe 'silent! bwipeout! ' .. bufnr
         call s:f.gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
@@ -2879,10 +2928,10 @@ function s:ijoin(prefix) abort
         call s:appendbufline(bufnr, 0, ijoin)
         norm gg
         call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_ijoin_SQ', s:nmap_ijoin_SQ), ':<C-u>call <SID>ijoinQuery(b:dbiclient_bufmap.alignFlg)<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_ijoin_SQ', s:nmap_ijoin_SQ), ':<C-u>call <SID>ijoinQuery(getline(0,''$''), b:dbiclient_bufmap.alignFlg)<CR>')
         call s:setallmap(bufnr)
     endfunction
-    function! s:ijoinQuery(alignFlg) abort
+    function! s:ijoinQuery(beforeIjoin, alignFlg) abort
         let port = s:getPort()
         if s:error2CurrentBuffer(port)
             return
@@ -2892,7 +2941,7 @@ function s:ijoin(prefix) abort
         endif
         let bufnr = s:bufnr('%')
         let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-        let keys1 = map(dbiclient_bufmap.opt.ijoin[:], {_, x -> matchstr(x, '\v^\zs.{-}\|\ze')})
+        let keys1 = map(a:beforeIjoin[:], {_, x -> matchstr(x, '\v^\zs.{-}\|\ze')})
         let keys2 = map(getline(0, '$'), {_, x -> matchstr(x, '\v^\zs.{-}\|\ze')})
         let keys1 = filter(keys1, {_, x -> trim(x) !=# ''})
         let keys2 = filter(keys2, {_, x -> trim(x) !=# ''})
@@ -2900,7 +2949,7 @@ function s:ijoin(prefix) abort
         if keys1 !=# keys2
             let bufnr = s:bufnr('%')
             call s:deletebufline(bufnr, 1, '$')
-            call s:appendbufline(bufnr, 0, dbiclient_bufmap.opt.ijoin)
+            call s:appendbufline(bufnr, 0, a:beforeIjoin)
             norm gg$
             redraw
             echohl ErrorMsg
@@ -2917,6 +2966,7 @@ function s:ijoin(prefix) abort
         let ijoinStr = join(ijoinAnd, "\nAND ")
         if trim(ijoinStr) !=# ''
             let ijoin = "\n" .. s:prefix .. ' JOIN ' .. s:tableNm .. ' ' .. s:asTableNm .. "\n" .. ' ON ' .. ijoinStr
+            let dbiclient_bufmap.opt.ijoin = a:beforeIjoin
         else
             let ijoin = ''
         endif
@@ -3101,18 +3151,20 @@ function s:reloadLimit(bufnr, limitrows) abort
     if limitrows !~ '\v^-?[[0-9]+$'
         return
     endif
+    let delbufnr = -1
     let winid = s:f.getwidCurrentTab(bufnr)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     if s:bufnr(bufnr) !=# s:bufnr('%') && winid ==# -1
         let bufnr = s:bufnr('%')
         let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
         if g:dbiclient_previewwindow
-            try
-                setlocal previewwindow
-            catch /./
-                quit
-                wincmd P
-            endtry
+            silent! wincmd P
+            silent! setlocal nopreviewwindow
+            call s:f.gotoWin(bufnr)
+            silent! setlocal previewwindow
+            enew
+            setlocal bufhidden=wipe
+            let delbufnr = bufnr
         endif
     elseif s:bufnr(bufnr) !=# s:bufnr('%')
         let cbufnr = s:bufnr('%')
@@ -3121,17 +3173,20 @@ function s:reloadLimit(bufnr, limitrows) abort
     endif
 
     if !empty(dbiclient_bufmap)
-        call s:reloadMain(bufnr, get(dbiclient_bufmap, "alignFlg", 0), limitrows)
+        call s:reloadMain(bufnr, get(dbiclient_bufmap, "alignFlg", 0), limitrows, delbufnr)
     endif
 endfunction
 
-function s:reloadMain(bufnr, alignFlg, limitrows) abort
+function s:reloadMain(bufnr, alignFlg, limitrows, delbufnr) abort
     let bufnr = a:bufnr
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     let connInfo = s:getconninfo(dbiclient_bufmap)
     let port = get(connInfo, 'port', -1)
     if s:error2(port, bufnr)
         return
+    endif
+    if a:delbufnr != -1
+        exe 'silent! bwipeout! ' .. a:delbufnr
     endif
     let dbiclient_bufmap.alignFlg = a:alignFlg
     let limitrows = a:limitrows
@@ -3595,7 +3650,9 @@ endfunction
 
 function s:belowPeditBuffer(bufname, ...) abort
     if g:dbiclient_previewwindow
-        let [bufnr, cbufnr] = s:f.newBuffer('bo pedit', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
+        let hight = winheight(s:getwid(s:bufnr(a:bufname)))
+        let hight = hight == -1 && !&previewwindow  ? g:dbiclient_new_window_hight : ''
+        let [bufnr, cbufnr] = s:f.newBuffer('bo pedit', hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
     else
         let [bufnr, cbufnr] = s:f.newBuffer('below new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
     endif
