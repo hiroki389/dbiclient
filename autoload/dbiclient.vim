@@ -1968,7 +1968,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let F1 = {x -> matchstr(x, '\v^\s*\zs.+\ze\s*')}
         let F2 = {x -> trim(substitute(matchstr(x, '\v^\s*\zs.+\ze\s*'), '\v(ASC|DESC)\s*$', '', ''))}
 
-        let selectStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.select, '\n', ' ', 'g'), '\v\c<select> \zs.{-}\ze\s*$'), '\v\s*, \s*'), {_, x -> trim(x)})
+        let selectStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.select, '\n', ' ', 'g'), '\v\c<select> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let selectStr = filter(selectStr, {_, x -> x !=# '*'})
         let dbiclient_bufmap.opt.select = {}
         let dbiclient_bufmap.opt.select.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : i+1}}))
@@ -1976,14 +1976,14 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let dbiclient_bufmap.opt.select.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : 0}}))
         let dbiclient_bufmap.opt.select.selectUnmatchCols = uniq(sort(filter(selectStr[:], {i, x -> match(cols, '\V' .. trim(x)) == -1})))
 
-        let orderStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.order, '\n', ' ', 'g'), '\v\c<order>\s+<by> \zs.{-}\ze\s*$'), '\v\s*, \s*'), {_, x -> trim(x)})
+        let orderStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.order, '\n', ' ', 'g'), '\v\c<order>\s+<by> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let dbiclient_bufmap.opt.order = {}
         let dbiclient_bufmap.opt.order.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : i+1}}))
         let dbiclient_bufmap.opt.order.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : (x =~? '\v\c<desc>' ? '[DESC]' : '[ASC]') .. (i+1) .. ' ' .. F2(x)}}))
         let dbiclient_bufmap.opt.order.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : x =~? '\v\c<desc>' ? 1 : 0}}))
         let dbiclient_bufmap.opt.order.selectUnmatchCols = uniq(sort(filter(orderStr[:], {i, x -> match(cols, '\V' .. trim(substitute(x, '\v\c\s+(<desc>|<asc>)', '', ''))) == -1})))
 
-        let groupStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.group, '\n', ' ', 'g'), '\v\c<group>\s+<by> \zs.{-}\ze\s*$'), '\v\s*, \s*'), {_, x -> trim(x)})
+        let groupStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.group, '\n', ' ', 'g'), '\v\c<group>\s+<by> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let dbiclient_bufmap.opt.group = {}
         let dbiclient_bufmap.opt.group.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.group.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : '*' .. (i+1) .. ' ' .. F1(x)}}))
@@ -2382,7 +2382,7 @@ endfunction
 
 function s:selectTable(alignFlg, wordFlg, table) abort
     let port = s:getCurrentPort()
-    call s:selectTableCmn(a:alignFlg, s:getTableNm(a:wordFlg, a:table), port, s:getLimitrows())
+    call s:selectTableCmn(a:alignFlg, s:getTableNm(a:wordFlg, a:table) .. (a:table == '' ? ' T' : ''), port, s:getLimitrows())
 endfunction
 
 function s:selectTableCmn(alignFlg, table, port, ...) abort
@@ -2894,6 +2894,10 @@ function s:group() abort
         if !exists('dbiclient_bufmap.opt.extend')
             let dbiclient_bufmap.opt.extend = {}
         endif
+        let selectselectUnmatchCols = []
+        if exists('dbiclient_bufmap.opt.select.selectUnmatchCols')
+            let selectselectUnmatchCols = dbiclient_bufmap.opt.select.selectUnmatchCols
+        endif
         let selectdict = getbufvar(bufnr, 'selectdict', {})
         let selectdictAscDesc = getbufvar(bufnr, 'selectdictAscDesc', {})
         let selectUnmatchCols = getbufvar(bufnr, 'selectUnmatchCols', [])
@@ -2904,7 +2908,7 @@ function s:group() abort
             let list1 = s:selectValues(selectdict)
             let group = 'GROUP BY ' .. join(list1, ", ")
             let dbiclient_bufmap.opt.extend.group = group
-            let select = 'SELECT ' .. join(list1, ", ")
+            let select = 'SELECT ' .. join(extend(list1,selectselectUnmatchCols), ", ")
             let dbiclient_bufmap.opt.extend.select = select
         endif
         let dbiclient_bufmap.opt.group = {}
@@ -3529,8 +3533,14 @@ function s:selectExtends(bufname, orderflg, dict) abort
     let cols = extend(get(dbiclient_bufmap.data, 'cols', [])[:], get(a:dict, 'selectUnmatchCols', []))
     if has_key(a:dict, 'selectdict')
         let list=[]
+        let keys = keys(a:dict.selectdictstr)
         for key in cols
-            call add(list, get(a:dict.selectdictstr, key, key))
+            let keys2 = filter(keys[:], {_,x -> key =~ '\v^.{-}\.\V' .. x .. '\v$'})
+            let key2 = key
+            if len(keys2) == 1
+                let key2 = keys2[0]
+            endif
+            call add(list, get(a:dict.selectdictstr, key2, key))
         endfor
     else
         let list = cols
