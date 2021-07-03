@@ -1161,11 +1161,37 @@ function s:dBExecRangeSQLDo(bang, splitFlg) range abort
     call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0)}, 's:cb_do', port)
 endfunction
 
+"def s:splitSql(sqllist: list<string>, doFlg: number): list<string>
+"    var delim = g:dbiclient_sql_delimiter1
+"    if len(filter(sqllist[:], (_, x) => trim(x) ==# g:dbiclient_sql_delimiter2)) > 0
+"        delim = g:dbiclient_sql_delimiter2
+"    endif
+"    var list = sqllist[:]
+"    list = filter(list, (_, x) => !empty(trim(x)))
+"    var sql = join(list, "\n")
+"    if doFlg && delim ==# g:dbiclient_sql_delimiter2
+"        var ret1 = []
+"        var start = 0
+"        while start > -1
+"            var msp = matchstrpos(sql, '\v^.{-}\n\s*\' .. delim .. '\s*(\n|$)', start)
+"            if msp[2] > -1
+"                call add(ret1, substitute(trim(msp[0]), '\v\' .. delim .. '\s*%$', '', ''))
+"            else
+"                call add(ret1, substitute(trim(sql[start : ]), '\v\' .. delim .. '\s*%$', '', ''))
+"            endif
+"            start = msp[2]
+"        endwhile
+"        return filter(ret1, (_, x) => !empty(trim(x)))
+"    else
+"        var ret1 = s:parseSQL2(sql).splitSql3(delim)
+"        return ret1
+"    endif
+"enddef
+
 function s:splitSql(sqllist, doFlg) abort
+    let delim = g:dbiclient_sql_delimiter1
     if len(filter(a:sqllist[:], {_, x -> trim(x) ==# g:dbiclient_sql_delimiter2})) > 0
         let delim = g:dbiclient_sql_delimiter2
-    else
-        let delim = g:dbiclient_sql_delimiter1
     endif
     let list = a:sqllist[:]
     let list = filter(list, {_, x -> !empty(trim(x))})
@@ -1184,7 +1210,7 @@ function s:splitSql(sqllist, doFlg) abort
         endwhile
         return filter(ret, {_, x -> !empty(trim(x))})
     else
-        return s:parseSQL2(sql).splitSql(delim)
+        return s:parseSQL2(sql).splitSql3(delim)
     endif
 endfunction
 
@@ -2589,7 +2615,11 @@ function s:parseSQL2(sql) abort
     if empty(data)
         let tokens = s:lex(a:sql)
         let tokens = map(tokens, {_, x -> [s:resolveToken(x), x]})
-        let data = s:parseSqlLogicR(tokens, 0, 0)
+        if a:sql =~ '\v^\_s*(insert|update|delete|merge|create|alter|grant|revoke|with)'
+            let data = s:parseSqlLogicSimple(tokens)
+        else
+            let data = s:parseSqlLogicR(tokens, 0, 0)
+        endif
         let s:hardparseDict[hash] = data
     endif
     let dic.data = data
@@ -2646,7 +2676,7 @@ function s:parseSQL2(sql) abort
         return s:getSqlLineDelComment2(s:getNotMaintype(self.data, a:mtype))
     endfunction
 
-    function! dic.splitSql(delim)
+    function! dic.splitSql3(delim)
         let sql = s:splitSql2(self.data, a:delim)
         return sql
     endfunction
@@ -2661,6 +2691,32 @@ endfunction
 
 function s:lenR(list) abort
     return s:f2.Foldl({x, y -> x + y}, 0, map(a:list[:], {_, x -> type(x) == v:t_list && type(get(x, 1, '')) == v:t_string && get(x, 1, '') =~? '^SUBS' ? s:lenR(get(x, 2, [])) : 1}))
+endfunction
+
+function s:parseSqlLogicSimple(tokenList) abort
+    let tokenList = a:tokenList
+    let data = []
+    let maintype = 'NOP'
+    let index = 0
+    while len(tokenList) > index
+        let tokenName = tokenList[index][0]
+        let token = tokenList[index][1]
+
+        if tokenName ==# 'CLAUSE'
+            if maintype =~ '\v\c<select>' && token !~ '\v\c<from>'
+                let maintype = maintype
+            else
+                let maintype = toupper(token)
+            endif
+        endif
+        if tokenName ==# 'JOIN'
+            let maintype = 'JOIN'
+        endif
+
+        call add(data, [maintype, tokenName, token, index])
+        let index += 1
+    endwhile
+    return data
 endfunction
 
 function s:parseSqlLogicR(tokenList, index, subflg) abort
