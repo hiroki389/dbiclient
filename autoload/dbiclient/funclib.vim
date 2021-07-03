@@ -464,11 +464,12 @@ function! {s:_plugin_name}#funclib#new2()
 
     function! s:res2.Foldl(f,init,xs)
         "return empty(a:xs) ? a:init : s:res2.Foldl(a:f,a:f(copy(a:init),a:xs[0]),a:xs[1:])
-        let ret=a:init
-        for x in copy(a:xs)
-            let ret=a:f(ret,x)
-        endfor
-        return ret
+        "let ret=a:init
+        "for x in copy(a:xs)
+        "    let ret=a:f(ret,x)
+        "endfor
+        "return ret
+        return reduce(a:xs, a:f, a:init)
     endfunction
     function! s:res2.Foldl1(f,xs)
         return s:res2.Foldl(a:f,a:xs[0],a:xs[1:])

@@ -70,14 +70,15 @@ let s:nmap_result_AL = 'ma'
 let s:nmap_result_ED = 'me'
 let s:nmap_result_BN = 'mn'
 let s:nmap_result_BP = 'mp'
+let s:nmap_result_BD = 'md'
 let s:nmap_result_GR = 'mg'
 let s:nmap_result_OR = 'mo'
-let s:nmap_result_DI = 'mdi'
+let s:nmap_result_DI = 'mid'
 let s:nmap_result_RE = 'mr'
 let s:nmap_result_LI = 'mll'
 let s:nmap_result_SE = 'ms'
-let s:nmap_result_IJ = 'mij'
-let s:nmap_result_LJ = 'mlj'
+let s:nmap_result_IJ = 'mji'
+let s:nmap_result_LJ = 'mjl'
 let s:nmap_result_WH = 'mw'
 let s:vmap_result_DE = '<C-D>'
 let s:vmap_result_IN = '<C-I>'
@@ -86,6 +87,7 @@ let s:vmap_result_UP = '<C-U>'
 let s:nmap_do_PR = 'me'
 let s:nmap_do_BN = 'mn'
 let s:nmap_do_BP = 'mp'
+let s:nmap_do_BD = 'md'
 
 let s:nmap_table_SQ = '<CR>'
 let s:nmap_table_CT = 'mc'
@@ -247,8 +249,36 @@ function dbiclient#createTestdata(tableNm) abort
     return res
 endfunction
 
+function! dbiclient#getColumnsTableCmn(table)
+    if empty(trim(a:table))
+        return {}
+    endif
+    let cmd= []
+    let ymdhms=strftime("%Y%m%d%H%M%S",localtime())
+    let opt = {
+                \'noaddhistory' : 1
+                \,'column_info' : 1
+                \,'tableNm'     : a:table}
+    return dbiclient#getQuery('',-1,opt)
+endfunction
+
 function dbiclient#getHardparseDict() abort
     return s:lastparse
+endfunction
+
+function s:bufdel(port, cbufnr) abort
+    "let bufnr = s:bufsearch(reverse(get(get(s:params, a:port, {}), 'buflist', [])[:]), a:cbufnr)
+    let bufnr = s:bufsearch(reverse(map(s:bufferList2[:], {_, x -> x[1]})), a:cbufnr)
+    if bufnr == -1
+        let bufnr = s:bufsearch(map(s:bufferList2[:], {_, x -> x[1]}), a:cbufnr)
+        if bufnr == -1
+            let bufnr = a:cbufnr
+        endif
+    endif
+    let s:currentBuf = bufnr
+    exe 'b ' .. bufnr
+    call s:sethl(bufnr('%'))
+    silent! exe 'bwipeout! ' .. a:cbufnr
 endfunction
 
 function s:bufnext(port, cbufnr) abort
@@ -1035,14 +1065,14 @@ function s:jobStop(port) abort
     return 1
 endfunction
 
-function s:cancel(port) abort
+function s:cancel(port, bufnr) abort
     let port = a:port
     if empty(s:params)
         return 0
     endif
     if has_key(s:jobs, port)
         call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
-        let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
+        let sendexprList = filter(s:sendexprList[:], {_, x -> a:bufnr == x[2] &&  x[0] ==# port})
         if len(sendexprList) > 0
             call job_stop(s:jobs[port], 'int')
         endif
@@ -1124,6 +1154,8 @@ function s:dBExecRangeSQLDo(bang, splitFlg) range abort
 
     if a:splitFlg
         let sqllist = s:splitSql(sqllist, 1)
+    else
+        let sqllist = [join(sqllist, "\n")]
     endif
     let sqllist = map(sqllist, {_, x -> substitute(x, '\v\c\&\&(%(' .. defineKeys .. ')>\.?)' , {m -> get(defineDict, matchstr(m[1], '\v^.{-}\ze\.?$'), m[0])}, 'g')})
     call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0)}, 's:cb_do', port)
@@ -1277,25 +1309,27 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         let cbufnr = bufnr('%')
     endif
     if sql !=# ''
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>where()<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>reloadLimit(<SID>bufnr("%"), <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>select()<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>ijoin("INNER")<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>ijoin("LEFT")<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),  ':<C-u>call <SID>group()<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>order()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>where()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reloadLimit(<SID>bufnr("%"), <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>select()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>ijoin("INNER")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>ijoin("LEFT")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_GR', s:nmap_result_GR),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>group()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_OR', s:nmap_result_OR),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>order()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_AL', s:nmap_result_AL),      ':<C-u>call <SID>align(!get(b:dbiclient_bufmap, "alignFlg", 0), <SID>bufnr("%"), <SID>getprelinesep())<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_DI', s:nmap_result_DI),      ':<C-u>call <SID>doDeleteInsert()<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>editSql()<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>editSql()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BD', s:nmap_result_BD),      ':<C-u>call <SID>bufdel(' .. a:port .. ', <SID>bufnr("%"))<CR>')
         call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN),  ':call <SID>createInsertRange()<CR>')
         call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE),  ':call <SID>createDeleteRange()<CR>')
         call s:setvmap(bufnr, get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP),  ':call <SID>createUpdateRange()<CR>')
     elseif get(a:opt, 'column_info', 0) ==# 1
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN),      ':<C-u>call <SID>bufnext(' .. a:port .. ', <SID>bufnr("%"))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP),      ':<C-u>call <SID>bufprev(' .. a:port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_BD', s:nmap_result_BD),      ':<C-u>call <SID>bufdel(' .. a:port .. ', <SID>bufnr("%"))<CR>')
     elseif get(a:opt, 'table_info', 0) ==# 1
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_SQ', s:nmap_table_SQ), ':<C-u>call <SID>selectTableOfList(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':<C-u>call <SID>count(<SID>getTableNameSchem(<SID>getPort()), <SID>getPort())<CR>')
@@ -1306,7 +1340,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     if !empty(get(a:opt, 'reloadBufname', ''))
         call s:f.gotoWin(bufnr)
     endif
-    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ')'
+    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     if ro
         call s:f.readonly(bufnr)
     endif
@@ -1338,7 +1372,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
                 \, 'tempfile'      : s:tempname()}
     let param.setnmaps = getbufvar(bufnr, 'dbiclient_nmap', [])
     let param.setvmaps = getbufvar(bufnr, 'dbiclient_vmap', [])
-    call s:ch_sendexpr(channel, param , {"callback": funcref(a:callback)})
+    call s:ch_sendexpr(channel, param , {"callback": funcref(a:callback)}, bufnr)
     return channel
 endfunction
 
@@ -1436,9 +1470,9 @@ function s:dBCommandNoChk(port, command) abort
     endif
 endfunction
 
-function s:ch_sendexpr(handle, expr, opt) abort
+function s:ch_sendexpr(handle, expr, opt, bufnr) abort
     let result = ch_sendexpr(a:handle, a:expr, a:opt)
-    call add(s:sendexprList, [a:expr.connInfo.port, a:handle])
+    call add(s:sendexprList, [a:expr.connInfo.port, a:handle, a:bufnr])
     if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
         call s:joblist(0)
     endif
@@ -1477,6 +1511,7 @@ function s:dBCommandAsync(command, callback, port) abort
     let command = a:command
     let command.tempfile = s:tempname()
     let command.connInfo = s:params[port]
+    let bufnr = -1
     if get(command, "nodisplay", 0) !=# 1 
         let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
         let bufname='Result_' .. s:getuser(s:params[a:port]) .. '_' .. port .. '_' .. ymdhmss
@@ -1499,7 +1534,7 @@ function s:dBCommandAsync(command, callback, port) abort
             let cbufnr = bufnr('%')
         endif
         call s:appendbufline(bufnr, '$', ['Now loading...'])
-        exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ')'
+        exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
         if ro
             call s:f.readonly(bufnr)
         endif
@@ -1512,7 +1547,7 @@ function s:dBCommandAsync(command, callback, port) abort
         let command.setvmaps = getbufvar(bufnr, 'dbiclient_vmap', [])
     endif
 
-    call s:ch_sendexpr(channel, command, {"callback": funcref(a:callback)})
+    call s:ch_sendexpr(channel, command, {"callback": funcref(a:callback)}, bufnr)
 endfunction
 
 function s:cb_do(ch, dict) abort
@@ -1559,6 +1594,7 @@ function s:cb_do(ch, dict) abort
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_PR', s:nmap_do_PR), ':<C-u>call <SID>editSqlDo()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BD', s:nmap_do_BD), ':<C-u>call <SID>bufdel(' .. port .. ', <SID>bufnr("%"))<CR>')
         call s:setallmap(bufnr)
         let status = s:getStatus(port, connInfo)
         let tupleList = []
@@ -1579,6 +1615,7 @@ function s:cb_do(ch, dict) abort
         call add(msgList, [get(g:, 'dbiclient_nmap_do_PR', s:nmap_do_PR), ':SQL_PREVIEW'])
         call add(msgList, [get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':NEXTBUF'])
         call add(msgList, [get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':PREVBUF'])
+        call add(msgList, [get(g:, 'dbiclient_nmap_do_BD', s:nmap_do_BD), ':DELBUF'])
         call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
         call setbufvar(bufnr, 'dbiclient_tupleList', tupleList)
         let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
@@ -1732,7 +1769,16 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             call add(msgList, [get(g:, 'dbiclient_nmap_result_ED', s:nmap_result_ED), ':EDIT'])
             call add(msgList, [get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN), ':NEXTBUF'])
             call add(msgList, [get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP), ':PREVBUF'])
-            call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
+            call add(msgList, [get(g:, 'dbiclient_nmap_result_BD', s:nmap_result_BD), ':DELBUF'])
+
+            let nmapkeylist = map(getbufvar(bufnr, 'dbiclient_nmap', [])[:], {_, x -> x[0]})
+            let msgList2 = []
+            for msg in msgList
+                if index(nmapkeylist, msg[0]) != -1
+                    call add(msgList2, msg)
+                endif
+            endfor
+            call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList2))
             call add(matchadds, ['Comment', '\v%3l^".{-}:'])
             call add(matchadds, ['String', '\v%3l^".{-}:\zs.*$'])
             call add(matchadds, ['Function', '\v%3l( \[)@<=.{-}(\:)@='])
@@ -1741,7 +1787,15 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             call add(msgList, [get(g:, 'dbiclient_vmap_result_IN', s:vmap_result_IN), ':INSERT'])
             call add(msgList, [get(g:, 'dbiclient_vmap_result_UP', s:vmap_result_UP), ':UPDATE'])
             call add(msgList, [get(g:, 'dbiclient_vmap_result_DE', s:vmap_result_DE), ':DELETE'])
-            call add(tupleList, s:Tuple('"Quick Help<vmap>', msgList))
+
+            let vmapkeylist = map(getbufvar(bufnr, 'dbiclient_vmap', [])[:], {_, x -> x[0]})
+            let msgList2 = []
+            for msg in msgList
+                if index(vmapkeylist, msg[0]) != -1
+                    call add(msgList2, msg)
+                endif
+            endfor
+            call add(tupleList, s:Tuple('"Quick Help<vmap>', msgList2))
             call add(matchadds, ['Comment', '\v%4l^".{-}:'])
             call add(matchadds, ['String', '\v%4l^".{-}:\zs.*$'])
             call add(matchadds, ['Function', '\v%4l( \[)@<=.{-}(\:)@='])
@@ -1764,6 +1818,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             let msgList = []
             call add(msgList, [get(g:, 'dbiclient_nmap_result_BN', s:nmap_result_BN), ':NEXTBUF'])
             call add(msgList, [get(g:, 'dbiclient_nmap_result_BP', s:nmap_result_BP), ':PREVBUF'])
+            call add(msgList, [get(g:, 'dbiclient_nmap_result_BD', s:nmap_result_BD), ':DELBUF'])
             call add(tupleList, s:Tuple('"Quick Help', msgList))
             call add(matchadds, ['Comment', '\v%3l^".{-}:'])
             call add(matchadds, ['String', '\v%3l^".{-}:\zs.*$'])
@@ -1926,7 +1981,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let F1 = {x -> matchstr(x, '\v^\s*\zs.+\ze\s*')}
         let F2 = {x -> trim(substitute(matchstr(x, '\v^\s*\zs.+\ze\s*'), '\v(ASC|DESC)\s*$', '', ''))}
 
-        let selectStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.select, '\n', ' ', 'g'), '\v\c<select> \zs.{-}\ze\s*$'), '\v\s*, \s*'), {_, x -> trim(x)})
+        let selectStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.select, '\n', ' ', 'g'), '\v\c<select> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let selectStr = filter(selectStr, {_, x -> x !=# '*'})
         let dbiclient_bufmap.opt.select = {}
         let dbiclient_bufmap.opt.select.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : i+1}}))
@@ -1934,14 +1989,14 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let dbiclient_bufmap.opt.select.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : 0}}))
         let dbiclient_bufmap.opt.select.selectUnmatchCols = uniq(sort(filter(selectStr[:], {i, x -> match(cols, '\V' .. trim(x)) == -1})))
 
-        let orderStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.order, '\n', ' ', 'g'), '\v\c<order>\s+<by> \zs.{-}\ze\s*$'), '\v\s*, \s*'), {_, x -> trim(x)})
+        let orderStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.order, '\n', ' ', 'g'), '\v\c<order>\s+<by> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let dbiclient_bufmap.opt.order = {}
         let dbiclient_bufmap.opt.order.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : i+1}}))
         let dbiclient_bufmap.opt.order.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : (x =~? '\v\c<desc>' ? '[DESC]' : '[ASC]') .. (i+1) .. ' ' .. F2(x)}}))
         let dbiclient_bufmap.opt.order.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : x =~? '\v\c<desc>' ? 1 : 0}}))
         let dbiclient_bufmap.opt.order.selectUnmatchCols = uniq(sort(filter(orderStr[:], {i, x -> match(cols, '\V' .. trim(substitute(x, '\v\c\s+(<desc>|<asc>)', '', ''))) == -1})))
 
-        let groupStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.group, '\n', ' ', 'g'), '\v\c<group>\s+<by> \zs.{-}\ze\s*$'), '\v\s*, \s*'), {_, x -> trim(x)})
+        let groupStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.group, '\n', ' ', 'g'), '\v\c<group>\s+<by> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let dbiclient_bufmap.opt.group = {}
         let dbiclient_bufmap.opt.group.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.group.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : '*' .. (i+1) .. ' ' .. F1(x)}}))
@@ -2173,51 +2228,51 @@ function s:rpad(x, n, c) abort
     return a:x .. repeat(a:c, a:n - strdisplaywidth(a:x))
 endfunction
 
-"def s:alignLinesCR(bufnr: number, preCr: string)
-function s:alignLinesCR(bufnr, preCr)
-    let bufnr = a:bufnr
-    let preCr = a:preCr
-    let cbufnr = s:bufnr('%')
+def s:alignLinesCR(bufnr: number, preCr: string)
+#function s:alignLinesCR(bufnr, preCr)
+    #let bufnr = a:bufnr
+    #let preCr = a:preCr
+    var cbufnr = s:bufnr('%')
     call s:gotoWin(bufnr)
-    let curpos = 1
-    let save_cursor = getcurpos()
+    var curpos = 1
+    var save_cursor = getcurpos()
     norm gg
-    let surr = '\V' .. (empty(g:dbiclient_surround) ? '"' : g:dbiclient_surround)
-    let regexS = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\ze\V' .. surr .. preCr .. '\v(\t|$)'
-    let regexE = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\V' .. surr .. preCr .. '\v\ze(\t|$)'
-    let posS = [0]
-    let posE = [0]
-    let save_posS = []
+    var surr = '\V' .. (empty(g:dbiclient_surround) ? '"' : g:dbiclient_surround)
+    var regexS = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\ze\V' .. surr .. preCr .. '\v(\t|$)'
+    var regexE = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\V' .. surr .. preCr .. '\v\ze(\t|$)'
+    var posS = [0]
+    var posE = [0]
+    var save_posS = []
     try
-        let posS = searchpos(regexS, 'c')
-        let save_posS = getcurpos()
-        let posE = searchpos(regexE, 'ce')
+        posS = searchpos(regexS, 'c')
+        save_posS = getcurpos()
+        posE = searchpos(regexE, 'ce')
     catch /./
-        let posS = [0]
-        let posE = [0]
+        posS = [0]
+        posE = [0]
         exe '%s/' .. preCr .. '//g'
     endtry
-    let flg = 0
+    var flg = 0
     call s:debugLog('alignCr:start')
     while posS[0] !=# 0
         if posS[0] !=# posE[0]
-            let strS = getbufline(bufnr, posS[0])[0]
-            let strE = getbufline(bufnr, posE[0])[0]
+            var strS = getbufline(bufnr, posS[0])[0]
+            var strE = getbufline(bufnr, posE[0])[0]
             if posE[0] - posS[0] > 1
                 for pos in range(posS[0] + 1, posE[0] - 1)
-                    let strS = strS .. "<<CRLF>>" .. getbufline(bufnr, pos)[0]
+                    strS = strS .. "<<CRLF>>" .. getbufline(bufnr, pos)[0]
                 endfor
             endif
-            let str = strS .. "<<CRLF>>" .. strE
+            var str = strS .. "<<CRLF>>" .. strE
             call s:deletebufline(bufnr, (posS[0] + 1), (posE[0]))
             call s:setbufline(bufnr, posS[0], str)
             call setpos('.', save_posS)
             call searchpos('\V' .. preCr .. surr .. '\v(\_[^\t]){-}\V' .. surr .. preCr, 'e')
-            let flg = 1
+            flg = 1
         endif
-        let posS = searchpos(regexS, 'c')
-        let save_posS = getcurpos()
-        let posE = searchpos(regexE, 'ce')
+        posS = searchpos(regexS, 'c')
+        save_posS = getcurpos()
+        posE = searchpos(regexE, 'ce')
     endwhile
     call s:debugLog('alignCr:end')
     call s:debugLog('alignCrReplace:start')
@@ -2227,7 +2282,8 @@ function s:alignLinesCR(bufnr, preCr)
     call s:debugLog('alignCrReplace:end')
     call setpos('.', save_cursor)
     call s:gotoWin(cbufnr)
-endfunction
+#endfunction
+enddef
 
 function s:alignLinesCRsetpos(bufnr, curpos)
     let bufnr = a:bufnr
@@ -2262,51 +2318,46 @@ function s:alignLinesCRsetpos(bufnr, curpos)
     call s:debugLog('alignCrReplace>:end')
 endfunction
 
-"def s:alignMain(preCr: string)
-function s:alignMain(preCr)
-    let preCr = a:preCr
-    let bufnr = s:bufnr(get(get(getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {}), 'data', {}), 'reloadBufnr', s:bufnr('%')))
+def s:alignMain(preCr: string)
+#function s:alignMain(preCr)
+    var preCr = a:preCr
+    var bufnr = s:bufnr(get(get(getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {}), 'data', {}), 'reloadBufnr', s:bufnr('%')))
     call s:alignLinesCR(bufnr, a:preCr)
-    let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-    let lines = []
+    var dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
+    var lines = []
     if !empty(dbiclient_bufmap) && !empty(get(dbiclient_bufmap, 'maxcols', []))
-        let lines = s:getalignlist2(getbufline(bufnr, 0, '$'), dbiclient_bufmap.maxcols)
+        lines = s:getalignlist2(getbufline(bufnr, 0, '$'), dbiclient_bufmap.maxcols)
     else
-        let lines = s:getalignlist(getbufline(bufnr, 0, '$'))
+        lines = s:getalignlist(getbufline(bufnr, 0, '$'))
     endif
-    let i = 1
+    var i = 1
     for line in lines
         call s:setbufline(bufnr, i, line)
-        let i += 1
+        i += 1
     endfor
-endfunction
+#endfunction
+enddef
 
-"def s:getalignlist2(lines: list<string>, maxCols: list<number>): list<string>
-function s:getalignlist2(lines, maxCols) abort
-    let lines = a:lines
-    let maxCols = a:maxCols
+def s:getalignlist2(lines: list<string>, maxCols: list<number>): list<string>
+#function s:getalignlist2(lines, maxCols) abort
+    #var lines = a:lines
+    #var maxCols = a:maxCols
     if empty(lines)
         return []
     endif
     call s:debugLog('align:start')
-    let colsize = len(split(lines[0], g:dbiclient_col_delimiter, 1))
+    var colsize = len(split(lines[0], g:dbiclient_col_delimiter, 1))
     call s:debugLog('align:lines ' .. len(lines))
-    let lines3 = []
-    let lines3 = map(lines[:], {_, x -> map(split(x, g:dbiclient_col_delimiter, 1), {_, x -> substitute(x, s:tab_placefolder, "\t", 'g')})})
+    var lines3 = []
+    lines3 = mapnew(lines, (_, x) => mapnew(split(x, g:dbiclient_col_delimiter, 1), (_, xx) => substitute(xx, s:tab_placefolder, "\t", 'g')))
     call s:debugLog('align:copy')
     call s:debugLog('align:maxCols' .. string(maxCols))
-    let lines4 = []
-    let lines4 = map(lines3, {_, cols -> colsize ==# len(cols) ? join(map(cols, {i, col -> col .. repeat(' ', maxCols[i] + 1 - strdisplaywidth(col))}), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter)})
-    "for cols in lines3
-    "    if colsize ==# len(cols)
-    "        add(lines4, join(map(cols, {i, col -> col .. repeat(' ', maxCols[i] + 1 - strdisplaywidth(col))}), g:dbiclient_col_delimiter_align .. ' '))
-    "    else
-    "        add(lines4, join(cols, g:dbiclient_col_delimiter))
-    "    endif
-    "endfor
+    var lines4 = []
+    lines4 = mapnew(lines3, (_, cols) => colsize ==# len(cols) ? join(mapnew(cols, (i, col) => col .. repeat(' ', maxCols[i] + 1 - strdisplaywidth(col))), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter))
     call s:debugLog('align:end')
     return lines4
-endfunction
+#endfunction
+enddef
 
 function s:getalignlist(lines) abort
     if empty(a:lines)
@@ -2340,7 +2391,7 @@ endfunction
 
 function s:selectTable(alignFlg, wordFlg, table) abort
     let port = s:getCurrentPort()
-    call s:selectTableCmn(a:alignFlg, s:getTableNm(a:wordFlg, a:table), port, s:getLimitrows())
+    call s:selectTableCmn(a:alignFlg, s:getTableNm(a:wordFlg, a:table) .. (a:table == '' ? ' T' : ''), port, s:getLimitrows())
 endfunction
 
 function s:selectTableCmn(alignFlg, table, port, ...) abort
@@ -2371,7 +2422,7 @@ function s:getSqlLineDelComment(sql) abort
         return ''
     endif
     let port = s:getCurrentPort()
-    return s:parseSQL2(a:sql).getSqlLineDelComment()
+    return s:parseSQL2(a:sql).getSqlLineDelComment1()
 endfunction
 
 function s:getSqlLine(sql) abort
@@ -2470,34 +2521,33 @@ function s:parseSQL(sql, cols) abort
     return parseSQL
 endfunction
 
-"def s:lex(sql: string): list<string>
-function s:lex(sql) abort
-    let sql = a:sql
-    let tokenList = []
-    let start = 0
-    let regex  = '\v^\_s+|'
-    let regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
-    let regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
-    let regex ..= '\v^\/\*\_.{-}\*\/|'
-    let regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
-    let regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
-    let regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
-    let regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
-    let regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
-    let regex ..= '\v^[[:punct:]]\ze'
-    let msp = []
+def s:lex(sql: string): list<string>
+#function s:lex(sql) abort
+    var tokenList = []
+    var start = 0
+    var regex  = '\v^\_s+|'
+    regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+    regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
+    regex ..= '\v^\/\*\_.{-}\*\/|'
+    regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+    regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+    regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+    regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+    regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
+    regex ..= '\v^[[:punct:]]\ze'
+    var msp = []
     while start > -1
-        let msp = matchstrpos(sql, regex, start)
+        msp = matchstrpos(sql, regex, start)
         call add(tokenList, msp[0])
-        let start = msp[2]
+        start = msp[2]
     endwhile
-    return filter(tokenList, {_, x -> x !~ '^$'})
-endfunction
+    return filter(tokenList, (_, x) => x !~ '^$')
+#endfunction
+enddef
 
-"def s:resolveToken(token: string): string
-function s:resolveToken(token) abort
-    let token = a:token
-    let patternList = [['WHITESPACE',   '\v^\s+$'],
+def s:resolveToken(token: string): string
+#function s:resolveToken(token) abort
+    var patternList = [['WHITESPACE',   '\v^\s+$'],
                 \ ['SINGLE-QUOTE', '\v^'''],
                 \ ['Q-QUOTE',      '\v^[qQ]'''],
                 \ ['DOUBLE-QUOTE', '\v^"'],
@@ -2527,9 +2577,10 @@ function s:resolveToken(token) abort
                 \ ['PARENTHESES',  '^\V('],
                 \ ['PARENTHESES',  '^\V)']]
 
-    let pattern = filter(patternList, {_, x -> token =~? x[1]})
+    var pattern = filter(patternList, (_, x) => token =~? x[1])
     return get(get(pattern, 0, []), 0, 'TOKEN')
-endfunction
+#endfunction
+enddef
 
 function s:parseSQL2(sql) abort
     let dic = {}
@@ -2600,7 +2651,7 @@ function s:parseSQL2(sql) abort
         return sql
     endfunction
 
-    function! dic.getSqlLineDelComment()
+    function! dic.getSqlLineDelComment1()
         return s:getSqlLineDelComment2(self.data)
     endfunction
     let s:lastparse = dic
@@ -2757,6 +2808,7 @@ function s:order() abort
         let dbiclient_bufmap.opt.order.selectdictstr = selectdictstr
         let dbiclient_bufmap.opt.order.selectdictAscDesc = selectdictAscDesc
         let dbiclient_bufmap.opt.order.selectUnmatchCols = selectUnmatchCols
+        call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         let extend = dbiclient_bufmap.opt.extend
         call s:extendquery(a:alignFlg, extend)
     endfunction
@@ -2815,6 +2867,7 @@ function s:select() abort
         let dbiclient_bufmap.opt.select.selectdictstr = selectdictstr
         let dbiclient_bufmap.opt.select.selectdictAscDesc = selectdictAscDesc
         let dbiclient_bufmap.opt.select.selectUnmatchCols = selectUnmatchCols
+        call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         let extend = dbiclient_bufmap.opt.extend
         call s:extendquery(a:alignFlg, extend)
     endfunction
@@ -2850,6 +2903,10 @@ function s:group() abort
         if !exists('dbiclient_bufmap.opt.extend')
             let dbiclient_bufmap.opt.extend = {}
         endif
+        let selectselectUnmatchCols = []
+        if exists('dbiclient_bufmap.opt.select.selectUnmatchCols')
+            let selectselectUnmatchCols = dbiclient_bufmap.opt.select.selectUnmatchCols
+        endif
         let selectdict = getbufvar(bufnr, 'selectdict', {})
         let selectdictAscDesc = getbufvar(bufnr, 'selectdictAscDesc', {})
         let selectUnmatchCols = getbufvar(bufnr, 'selectUnmatchCols', [])
@@ -2860,7 +2917,7 @@ function s:group() abort
             let list1 = s:selectValues(selectdict)
             let group = 'GROUP BY ' .. join(list1, ", ")
             let dbiclient_bufmap.opt.extend.group = group
-            let select = 'SELECT ' .. join(list1, ", ")
+            let select = 'SELECT ' .. join(extend(list1,selectselectUnmatchCols), ", ")
             let dbiclient_bufmap.opt.extend.select = select
         endif
         let dbiclient_bufmap.opt.group = {}
@@ -2868,6 +2925,7 @@ function s:group() abort
         let dbiclient_bufmap.opt.group.selectdictstr = selectdictstr
         let dbiclient_bufmap.opt.group.selectdictAscDesc = selectdictAscDesc
         let dbiclient_bufmap.opt.group.selectUnmatchCols = selectUnmatchCols
+        call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         let extend = dbiclient_bufmap.opt.extend
         call s:extendquery(a:alignFlg, extend)
     endfunction
@@ -3197,6 +3255,7 @@ function s:reloadMain(bufnr, alignFlg, limitrows, delbufnr) abort
     let opt.reloadBufnr = bufnr
     let opt.precols = dbiclient_bufmap.data.cols[:]
     call s:getQueryAsync(sql, s:callbackstr(alignFlg), limitrows, opt, port)
+    let selectdict = getbufvar(bufnr, 'selectdict', {})
 endfunction
 
 function s:callbackstr(alignFlg) abort
@@ -3283,7 +3342,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
                 \, 'reloadBufname' : bufname
                 \, 'reloadBufnr'   : bufnr}
     call s:appendbufline(bufnr, '$', ['Now loading...'])
-    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ')'
+    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     call s:f.readonly(bufnr)
     call s:f.gotoWin(bufnr)
     call s:getQueryAsync('', s:callbackstr(a:alignFlg), -1, opt, a:port)
@@ -3328,6 +3387,7 @@ function s:getTableNm(wordFlg, table) abort
     endif
     return table
 endfunction
+
 
 function s:selectColumnsTableCmn(alignFlg, table, ...) abort
     let port = s:getCurrentPort()
@@ -3483,8 +3543,14 @@ function s:selectExtends(bufname, orderflg, dict) abort
     let cols = extend(get(dbiclient_bufmap.data, 'cols', [])[:], get(a:dict, 'selectUnmatchCols', []))
     if has_key(a:dict, 'selectdict')
         let list=[]
+        let keys = keys(a:dict.selectdictstr)
         for key in cols
-            call add(list, get(a:dict.selectdictstr, key, key))
+            let keys2 = filter(keys[:], {_,x -> key =~ '\v^.{-}\.\V' .. x .. '\v$'})
+            let key2 = key
+            if len(keys2) == 1
+                let key2 = keys2[0]
+            endif
+            call add(list, get(a:dict.selectdictstr, key2, key))
         endfor
     else
         let list = cols
@@ -3863,12 +3929,39 @@ function s:any(xs, fuc)
     return 0
 endfunction
 
-augroup BufEnterDbiClient
-    autocmd WinNew, BufEnter * call s:sethl(bufnr('%'))
-augroup END
+function s:bufCopy()
+    if has_key(b:,'dbiclient_bufmap') && has_key(b:dbiclient_bufmap,'data') && b:dbiclient_bufmap.data.reloadBufname =~ '^Result_' && len(win_findbuf(s:bufnr('%'))) > 1
+        let lines = getline(0, '$')
+        let bufDict = b:
+        let winDict = w:
+        let port = s:getCurrentPort()
+        let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
+        let bufname = 'Result_' .. s:getuser(s:params[port]) .. '_' .. port .. '_' .. ymdhmss
+        let bufnr = s:enewBuffer(bufname)
+        let winid = bufwinid(bufnr)
+        call s:appendbufline(bufnr, 0, lines)
+        for [key,val] in items(bufDict)
+            if key =~ '^dbiclient_'
+                call setbufvar(bufnr, key, val)
+            endif
+        endfor
+        let b:dbiclient_bufmap.data.reloadBufname = bufname
+        let b:dbiclient_bufmap.data.reloadBufnr = bufnr
+        for [key,val] in items(winDict)
+            if key =~ '^dbiclient_'
+                call setwinvar(winid, key, val)
+            endif
+        endfor
+        call s:setallmap(bufnr)
+        call s:sethl(bufnr)
+        call s:addbufferlist(port, bufnr)
+        norm gg
+    endif
+endfunction
 
 augroup dbiclient
     au!
+    autocmd WinNew,BufEnter * :call s:sethl(bufnr('%'))
     autocmd VimLeavePre * :call s:jobStopAll()
 augroup END
 
