@@ -634,7 +634,7 @@ function s:createInsertRange() range abort
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
     let bufnr = s:bufnr(bufname)
-    if s:f.gotoWinCurrentTab(bufnr) ==# -1
+    if s:gotoWinCurrentTab(bufnr) ==# -1
         let bufnr = s:aboveNewBuffer(bufname)
     endif
     call s:deletebufline(bufnr, 1, '$')
@@ -706,7 +706,7 @@ function s:createUpdateRange() range abort
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
     let bufnr = s:bufnr(bufname)
-    if s:f.gotoWinCurrentTab(bufnr) ==# -1
+    if s:gotoWinCurrentTab(bufnr) ==# -1
         let bufnr = s:aboveNewBuffer(bufname)
     endif
     call s:deletebufline(bufnr, 1, '$')
@@ -755,7 +755,7 @@ function s:createDeleteRange() range abort
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
     let bufnr = s:bufnr(bufname)
-    if s:f.gotoWinCurrentTab(bufnr) ==# -1
+    if s:gotoWinCurrentTab(bufnr) ==# -1
         let bufnr = s:aboveNewBuffer(bufname)
     endif
     call s:deletebufline(bufnr, 1, '$')
@@ -789,7 +789,7 @@ function s:joblist(moveFlg) abort
         call s:f.noreadonly(bufnr)
         let save_cursor = getcurpos()
     else
-        call s:f.gotoWinCurrentTab(bufnr)
+        call s:gotoWinCurrentTab(bufnr)
         let save_cursor = getcurpos()
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
@@ -813,7 +813,7 @@ function s:joblist(moveFlg) abort
     call s:appendbufline(bufnr, '$', list)
     call setpos('.', save_cursor)
     if !a:moveFlg
-        call s:f.gotoWin(cbufnr)
+        call s:gotoWin(cbufnr)
     endif
     call s:f.readonly(bufnr)
     let matchadds=[]
@@ -1189,6 +1189,7 @@ endfunction
 "enddef
 
 function s:splitSql(sqllist, doFlg) abort
+    call s:debugLog('splitSql')
     let delim = g:dbiclient_sql_delimiter1
     if len(filter(a:sqllist[:], {_, x -> trim(x) ==# g:dbiclient_sql_delimiter2})) > 0
         let delim = g:dbiclient_sql_delimiter2
@@ -1210,7 +1211,11 @@ function s:splitSql(sqllist, doFlg) abort
         endwhile
         return filter(ret, {_, x -> !empty(trim(x))})
     else
-        return s:parseSQL2(sql).splitSql3(delim)
+        if sql =~ '\v^\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
+            return s:split(sql, '\v' .. delim .. '\s*$')
+        else
+            return s:parseSQL2(sql).splitSql3(delim)
+        endif
     endif
 endfunction
 
@@ -1364,14 +1369,15 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     endif
     call s:appendbufline(bufnr, '$', ['Now loading...'])
     if !empty(get(a:opt, 'reloadBufname', ''))
-        call s:f.gotoWin(bufnr)
+        call s:debugLog('reloadBufname')
+        call s:gotoWin(bufnr)
     endif
     exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     if ro
         call s:f.readonly(bufnr)
     endif
     if !g:dbiclient_previewwindow
-        call s:f.gotoWin(bufnr)
+        call s:gotoWin(bufnr)
     endif
     let param = {
                 \"opt"            : a:opt
@@ -1565,7 +1571,7 @@ function s:dBCommandAsync(command, callback, port) abort
             call s:f.readonly(bufnr)
         endif
         if !g:dbiclient_previewwindow
-            call s:f.gotoWin(bufnr)
+            call s:gotoWin(bufnr)
         endif
         let command.reloadBufname = bufname
         let command.reloadBufnr = bufnr
@@ -1711,7 +1717,7 @@ function s:cb_do(ch, dict) abort
             call s:sethl(bufnr)
         endif
     endif
-    call s:debugLog(a:dict)
+    "call s:debugLog(a:dict)
     if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
         call s:joblist(0)
     endif
@@ -1982,6 +1988,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             let where = dbiclient_bufmap.opt.where[:]
         endif
 
+        call s:debugLog('parseSQLwhere')
         let parseSQLwhere = substitute(substitute(s:parseSQL2(a:dict.data.sql).getMaintype('WHERE'), '\v\c^\s*<where>\s*', '', ''), '\n', ' ', 'g')
         let andlist = []
         if parseSQLwhere !~? '\v\c(<or>)'
@@ -2258,7 +2265,8 @@ def s:alignLinesCR(bufnr: number, preCr: string)
 #function s:alignLinesCR(bufnr, preCr)
     #let bufnr = a:bufnr
     #let preCr = a:preCr
-    var cbufnr = s:bufnr('%')
+    var cbufnr = bufnr('%')
+    var cwid = s:getwidCurrentTab(cbufnr)
     call s:gotoWin(bufnr)
     var curpos = 1
     var save_cursor = getcurpos()
@@ -2307,7 +2315,12 @@ def s:alignLinesCR(bufnr: number, preCr: string)
     endif
     call s:debugLog('alignCrReplace:end')
     call setpos('.', save_cursor)
-    call s:gotoWin(cbufnr)
+    if cwid != -1
+        call win_gotoid(cwid)
+        call s:debugLog('win_gotoid:[' .. s:bufnr('%') .. ',' .. cwid .. ']')
+    else
+        call s:gotoWin(cbufnr)
+    endif
 #endfunction
 enddef
 
@@ -2444,6 +2457,7 @@ function s:editHistory(str) abort
 endfunction
 
 function s:getSqlLineDelComment(sql) abort
+    call s:debugLog('getSqlLineDelComment')
     if a:sql ==# ''
         return ''
     endif
@@ -2530,6 +2544,7 @@ function s:selectHistory(port) abort
 endfunction
 
 function s:parseSQL(sql, cols) abort
+    call s:debugLog('parseSQL')
     let data = s:parseSQL2(a:sql)
     let parseSQL={}
     let parseSQL.select=data.getMaintype('SELECT')
@@ -2543,30 +2558,38 @@ function s:parseSQL(sql, cols) abort
     if len(data.getNotMaintype('\v\c<(nop|select|from|join|where|group|order|having)>')) > 0
         return {}
     endif
-    call s:debugLog(string(parseSQL))
+    "call s:debugLog(string(parseSQL))
     return parseSQL
 endfunction
 
 def s:lex(sql: string): list<string>
 #function s:lex(sql) abort
     var tokenList = []
-    var start = 0
-    var regex  = '\v^\_s+|'
-    regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
-    regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
-    regex ..= '\v^\/\*\_.{-}\*\/|'
-    regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
-    regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
-    regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
-    regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
-    regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
-    regex ..= '\v^[[:punct:]]\ze'
-    var msp = []
-    while start > -1
-        msp = matchstrpos(sql, regex, start)
-        call add(tokenList, msp[0])
-        start = msp[2]
-    endwhile
+    var sqllist = split(sql, "\n")
+    var i = 1
+    for sql2 in sqllist
+        var start = 0
+        var regex  = '\v^\_s+|'
+        regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+        regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
+        regex ..= '\v^\/\*\_.{-}\*\/|'
+        regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+        regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+        regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+        regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+        regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
+        regex ..= '\v^[[:punct:]]\ze'
+        var msp = []
+        while start > -1
+            msp = matchstrpos(sql2, regex, start)
+            call add(tokenList, msp[0])
+            start = msp[2]
+        endwhile
+        if i != len(sqllist)
+            call add(tokenList, "\n")
+        endif
+        i += 1
+    endfor
     return filter(tokenList, (_, x) => x !~ '^$')
 #endfunction
 enddef
@@ -2603,23 +2626,34 @@ def s:resolveToken(token: string): string
                 \ ['PARENTHESES',  '^\V('],
                 \ ['PARENTHESES',  '^\V)']]
 
-    var pattern = filter(patternList, (_, x) => token =~? x[1])
-    return get(get(pattern, 0, []), 0, 'TOKEN')
+    for pattern in patternList
+        if token =~? pattern[1]
+            return pattern[0]
+        endif
+    endfor
+    return 'TOKEN'
+    #var pattern = filter(patternList, (_, x) => token =~? x[1])
+    #return get(get(pattern, 0, []), 0, 'TOKEN')
 #endfunction
 enddef
 
 function s:parseSQL2(sql) abort
     let dic = {}
+    call s:debugLog('sql:' .. a:sql[0:100])
+    call s:debugLog('sha256 start')
     let hash = sha256(a:sql)
+    call s:debugLog('sha256 end(' .. hash .. ')')
     let data = get(s:hardparseDict, hash, [])
     if empty(data)
+        call s:debugLog('lex start')
         let tokens = s:lex(a:sql)
+        call s:debugLog('lex end')
+        call s:debugLog('parse start')
+        call s:debugLog('resolve start')
         let tokens = map(tokens, {_, x -> [s:resolveToken(x), x]})
-        if a:sql =~ '\v^\_s*(insert|update|delete|merge|create|alter|grant|revoke|with)'
-            let data = s:parseSqlLogicSimple(tokens)
-        else
-            let data = s:parseSqlLogicR(tokens, 0, 0)
-        endif
+        call s:debugLog('resolve end')
+        let data = s:parseSqlLogicR(tokens, 0, 0)
+        call s:debugLog('parse end')
         let s:hardparseDict[hash] = data
     endif
     let dic.data = data
@@ -3036,7 +3070,7 @@ function s:ijoin(prefix) abort
         let bufname = bufname('%')
         quit
         exe 'silent! bwipeout! ' .. bufnr
-        call s:f.gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
+        call s:gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
         let bufnr = s:vsNewBuffer(bufname)
         inoremap <buffer> <silent> <CR> <ESC>
         call s:appendbufline(bufnr, 0, ijoin)
@@ -3234,7 +3268,7 @@ function s:dbhistoryRestore(str) abort
         call s:cb_do({}, dbiclient_bufmap)
     endif
     if !g:dbiclient_previewwindow
-        call s:f.gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
+        call s:gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
     endif
 endfunction
 
@@ -3272,9 +3306,16 @@ function s:reloadLimit(bufnr, limitrows) abort
         let bufnr = s:bufnr('%')
         let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
         if g:dbiclient_previewwindow
+            let cwid = s:getwidCurrentTab(bufnr)
             silent! wincmd P
             silent! setlocal nopreviewwindow
-            call s:f.gotoWin(bufnr)
+            call s:debugLog('reloadLimit')
+            if cwid != -1
+                call win_gotoid(cwid)
+                call s:debugLog('win_gotoid:[' .. s:bufnr('%') .. ',' .. cwid .. ']')
+            else
+                call s:gotoWin(bufnr)
+            endif
             silent! setlocal previewwindow
             enew
             setlocal bufhidden=wipe
@@ -3400,7 +3441,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
     call s:appendbufline(bufnr, '$', ['Now loading...'])
     exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     call s:f.readonly(bufnr)
-    call s:f.gotoWin(bufnr)
+    call s:gotoWin(bufnr)
     call s:getQueryAsync('', s:callbackstr(a:alignFlg), -1, opt, a:port)
 endfunction
 
@@ -3816,6 +3857,8 @@ endfunction
 
 function s:setallmap(bufnr) abort
     let cbufnr = bufnr('%')
+    let cwid = s:f.getwidCurrentTab(cbufnr)
+    call s:debugLog('setallmap')
     call s:gotoWin(a:bufnr)
     let nmap = getbufvar(a:bufnr, 'dbiclient_nmap', [])
     for x in nmap
@@ -3825,7 +3868,13 @@ function s:setallmap(bufnr) abort
     for x in vmap
         call s:vmap(x[0], x[1])
     endfor
-    call s:gotoWin(cbufnr)
+    call s:debugLog('setallmap')
+    if cwid != -1
+        call win_gotoid(cwid)
+        call s:debugLog('win_gotoid:[' .. s:bufnr('%') .. ',' .. cwid .. ']')
+    else
+        call s:gotoWin(cbufnr)
+    endif
 endfunction
 
 function s:Tuple(a, b) abort
@@ -3969,6 +4018,27 @@ endfunction
 
 function s:gotoWin(bufnr)
     let wid = s:getwid(a:bufnr)
+    call s:debugLog('gotoWin:[' .. a:bufnr .. ',' .. wid .. ']')
+    if wid != -1
+        call win_gotoid(wid)
+        return 1
+    endif
+    return -1
+endfunction
+
+function s:getwidCurrentTab(bufnr)
+    let tabnr = tabpagenr()
+    for wid in map(range(tabpagewinnr(tabnr,'$')),{_,x->win_getid(x+1,tabnr)})
+        if(s:any(map(win_findbuf(a:bufnr),{_,x->wid==x}),{x->x!=0}))
+            return wid
+        endif
+    endfor
+    return -1
+endfunction
+
+function! s:gotoWinCurrentTab(bufnr)
+    let wid = s:getwidCurrentTab(a:bufnr)
+    call s:debugLog('gotoWinCurrentTab:[' .. a:bufnr .. ',' .. wid .. ']')
     if wid != -1
         call win_gotoid(wid)
         return 1

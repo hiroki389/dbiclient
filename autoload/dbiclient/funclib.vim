@@ -282,7 +282,7 @@ function! {s:_plugin_name}#funclib#new()
         let cbufnr = bufnr('%')
         let bufnr=bufnr(a:bufname)
         call s:res.delbuf(bufnr)
-        let wid = s:res.getwid(bufnr('%'))
+        let wid = s:res.getwidCurrentTab(bufnr('%'))
         keepjumps silent! exe a:editcmd . " ++enc=" . a:enc . " " . a:bufname
         if a:previewFlg
             wincmd P
