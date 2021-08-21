@@ -505,6 +505,7 @@ function s:error3(...) abort
 endfunction
 
 function s:getDblinkName(sql) abort
+    call s:debugLog('getDblinkName')
     let sql = s:getSqlLine(s:getSqlLineDelComment(a:sql))
     let dblink = matchstr(sql, '\v<from>\s+[^[:space:]@]+\@\zs[^[:space:]]+')
     return dblink
@@ -514,6 +515,7 @@ function s:getTableName(sql, table) abort
     if !empty(a:table)
         return a:table
     endif
+    call s:debugLog('getTableName')
     let sql = s:getSqlLine(s:getSqlLineDelComment(a:sql))
     let table = get(get(s:getTableJoinList(sql), 0, {}), 'tableNm', '')
     let table = substitute(table, '"', '', 'g')
@@ -525,6 +527,7 @@ function s:getTableName(sql, table) abort
 endfunction
 
 function s:getTableJoinList(sql) abort
+    call s:debugLog('getTableJoinList')
     let sql = s:getSqlLine(s:getSqlLineDelComment(a:sql))
     let regex = '\v\c\s+%(from|join)\s+([[:alnum:]_$#.]+|".{-}")%((\s+as)?\s+([^[:space:]]+|<on>|<using>))?'
     let suba = substitute(sql, regex .. '\zs', '\n', 'g')
@@ -641,6 +644,45 @@ function s:createInsertRange() range abort
     call s:appendbufline(bufnr, '$', s:createInsert(cols, list, tableNm))
 endfunction
 
+function dbiclient#createDeleteInsertRange() range abort
+    let port = s:getPort()
+    let bufname = "ScratchCreateDeleteInsert"
+    let list = getline(a:firstline, a:lastline)->filter({_,x -> !empty(x) && x !~ '\v^[-+\t]+$'})
+    if len(list) < 3
+        return
+    endif
+    let tableNm = list[0]
+    let cols = s:split(list[1], g:dbiclient_col_delimiter)
+    let bufnr = s:bufnr(bufname)
+    if s:gotoWinCurrentTab(bufnr) ==# -1
+        let bufnr = s:aboveNewBuffer(bufname)
+    endif
+    let keys = s:getPrimaryKeys(tableNm, port)
+    let idxlist = []
+    let i = 0
+    for col in cols
+        if filter(keys[:], {_,x -> col == x})->len() > 0
+            call add(idxlist, i)
+        endif
+        let i += 1
+    endfor
+    let res2 = []
+    for record in list[2:]
+        let temp = []
+        let values = s:split(record, g:dbiclient_col_delimiter)
+        for idx in idxlist
+            call add(temp, "'" .. values[idx] .. "'")
+        endfor
+        call add(res2, '(' .. join(temp,',') .. ')')
+    endfor
+    let res = []
+    call add(res,"DELETE FROM " .. tableNm)
+    call add(res," WHERE (" .. join(keys,',') .. ') IN (')
+    call add(res, join(res2,',') .. " );")
+    call s:appendbufline(bufnr, '$', res)
+    call s:appendbufline(bufnr, '$', s:createInsert(cols, list[2:], tableNm))
+endfunction
+
 function s:trim_surround(val) abort
     if !empty(g:dbiclient_surround)
         return substitute(substitute(a:val, '^\V' .. g:dbiclient_surround, '', ''), '\V' .. g:dbiclient_surround .. '\v$', '', '')
@@ -650,7 +692,10 @@ function s:trim_surround(val) abort
 endfunction
 
 function s:createUpdate(vallist, beforevallist, tableNm, port) abort
+    call s:debugLog('createUpdate start')
+    call s:debugLog('getPrimaryKeys start')
     let keys = s:getPrimaryKeys(a:tableNm, a:port)
+    call s:debugLog('getPrimaryKeys end')
     if a:tableNm ==# ""
         return []
     endif
@@ -680,6 +725,7 @@ function s:createUpdate(vallist, beforevallist, tableNm, port) abort
         call add(result, res .. ";")
         let i += 1
     endfor
+    call s:debugLog('createUpdate end')
     return result
 endfunction
 
@@ -716,7 +762,9 @@ function s:createUpdateRange() range abort
 endfunction
 
 function s:createDelete(vallist, tableNm, port) abort
+    call s:debugLog('getPrimaryKeys start')
     let keys = s:getPrimaryKeys(a:tableNm, a:port)
+    call s:debugLog('getPrimaryKeys end')
     if a:tableNm ==# ""
         return []
     endif
@@ -1212,7 +1260,7 @@ function s:splitSql(sqllist, doFlg) abort
         return filter(ret, {_, x -> !empty(trim(x))})
     else
         if sql =~ '\v^\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
-            return s:split(sql, '\v' .. delim .. '\s*$')
+            return s:split(sql, '\v' .. delim .. '\s*(\n|$)')
         else
             return s:parseSQL2(sql).splitSql3(delim)
         endif
@@ -1994,7 +2042,12 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         if parseSQLwhere !~? '\v\c(<or>)'
             let andlist = split(parseSQLwhere, '\v\c<and>')
             let colsRegex = '\v\c^\s*(' .. join(map(cols[:], {_, x -> '<\V' .. x}), '\v>|') .. '\v)\zs'
-            let parseSQLwhereList = map(andlist[:], {_, x -> map(split(trim(x), colsRegex), {_, xx -> trim(xx)})})
+            echom colsRegex
+            try
+                let parseSQLwhereList = map(andlist[:], {_, x -> map(split(trim(x), colsRegex), {_, xx -> trim(xx)})})
+            catch /./
+                let parseSQLwhereList = []
+            endtry
             let parseSQLwhereDict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(parseSQLwhereList, {i, xx -> get(xx, 1, '') ==# '' ? {} : {toupper(get(xx, 0, '')) : get(xx, 1, '')}}))
         endif
         if !empty(andlist) && len(andlist) ==# len(items(parseSQLwhereDict))
@@ -3802,12 +3855,16 @@ endfunction
 function s:aboveNewBuffer(bufname, ...) abort
     let [bufnr, cbufnr] = s:f.newBuffer('above new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
+    let cwid = s:f.getwidCurrentTab(cbufnr)
+    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call win_gotoid(' .. cwid .. ')'
     return bufnr
 endfunction
 
 function s:vsNewBuffer(bufname, ...) abort
     let [bufnr, cbufnr] = s:f.newBuffer('vertical new', '', a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
+    let cwid = s:f.getwidCurrentTab(cbufnr)
+    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call win_gotoid(' .. cwid .. ')'
     return bufnr
 endfunction
 

@@ -20,6 +20,8 @@ use Time::HiRes;
 use File::Path;
 BEGIN { push @INC, dirname($0) }
 use DBIxEncoding;
+use Storable;
+use Storable qw(nstore);
 $Data::Dumper::Indent = 0;
 $Data::Dumper::Useqq = 1;
 $Data::Dumper::Terse = 1;
@@ -394,22 +396,58 @@ sub rutine{
                     $result->{table_info}=[];
                     $result->{column_info}=[];
                     foreach my $table (@tableJoinNm){
+                        my @primary_key = ();
+                        my @table_info = ();
+                        my @column_info = ();
                         if ($g_primarykeyflg == 1) {
-                            foreach my $pkey ($g_dbh->primary_key( undef, $schem2, $table)){
+                            my $tempfile1 = ${g_basedir} . '/' . $schem2 . '_' . $table . '_' . 'PKEY.dat';
+                            if (-e "${tempfile1}") {
+                                foreach my $pkey (@{retrieve(${tempfile1})}) {
+                                    push (@primary_key, $pkey);
+                                }
+                            } else {
+                                foreach my $pkey ($g_dbh->primary_key( undef, $schem2, $table)){
+                                    push (@primary_key, $pkey);
+                                }
+                                nstore \@primary_key, $tempfile1;
+                            }
+                            foreach my $pkey (@primary_key) {
                                 push (@{$result->{primary_key}}, $pkey);
                             }
                         }
                         if ($result->{status} == 1 && $g_columninfoflg == 1) {
-                            $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
-                            foreach my $row1 (@{$g_sth->fetchall_arrayref({})}){
-                                push(@{$result->{table_info}}, $row1);
+                            my $tempfile2 = ${g_basedir} . '/' . $schem2 . '_' . $table . '_' . 'TINFO.dat';
+                            if (-e "${tempfile2}") {
+                                foreach my $row1 (@{retrieve(${tempfile2})}) {
+                                    push(@table_info, $row1);
+                                }
+                            } else {
+                                $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
+                                foreach my $row1 (@{$g_sth->fetchall_arrayref({})}){
+                                    push(@table_info, $row1);
+                                }
+                                $g_sth->finish();
+                                nstore \@table_info, $tempfile2;
                             }
-                            $g_sth->finish();
-                            $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
-                            foreach my $row2 (@{$g_sth->fetchall_arrayref({})}){
-                                push(@{$result->{column_info}}, $row2);
+                            foreach my $row1 (@table_info) {
+                                push (@{$result->{table_info}}, $row1);
                             }
-                            $g_sth->finish();
+                            my $tempfile3 = ${g_basedir} . '/' . $schem2 . '_' . $table . '_' . 'CINFO.dat';
+                            if (-e "${tempfile3}") {
+                                foreach my $row2 (@{retrieve(${tempfile3})}) {
+                                    push(@column_info, $row2);
+                                }
+                            } else {
+                                $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
+                                foreach my $row2 (@{$g_sth->fetchall_arrayref({})}){
+                                    push(@column_info, $row2);
+                                }
+                                $g_sth->finish();
+                                nstore \@column_info, $tempfile3;
+                            }
+                            foreach my $row2 (@column_info) {
+                                push (@{$result->{column_info}}, $row2);
+                            }
                         }
                     }
                 }

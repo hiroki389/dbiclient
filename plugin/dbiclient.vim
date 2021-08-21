@@ -50,6 +50,8 @@ command! -nargs=1 DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args
 command! DBICommit :call dbiclient#commit()
 command! DBIRollback :call dbiclient#rollback()
 
+command! -range DBICreateDeleteInsert :<line1>,<line2>call dbiclient#createDeleteInsertRange()
+
 command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRangeSQL("<bang>" == '!' ? 0 : 1,<f-args>)
 command! -bang -nargs=? -complete=customlist,dbiclient#getTables DBISelectFrom :call dbiclient#selectTable("<bang>" == '!' ? 0 : 1,1,<q-args>)
 
