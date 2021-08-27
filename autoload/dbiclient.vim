@@ -547,7 +547,7 @@ function s:getTableJoinListUniq(sql) abort
 endfunction
 
 function s:getPrimaryKeys(tableNm, port) abort
-    let opt={'tableNm':a:tableNm, 'column_info':1}
+    let opt={'tableNm':a:tableNm, 'column_info_data':1}
     return get(s:getQuery('', -1, opt, a:port), 'primary_key', [])
 endfunction
 
@@ -555,7 +555,11 @@ function s:getColumns(tableNm, port) abort
     let cols = get(get(s:params, a:port, {}), a:tableNm, [])
     if !has_key(get(s:params, a:port, {}), a:tableNm)
         let s:params[a:port][a:tableNm] = []
-        let cols = get(s:getQuery('SELECT * FROM ' .. a:tableNm .. ' WHERE 1=0', -1, {}, a:port), 'cols', [])
+        let opt={'tableNm':a:tableNm, 'column_info_data':1}
+        let cols = get(s:getQuery('', -1, opt, a:port),'column_info',[])->map({_,x -> x.COLUMN_NAME})
+        if empty(cols)
+            let cols = get(s:getQuery('SELECT * FROM ' .. a:tableNm, -1, {}, a:port),'cols',[])
+        endif
         let s:params[a:port][a:tableNm] = cols
     endif
     return cols[:]
@@ -1300,6 +1304,7 @@ function s:getQuery(sql, limitrows, opt, port) abort
                 \, 'null'          : get(a:opt , 'null' , g:dbiclient_null)
                 \, 'table_info'    : get(a:opt, 'table_info', 0)
                 \, 'column_info'   : get(a:opt, 'column_info', 0)
+                \, 'column_info_data'   : get(a:opt, 'column_info_data', 0)
                 \, 'single_table'  : get(a:opt , 'single_table' , '')
                 \, 'reloadBufname' : get(a:opt, 'reloadBufname', '')
                 \, 'reloadBufnr'   : get(a:opt, 'reloadBufnr', -1)
@@ -1355,13 +1360,15 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     let tableJoinNm = join(s:getTableJoinListUniq(sql), " ")
     let tableJoinNmWithAs = s:getTableJoinList(a:sql)
     let cols = []
-    for item in tableJoinNmWithAs
-        let prefix = empty(item.AS) ? '' : item.AS .. '.'
-        if empty(prefix) && len(tableJoinNmWithAs) > 1
-            let prefix = item.tableNm .. '.'
-        endif
-        let cols = extend(cols, map(s:getColumns(item.tableNm, a:port), {_, x -> prefix .. x}))
-    endfor
+    if len(tableJoinNmWithAs) <= 20
+        for item in tableJoinNmWithAs
+            let prefix = empty(item.AS) ? '' : item.AS .. '.'
+            if empty(prefix) && len(tableJoinNmWithAs) > 1
+                let prefix = item.tableNm .. '.'
+            endif
+            let cols = extend(cols, map(s:getColumns(item.tableNm, a:port), {_, x -> prefix .. x}))
+        endfor
+    endif
     let channel = ch_open('localhost:' .. a:port)
     if !s:ch_statusOk(channel)
         return {}
@@ -1442,6 +1449,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
                 \, 'prelinesep'    : s:getprelinesep()
                 \, 'table_info'    : get(a:opt , 'table_info' , 0)
                 \, 'column_info'   : get(a:opt , 'column_info' , 0)
+                \, 'column_info_data'   : get(a:opt, 'column_info_data', 0)
                 \, 'table_name'    : get(a:opt , 'table_name' , '')
                 \, 'tabletype'     : get(a:opt , 'tabletype' , '')
                 \, 'single_table'  : get(a:opt , 'single_table' , '')
@@ -2042,7 +2050,6 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         if parseSQLwhere !~? '\v\c(<or>)'
             let andlist = split(parseSQLwhere, '\v\c<and>')
             let colsRegex = '\v\c^\s*(' .. join(map(cols[:], {_, x -> '<\V' .. x}), '\v>|') .. '\v)\zs'
-            echom colsRegex
             try
                 let parseSQLwhereList = map(andlist[:], {_, x -> map(split(trim(x), colsRegex), {_, xx -> trim(xx)})})
             catch /./
