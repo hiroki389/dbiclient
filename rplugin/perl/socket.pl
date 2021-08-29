@@ -396,7 +396,7 @@ sub rutine{
 
                 my $column_start_time = Time::HiRes::time; 
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : uc $schem;
                 my @schema_list = ($schem,$schemUc);
                 push(@schema_list, @{$g_schema_list});
                 $result->{primary_key}=[];
@@ -483,7 +483,7 @@ sub rutine{
                 $result->{columntime}=${t_offset};
             } elsif($data->{table_info} == 1){
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : uc $schem;
                 my $ltableNm=!defined($data->{table_name}) ? undef : $data->{table_name};
                 my $ltabletype=!defined($data->{tabletype}) ? undef : $data->{tabletype};
                 $ltableNm=!defined($ltableNm) || $ltableNm =~ /^\s*$/ ? undef : $ltableNm;
@@ -499,7 +499,7 @@ sub rutine{
                 my $table = $data->{tableNm};
                 outputlog('column_info_data:' . $table , $g_port);
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : uc $schem;
                 my @schema_list = ($schem,$schemUc);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
@@ -569,7 +569,7 @@ sub rutine{
             }elsif($data->{column_info} == 1){
                 my $table = $data->{tableNm};
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : uc $schem;
                 my @schema_list = ($schem,$schemUc);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
