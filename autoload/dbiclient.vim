@@ -235,6 +235,13 @@ function dbiclient#getSqlPrimarykeys(tableNm) abort
     return sql
 endfunction
 
+function dbiclient#clearInfoCache() abort
+    let pat = s:Filepath.join(s:getRootPath(), 'dictionary/*')
+    for file in glob(pat,0,1)
+        call delete(file)
+    endfor
+endfunction
+
 function dbiclient#createTestdata(tableNm) abort
     let table = s:getTableNm(1, a:tableNm)
     let port = s:getCurrentPort()

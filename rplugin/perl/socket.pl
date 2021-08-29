@@ -21,7 +21,7 @@ use File::Path;
 BEGIN { push @INC, dirname($0) }
 use DBIxEncoding;
 use Storable;
-use Storable qw(nstore);
+use Storable qw/nstore/;
 $Data::Dumper::Indent = 0;
 $Data::Dumper::Useqq = 1;
 $Data::Dumper::Terse = 1;
@@ -141,6 +141,12 @@ eval {
     if (-e $g_basedir) {
     } else {
         mkpath([$g_basedir]) or warn $!;
+    }
+};
+eval {
+    if (-e $g_basedir . '/dictionary') {
+    } else {
+        mkpath([$g_basedir . '/dictionary']) or warn $!;
     }
 };
 if ($@) {
@@ -360,6 +366,7 @@ sub rutine{
                 eval {
                     $g_dbh->func(1000000,'dbms_output_enable');
                 };
+                #my @tableJoinNm = map {$_ = split(/\./, $_); $_[0]} split(/ /, $data->{tableJoinNm});
                 my @tableJoinNm = split(/ /, $data->{tableJoinNm});
                 my $sql = $data->{sql};
                 $sql =~ s/\r\n|\r|\n/\n/gm;
@@ -389,94 +396,208 @@ sub rutine{
 
                 my $column_start_time = Time::HiRes::time; 
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my @schema_list = ($schem);
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my @schema_list = ($schem,$schemUc);
                 push(@schema_list, @{$g_schema_list});
+                $result->{primary_key}=[];
+                $result->{table_info}=[];
+                $result->{column_info}=[];
                 foreach my $schem2 (@schema_list){
-                    $result->{primary_key}=[];
-                    $result->{table_info}=[];
-                    $result->{column_info}=[];
-                    foreach my $table (@tableJoinNm){
-                        my @primary_key = ();
-                        my @table_info = ();
-                        my @column_info = ();
-                        if ($g_primarykeyflg == 1) {
-                            my $tempfile1 = ${g_basedir} . '/' . $schem2 . '_' . $table . '_' . 'PKEY.dat';
-                            if (-e "${tempfile1}") {
-                                foreach my $pkey (@{retrieve(${tempfile1})}) {
-                                    push (@primary_key, $pkey);
-                                }
-                            } else {
-                                foreach my $pkey ($g_dbh->primary_key( undef, $schem2, $table)){
-                                    push (@primary_key, $pkey);
-                                }
-                                nstore \@primary_key, $tempfile1;
+                    my $schem3 = !defined($schem2) ? '' : $schem2;
+                    my @primary_key = ();
+                    my @table_info = ();
+                    my @column_info = ();
+                    if (@tableJoinNm <= 20) {
+                        foreach my $table (@tableJoinNm){
+                            my @schemaTable = split(/\./, $table);
+                            if (@schemaTable == 2) {
+                                $schem2 = $schemaTable[0];
+                                $table = $schemaTable[1];
                             }
-                            foreach my $pkey (@primary_key) {
-                                push (@{$result->{primary_key}}, $pkey);
+                            outputlog("SCHEMA:" . $schem2 , $g_port);
+                            outputlog("TABLE:" . $table , $g_port);
+                            if ($g_primarykeyflg == 1) {
+                                my $tempfile1 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_PKEY.dat';
+                                if (-e $tempfile1) {
+                                    foreach my $row (@{retrieve($tempfile1)}){
+                                        push (@primary_key, $row);
+                                    }
+                                } else {
+                                    foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
+                                        push (@primary_key, $row);
+                                    }
+                                    if (@primary_key > 0) {
+                                        nstore \@primary_key, $tempfile1;
+                                    }
+                                }
+                                outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
+                            }
+                            if ($result->{status} == 1 && $g_columninfoflg == 1) {
+                                my $tempfile2 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_TKEY.dat';
+                                if (-e $tempfile2) {
+                                    foreach my $row (@{retrieve($tempfile2)}){
+                                        push(@table_info, $row);
+                                    }
+                                } else {
+                                    $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
+                                    foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                        push(@table_info, $row);
+                                    }
+                                    $g_sth->finish();
+                                    if (@table_info > 0) {
+                                        nstore \@table_info, $tempfile2;
+                                    }
+                                }
+                                my $tempfile3 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_CKEY.dat';
+                                if (-e $tempfile3) {
+                                    foreach my $row (@{retrieve($tempfile3)}){
+                                        push (@column_info, $row);
+                                    }
+                                } else {
+                                    $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
+                                    foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                        push (@column_info, $row);
+                                    }
+                                    $g_sth->finish();
+                                    if (@column_info > 0) {
+                                        nstore \@column_info, $tempfile3;
+                                    }
+                                }
+                            }
+                            foreach my $row (@primary_key){
+                                push(@{$result->{primary_key}}, $row);
+                            }
+                            foreach my $row (@table_info){
+                                push(@{$result->{table_info}}, $row);
+                            }
+                            foreach my $row (@column_info){
+                                push(@{$result->{column_info}}, $row);
                             }
                         }
-                        if ($result->{status} == 1 && $g_columninfoflg == 1) {
-                            my $tempfile2 = ${g_basedir} . '/' . $schem2 . '_' . $table . '_' . 'TINFO.dat';
-                            if (-e "${tempfile2}") {
-                                foreach my $row1 (@{retrieve(${tempfile2})}) {
-                                    push(@table_info, $row1);
-                                }
-                            } else {
-                                $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
-                                foreach my $row1 (@{$g_sth->fetchall_arrayref({})}){
-                                    push(@table_info, $row1);
-                                }
-                                $g_sth->finish();
-                                nstore \@table_info, $tempfile2;
-                            }
-                            foreach my $row1 (@table_info) {
-                                push (@{$result->{table_info}}, $row1);
-                            }
-                            my $tempfile3 = ${g_basedir} . '/' . $schem2 . '_' . $table . '_' . 'CINFO.dat';
-                            if (-e "${tempfile3}") {
-                                foreach my $row2 (@{retrieve(${tempfile3})}) {
-                                    push(@column_info, $row2);
-                                }
-                            } else {
-                                $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
-                                foreach my $row2 (@{$g_sth->fetchall_arrayref({})}){
-                                    push(@column_info, $row2);
-                                }
-                                $g_sth->finish();
-                                nstore \@column_info, $tempfile3;
-                            }
-                            foreach my $row2 (@column_info) {
-                                push (@{$result->{column_info}}, $row2);
-                            }
-                        }
+                    }
+                    if (@{$result->{table_info}} > 0) {
+                        last;
                     }
                 }
                 my $t_offset = int((Time::HiRes::time - $column_start_time)*1000);
                 $result->{columntime}=${t_offset};
             } elsif($data->{table_info} == 1){
+                my $schem = $data->{schem} eq '' ? $user : $data->{schem};
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
                 my $ltableNm=!defined($data->{table_name}) ? undef : $data->{table_name};
                 my $ltabletype=!defined($data->{tabletype}) ? undef : $data->{tabletype};
                 $ltableNm=!defined($ltableNm) || $ltableNm =~ /^\s*$/ ? undef : $ltableNm;
                 $ltabletype=!defined($ltabletype) || $ltabletype =~ /^\s*$/ ? undef : $ltabletype;
                 $g_sth=$g_dbh->table_info( undef, $user, $ltableNm, $ltabletype );
+                my @arr = $g_sth->fetchrow_array();
+                if (@arr == 0) {
+                    $g_sth=$g_dbh->table_info( undef, uc $user, $ltableNm, $ltabletype );
+                }
                 outputlog("EXEC TABLE_INFO START ", $g_port);
                 exec_sql($data,$sig,$tempfile,$result,$start_time,0);
-            }elsif($data->{column_info} == 1){
+            }elsif($data->{column_info_data} == 1){
+                my $table = $data->{tableNm};
+                outputlog('column_info_data:' . $table , $g_port);
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                outputlog('tableNm:' . $data->{tableNm} , $g_port);
-                my @schema_list = ($schem);
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my @schema_list = ($schem,$schemUc);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
+                    my $schem3 = !defined($schem2) ? '' : $schem2;
+                    $result->{primary_key}=[];
+                    $result->{table_info}=[];
+                    $result->{column_info}=[];
                     my @primary_key = ();
-                    @primary_key=$g_dbh->primary_key( undef, $schem2, $data->{tableNm});
+                    my @table_info = ();
+                    my @column_info = ();
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_PKEY.dat';
+                    if (-e $tempfile1) {
+                        foreach my $row (@{retrieve($tempfile1)}){
+                            push (@primary_key, $row);
+                        }
+                    } else {
+                        foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
+                            push (@primary_key, $row);
+                        }
+                        if (@primary_key > 0) {
+                            nstore \@primary_key, $tempfile1;
+                        }
+                    }
+                    my $tempfile2 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_TKEY.dat';
+                    if (-e $tempfile2) {
+                        foreach my $row (@{retrieve($tempfile2)}){
+                            push(@table_info, $row);
+                        }
+                    } else {
+                        $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
+                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                            push(@table_info, $row);
+                        }
+                        $g_sth->finish();
+                        if (@table_info > 0) {
+                            nstore \@table_info, $tempfile2;
+                        }
+                    }
+                    my $tempfile3 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_CKEY.dat';
+                    if (-e $tempfile3) {
+                        foreach my $row (@{retrieve($tempfile3)}){
+                            push (@column_info, $row);
+                        }
+                    } else {
+                        $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
+                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                            push (@column_info, $row);
+                        }
+                        $g_sth->finish();
+                        if (@column_info > 0) {
+                            nstore \@column_info, $tempfile3;
+                        }
+                    }
+                    foreach my $row (@primary_key){
+                        push(@{$result->{primary_key}}, $row);
+                    }
+                    foreach my $row (@table_info){
+                        push(@{$result->{table_info}}, $row);
+                    }
+                    foreach my $row (@column_info){
+                        push(@{$result->{column_info}}, $row);
+                    }
+                    if (@table_info > 0) {
+                        last;
+                    }
+                }
+            }elsif($data->{column_info} == 1){
+                my $table = $data->{tableNm};
+                my $schem = $data->{schem} eq '' ? $user : $data->{schem};
+                my $schemUc = !defined($schem) || $schem eq '' ? '' : $schem;
+                my @schema_list = ($schem,$schemUc);
+                push(@schema_list, @{$g_schema_list});
+                foreach my $schem2 (@schema_list){
+                    my $schem3 = !defined($schem2) ? '' : $schem2;
+                    my @primary_key = ();
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem3 . '_' . $table . '_PKEY.dat';
+                    if (-e $tempfile1) {
+                        foreach my $row (@{retrieve($tempfile1)}){
+                            push (@primary_key, $row);
+                        }
+                    } else {
+                        foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
+                            push (@primary_key, $row);
+                        }
+                        if (@primary_key > 0) {
+                            nstore \@primary_key, $tempfile1;
+                        }
+                    }
                     outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
                     if (@primary_key > 0) {
-                        $result->{primary_key}=\@primary_key;
+                        foreach my $row (@primary_key){
+                            push(@{$result->{primary_key}}, $row);
+                        }
                         last;
                     }
                 }
                 foreach my $schem2 (@schema_list){
-                    $g_sth=$g_dbh->column_info( undef, $schem2, $data->{tableNm}, undef );
+                    $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
                     outputlog("EXEC COLUMN_INFO START ", $g_port);
                     exec_sql($data,$sig,$tempfile,$result,$start_time,0);
                     if ($result->{cnt} > 0) {
