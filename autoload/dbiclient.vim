@@ -235,13 +235,6 @@ function dbiclient#getSqlPrimarykeys(tableNm) abort
     return sql
 endfunction
 
-function dbiclient#clearInfoCache() abort
-    let pat = s:Filepath.join(s:getRootPath(), 'dictionary/*')
-    for file in glob(pat,0,1)
-        call delete(file)
-    endfor
-endfunction
-
 function dbiclient#createTestdata(tableNm) abort
     let table = s:getTableNm(1, a:tableNm)
     let port = s:getCurrentPort()
@@ -565,7 +558,7 @@ function s:getColumns(tableNm, port) abort
         let opt={'tableNm':a:tableNm, 'column_info_data':1}
         let cols = get(s:getQuery('', -1, opt, a:port),'column_info',[])->map({_,x -> x.COLUMN_NAME})
         if empty(cols)
-            let cols = get(s:getQuery('SELECT * FROM ' .. a:tableNm, -1, {}, a:port),'cols',[])
+            let cols = get(s:getQuery('SELECT * FROM ' .. a:tableNm, 0, {}, a:port),'cols',[])
         endif
         let s:params[a:port][a:tableNm] = cols
     endif
@@ -1248,7 +1241,7 @@ endfunction
 "enddef
 
 function s:splitSql(sqllist, doFlg) abort
-    call s:debugLog('splitSql')
+    call s:debugLog('splitSql:' .. len(a:sqllist))
     let delim = g:dbiclient_sql_delimiter1
     if len(filter(a:sqllist[:], {_, x -> trim(x) ==# g:dbiclient_sql_delimiter2})) > 0
         let delim = g:dbiclient_sql_delimiter2
@@ -1271,7 +1264,7 @@ function s:splitSql(sqllist, doFlg) abort
         return filter(ret, {_, x -> !empty(trim(x))})
     else
         if sql =~ '\v^\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
-            return s:split(sql, '\v' .. delim .. '\s*(\n|$)')
+            return s:split(sql, '\v' .. delim .. '\s*(\n|$)')->filter({_,x -> !empty(trim(x))})
         else
             return s:parseSQL2(sql).splitSql3(delim)
         endif
@@ -1953,7 +1946,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             call add(matchadds, ['Identifier', '\v%' .. (s:endbufline(bufnr)) .. 'l\V' .. tableRemarks])
             call add(disableline, s:endbufline(bufnr))
         endif
-        let cols = a:dict.cols
+        let cols = get(a:dict, 'cols',[])
         if get(opt, "nocols", 0) ==# 0 && !empty(cols)
             let columnsRemarks = s:getColumnsTableRemarks(get(a:dict, 'column_info', []))
             if g:dbiclient_disp_remarks
@@ -3869,8 +3862,6 @@ endfunction
 function s:aboveNewBuffer(bufname, ...) abort
     let [bufnr, cbufnr] = s:f.newBuffer('above new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
-    let cwid = s:f.getwidCurrentTab(cbufnr)
-    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call win_gotoid(' .. cwid .. ')'
     return bufnr
 endfunction
 

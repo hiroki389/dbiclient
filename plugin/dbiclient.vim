@@ -56,7 +56,6 @@ command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRa
 command! -bang -nargs=? -complete=customlist,dbiclient#getTables DBISelectFrom :call dbiclient#selectTable("<bang>" == '!' ? 0 : 1,1,<q-args>)
 
 command! -nargs=? -complete=customlist,dbiclient#getTables DBIColumnsTable :call dbiclient#selectColumnsTable(1,1,<q-args>)
-command! DBIClearInfoCache :call dbiclient#clearInfoCache()
 
 command! -bang -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDo("<bang>")
 command! -bang -range DBIExecuteNoSplit :<line1>,<line2>call dbiclient#dBExecRangeSQLDoNoSplit("<bang>")
