@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use utf8;
 use POSIX 'strftime';
+use POSIX qw(:signal_h); # import SIGINT, SIGTERM, and other signal related stuff
 use File::Basename;
 use Carp ();
 use Encode;
@@ -45,7 +46,7 @@ my $g_schema_list;
 my $g_port=shift;
 my $g_basedir=shift;
 my $g_vimencoding=shift;
-my $g_debuglog=shift;
+my $g_debuglog=1;
 my $g_cancelFlg = 0;
 
 sub outputlog{
@@ -91,7 +92,7 @@ sub exitfunc{
     if(defined($g_server_socket)){
         $g_server_socket->close;
     }
-    outputlog("FINISHED" , $g_port);
+    outputlog("FIN" , $g_port);
     close(LOGFILE);
     close(LOCKFILE);
     unlink "${g_basedir}/${g_port}.lock";
@@ -99,17 +100,6 @@ sub exitfunc{
 sub exitfunc2{
     exitfunc();
     exit(0);
-}
-sub cancel{
-    $g_cancelFlg = 1;
-    if(defined($g_sth)){
-        if ($g_sth->cancel) {
-            outputlog("CANCEL",$g_port);
-        } else {
-            outputlog("CANCEL(finish)",$g_port);
-            $g_sth->finish;
-        }
-    }
 }
 sub ulength{
     my $val=shift;
@@ -128,7 +118,14 @@ sub ulength{
     return $size;
 }
 $SIG{HUP} = $SIG{TERM} = $SIG{KILL} = $SIG{QUIT} =\&exitfunc2;
-$SIG{INT} = \&cancel;
+#$SIG{INT} = \&cancel;
+
+my $sigset = POSIX::SigSet->new( SIGINT ); # specify which sig we're handling
+my $cancelsub = POSIX::SigAction->new(sub { # the handler
+    $g_cancelFlg = 1;
+    outputlog("CANCEL",$g_port);
+}, $sigset, &POSIX::SA_NOCLDSTOP);
+POSIX::sigaction( SIGINT, $cancelsub ); # register them handler
 
 binmode STDIN,  (":encoding(" . $g_vimencoding . ')');
 binmode STDOUT,  (":encoding(" . $g_vimencoding . ')');
@@ -171,6 +168,8 @@ my $oneflg=1;
 my $exitflg=0;
 open(FILEHANDLE3,'>&',*STDERR) or die("error :$!");
 while(1){
+    undef($g_sth);
+    $g_cancelFlg = 0;
     open(STDERR,'>&',*FILEHANDLE3) or die("error :$!");
     if ($oneflg == 1) {
         print STDOUT "$g_port\n";
@@ -179,25 +178,29 @@ while(1){
     if ($exitflg == 1) {
         last;
     }
-    outputlog("READY",$g_port);
+    outputlog("------------------------",$g_port);
+    if(defined($g_client_socket)){
+        $g_client_socket->close;
+        undef($g_client_socket);
+    }
     $g_client_socket = $g_server_socket->accept;
 
     if (!defined($g_client_socket)) {
-        next;
+        last;
     }
 
-    outputlog("PROC START",$g_port);
-    $g_cancelFlg = 0;
     my $hersockaddr    = getpeername($g_client_socket);
     (my $clport, my $cliaddr) = sockaddr_in($hersockaddr);
     my $herhostname    = gethostbyaddr($cliaddr, AF_INET);
     my $herstraddr     = inet_ntoa($cliaddr);
 
     if ($herstraddr ne "127.0.0.1") {
+        outputlog("127.0.0.1<>${herstraddr}",$g_port);
         $g_client_socket->close;
         next;
     }
 
+    my $result={};
     my $data={};
     my $sig=-1;
     while(my $msg = <$g_client_socket>){
@@ -207,14 +210,14 @@ while(1){
         last;
     }
     if ($sig == -1) {
-        outputlog("PROC END ${sig}",$g_port);
+        outputlog("NO_DATA",$g_port);
         next;
     }
-    my $result={};
+
     $result->{status}=1;
     if(exists $data->{kill}){
         $exitflg=1;
-        outputlog("KILL PROC" , $g_port);
+        outputlog("EXIT" , $g_port);
         print $g_client_socket encode_json [$sig,$result],"\n";
         next;
     }
@@ -248,7 +251,7 @@ while(1){
         };
         if($@){
             my $message = Encode::is_utf8($@) ? $@ : Encode::decode($g_dbencoding,$@);
-            outputlog("CONNECT ERROR:DBI:${g_datasource} ${g_user} ${g_pass}:" . $message,$g_port);
+            outputlog("CONNECT ERROR:DBI:${g_datasource} ${g_user}:" . $message,$g_port);
             $result->{status}=9;
             $result->{message}=$message;
         }else{
@@ -280,7 +283,6 @@ while(1){
         print $g_client_socket encode_json [$sig,$result],"\n";
     }
     undef($data);
-    outputlog("PROC END" , $g_port);
 }
 sub rutine{
     my $data=shift;
@@ -289,7 +291,6 @@ sub rutine{
     my $result=shift;
     $result->{status}=1;
     $result->{data}=$data;
-    outputlog("INPUTDATA_KEYS:(${g_user}) "  . join(",",keys(%{$data})) , $g_port);
     open(DATAFILE,'>>',$tempfile) or die("error :$!");
     binmode DATAFILE,  (":encoding(" . $g_vimencoding . ')');
     my @outputline = ();
@@ -302,7 +303,6 @@ sub rutine{
             $g_dbh->rollback;
             $result->{rollback}=1;
         }elsif(exists $data->{setkey} && exists $data->{setvalue}){
-            outputlog("DBH_KEYS:(${g_user})"  . join(",",keys(%{$g_dbh})) , $g_port);
             $g_dbh->{$data->{setkey}}=$data->{setvalue};
         }elsif(exists $data->{commit}){
             $g_dbh->commit;
@@ -326,18 +326,22 @@ sub rutine{
                 $lsql =~ s/(\t|\r\n|\r|\n)+/ /gm;
                 $lsql =~ s/^ +//m;
                 next if $lsql eq "";
-                outputlog("UPDATE START(${g_user})"  . "\n" . $sql , $g_port);
+                outputlog("UPDATE START(${g_user})" , $g_port);
+                outputlog("SQL: " . substr($sql,0,100), $g_port);
                 $g_sth=$g_dbh->prepare($sql);
                 my $rv=-1;
                 eval {
                     $rv=$g_sth->execute;
                     $g_sth->finish;
                 };
-                if ($continue == 0 && $@) {
+                if ($g_cancelFlg == 0 && $continue == 0 && $@) {
                     die($@);
                 }
+                if (!defined($rv)) {
+                    $rv="undef";
+                }
                 outputlog("UPDATE END COUNT($rv)" , $g_port);
-                push(@outputline,$loopstart_date . '(' . int((Time::HiRes::time - $loopstart_time)*1000) . 'ms) ' . $rv . ' updated. "' . $lsql . '"');
+                push(@outputline,$loopstart_date . '(' . int((Time::HiRes::time - $loopstart_time)*1000) . 'ms) ' . "$rv" . ' updated. "' . $lsql . '"');
                 eval {
                     foreach my $dog ($g_dbh->func('dbms_output_get')){
                         $dog = Encode::is_utf8($dog) ? $dog : Encode::decode($g_dbencoding, $dog);
@@ -375,8 +379,13 @@ sub rutine{
                 $lsql =~ s/^ +//m;
                 next if $lsql eq "";
                 $g_sth=$g_dbh->prepare($sql);
-                outputlog("EXEC SQL START " . substr($lsql,0,100), $g_port);
-                exec_sql($data,$sig,$tempfile,$result,$start_time,1);
+                outputlog("SQL: " . substr($lsql,0,100), $g_port);
+                eval {
+                    exec_sql($data,$sig,$tempfile,$result,$start_time,1);
+                };
+                if ($@) {
+                    die($@);
+                }
                 if ($result->{status} == 2) {
                     push(@outputline,$loopstart_date . '(' . int((Time::HiRes::time - $loopstart_time)*1000) . 'ms) ' . $result->{cnt} . ' updated. "' . $lsql . '"');
                 }
@@ -412,8 +421,6 @@ sub rutine{
                                 $schem2 = $schemaTable[0];
                                 $table = $schemaTable[1];
                             }
-                            outputlog("SCHEMA:" . $schem2 , $g_port);
-                            outputlog("TABLE:" . $table , $g_port);
                             if ($g_primarykeyflg == 1) {
                                 my $tempfile1 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_PKEY.dat';
                                 if (-e $tempfile1) {
@@ -428,7 +435,6 @@ sub rutine{
                                         nstore \@primary_key, $tempfile1;
                                     }
                                 }
-                                outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
                             }
                             if ($result->{status} == 1 && $g_columninfoflg == 1) {
                                 my $tempfile2 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_TKEY.dat';
@@ -488,13 +494,17 @@ sub rutine{
                 if ($g_sth->rows == 0) {
                     $g_sth=$g_dbh->table_info( undef, uc $user, $ltableNm, $ltabletype );
                 }
-                outputlog("EXEC TABLE_INFO START ", $g_port);
-                exec_sql($data,$sig,$tempfile,$result,$start_time,0);
+                outputlog("SQL: TABLE_INFO", $g_port);
+                eval {
+                    exec_sql($data,$sig,$tempfile,$result,$start_time,0);
+                };
+                if ($@) {
+                    die($@);
+                }
             }elsif($data->{column_info_data} == 1){
                 my $table = $data->{tableNm};
-                outputlog('column_info_data:' . $table , $g_port);
+                outputlog("SQL: COLUMN_INFO_DATA(" . $table . ')', $g_port);
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                outputlog('tableNm:' . $table , $g_port);
                 my @schema_list = ($schem,uc $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
@@ -563,7 +573,6 @@ sub rutine{
             }elsif($data->{column_info} == 1){
                 my $table = $data->{tableNm};
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                outputlog('tableNm:' . $table , $g_port);
                 my @schema_list = ($schem,uc $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
@@ -581,7 +590,6 @@ sub rutine{
                             nstore \@primary_key, $tempfile1;
                         }
                     }
-                    outputlog('PRIMARY_KEY:' . @primary_key , $g_port);
                     if (@primary_key > 0) {
                         foreach my $row (@primary_key){
                             push(@{$result->{primary_key}}, $row);
@@ -591,9 +599,21 @@ sub rutine{
                 }
                 foreach my $schem2 (@schema_list){
                     $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
-                    outputlog("EXEC COLUMN_INFO START ", $g_port);
-                    exec_sql($data,$sig,$tempfile,$result,$start_time,0);
+                    outputlog("SQL: COLUMN_INFO(" . $table . ')', $g_port);
+                    eval {
+                        exec_sql($data,$sig,$tempfile,$result,$start_time,0);
+                    };
+                    if ($@) {
+                        die($@);
+                    }
                     if ($result->{cnt} > 0) {
+                        my @column_info = ();
+                        my $tempfile3 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_CKEY.dat';
+                        $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
+                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                            push (@column_info, $row);
+                        }
+                        nstore \@column_info, $tempfile3;
                         last;
                     }
                 }
@@ -633,18 +653,16 @@ sub exec_sql{
     my $result=shift;
     my $start_time=shift;
     my $exeflg=shift;
+
     if ($g_odbcflg && $exeflg == 0) {
     } else {
         $g_sth->execute;
-    }
-    if ($g_cancelFlg == 1) {
-        cancel();
     }
     $result->{sqltime}=int((Time::HiRes::time - $start_time)*1000);
     $result->{hasnext}=0;
 
     my $fetch_start_time = Time::HiRes::time; 
-    outputlog("FETCH START" , $g_port);
+    outputlog("FETCH START(${g_user})" , $g_port);
     $result->{startfetch}=getdatetime;
     if(!exists $g_sth->{NAME} || @{$g_sth->{NAME}}==0){
         $result->{status}=2;
@@ -742,9 +760,8 @@ sub exec_sql{
         undef(@list);
     }
     $g_sth->finish;
-    outputlog("FETCH END" , $g_port);
     my $t_offset = int((Time::HiRes::time - $fetch_start_time)*1000);
-    outputlog("EXEC END: TIME(${t_offset}ms) COUNT(" . ($cnt-1) . ")" . " LIMITROWS($g_limitrows) " . $tempfile , $g_port);
+    outputlog("FETCH END: TIME(${t_offset}ms) COUNT(" . ($cnt-1) . ")" . " LIMITROWS($g_limitrows) " . $tempfile , $g_port);
     $result->{fetchtime}=$t_offset;
 }
 

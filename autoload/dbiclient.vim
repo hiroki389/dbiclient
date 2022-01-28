@@ -266,6 +266,10 @@ function dbiclient#getHardparseDict() abort
     return s:lastparse
 endfunction
 
+function dbiclient#cancel() abort
+    call s:cancel(s:getCurrentPort())
+endfunction
+
 function s:bufdel(port, cbufnr) abort
     "let bufnr = s:bufsearch(reverse(get(get(s:params, a:port, {}), 'buflist', [])[:]), a:cbufnr)
     let bufnr = s:bufsearch(reverse(map(s:bufferList2[:], {_, x -> x[1]})), a:cbufnr)
@@ -1117,14 +1121,14 @@ function s:jobStop(port) abort
     return 1
 endfunction
 
-function s:cancel(port, bufnr) abort
+function s:cancel(port) abort
     let port = a:port
     if empty(s:params)
         return 0
     endif
     if has_key(s:jobs, port)
         call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
-        let sendexprList = filter(s:sendexprList[:], {_, x -> a:bufnr == x[2] &&  x[0] ==# port})
+        let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
         if len(sendexprList) > 0
             call job_stop(s:jobs[port], 'int')
         endif
@@ -1427,7 +1431,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         call s:debugLog('reloadBufname')
         call s:gotoWin(bufnr)
     endif
-    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
+    "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     if ro
         call s:f.readonly(bufnr)
     endif
@@ -1622,7 +1626,7 @@ function s:dBCommandAsync(command, callback, port) abort
             let cbufnr = bufnr('%')
         endif
         call s:appendbufline(bufnr, '$', ['Now loading...'])
-        exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
+        "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
         if ro
             call s:f.readonly(bufnr)
         endif
@@ -1742,7 +1746,7 @@ function s:cb_do(ch, dict) abort
         let connStr = user .. '@' .. dsn
 
         let sql = substitute(s:getSqlLine(string(get(a:dict.data, 'do', ''))), '\t', ' ', 'g')
-        let sql = (strdisplaywidth(sql) > 300 ? sql[:300] .. '...' : sql) .. "\t"
+        let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
         let dbiclient_bufmap = a:dict
         call add(bufVals, string(dbiclient_bufmap))
         let ww=[datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
@@ -1837,6 +1841,9 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
     endif
     if get(a:dict, "status", 9) !=# 2
         if get(a:dict.data, 'sql', '') !=# ''
+            call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':<C-u>call <SID>bufnext(' .. port .. ', <SID>bufnr("%"))<CR>')
+            call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':<C-u>call <SID>bufprev(' .. port .. ', <SID>bufnr("%"))<CR>')
+            call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_do_BD', s:nmap_do_BD), ':<C-u>call <SID>bufdel(' .. port .. ', <SID>bufnr("%"))<CR>')
             let list1=[]
             let msgList = []
             let singleTableFlg = !empty(get(get(a:dict, 'data', {}), 'single_table', ''))
@@ -1926,6 +1933,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
 
         if get(opt, "nosql", 0) ==# 0 && !empty(a:dict.data.sql)
             let tmp = s:getSqlLine(a:dict.data.sql)
+            let tmp = (strdisplaywidth(tmp) > 2000 ? strcharpart(tmp,0,2000) .. '...' : tmp)
             call s:appendbufline(bufnr, '$', [tmp])
             call add(disableline, s:endbufline(bufnr))
             call s:appendbufline(bufnr, '$', [substitute(tmp, '.', '-', 'g')])
@@ -2105,7 +2113,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let connStr = user .. '@' .. dsn
 
         let sql = substitute(s:getSqlLine(get(a:dict.data, 'sql', '')), '\t', ' ', 'g')
-        let sql = (strdisplaywidth(sql) > 300 ? sql[:300] .. '...' : sql) .. "\t"
+        let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
         call add(bufVals, string(dbiclient_bufmap))
         let ww=[datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         call writefile(ww, path, 'a')
@@ -2321,52 +2329,52 @@ function s:rpad(x, n, c) abort
     return a:x .. repeat(a:c, a:n - strdisplaywidth(a:x))
 endfunction
 
-def s:alignLinesCR(bufnr: number, preCr: string)
-#function s:alignLinesCR(bufnr, preCr)
-    #let bufnr = a:bufnr
-    #let preCr = a:preCr
-    var cbufnr = bufnr('%')
-    var cwid = s:getwidCurrentTab(cbufnr)
+"def s:alignLinesCR(bufnr: number, preCr: string)
+function s:alignLinesCR(bufnr, preCr)
+    let bufnr = a:bufnr
+    let preCr = a:preCr
+    let cbufnr = bufnr('%')
+    let cwid = s:getwidCurrentTab(cbufnr)
     call s:gotoWin(bufnr)
-    var curpos = 1
-    var save_cursor = getcurpos()
+    let curpos = 1
+    let save_cursor = getcurpos()
     norm gg
-    var surr = '\V' .. (empty(g:dbiclient_surround) ? '"' : g:dbiclient_surround)
-    var regexS = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\ze\V' .. surr .. preCr .. '\v(\t|$)'
-    var regexE = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\V' .. surr .. preCr .. '\v\ze(\t|$)'
-    var posS = [0]
-    var posE = [0]
-    var save_posS = []
+    let surr = '\V' .. (empty(g:dbiclient_surround) ? '"' : g:dbiclient_surround)
+    let regexS = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\ze\V' .. surr .. preCr .. '\v(\t|$)'
+    let regexE = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\V' .. surr .. preCr .. '\v\ze(\t|$)'
+    let posS = [0]
+    let posE = [0]
+    let save_posS = []
     try
-        posS = searchpos(regexS, 'c')
-        save_posS = getcurpos()
-        posE = searchpos(regexE, 'ce')
+        let posS = searchpos(regexS, 'c')
+        let save_posS = getcurpos()
+        let posE = searchpos(regexE, 'ce')
     catch /./
-        posS = [0]
-        posE = [0]
+        let posS = [0]
+        let posE = [0]
         exe '%s/' .. preCr .. '//g'
     endtry
-    var flg = 0
+    let flg = 0
     call s:debugLog('alignCr:start')
     while posS[0] !=# 0
         if posS[0] !=# posE[0]
-            var strS = getbufline(bufnr, posS[0])[0]
-            var strE = getbufline(bufnr, posE[0])[0]
+            let strS = getbufline(bufnr, posS[0])[0]
+            let strE = getbufline(bufnr, posE[0])[0]
             if posE[0] - posS[0] > 1
                 for pos in range(posS[0] + 1, posE[0] - 1)
-                    strS = strS .. "<<CRLF>>" .. getbufline(bufnr, pos)[0]
+                    let strS = strS .. "<<CRLF>>" .. getbufline(bufnr, pos)[0]
                 endfor
             endif
-            var str = strS .. "<<CRLF>>" .. strE
+            let str = strS .. "<<CRLF>>" .. strE
             call s:deletebufline(bufnr, (posS[0] + 1), (posE[0]))
             call s:setbufline(bufnr, posS[0], str)
             call setpos('.', save_posS)
             call searchpos('\V' .. preCr .. surr .. '\v(\_[^\t]){-}\V' .. surr .. preCr, 'e')
-            flg = 1
+            let flg = 1
         endif
-        posS = searchpos(regexS, 'c')
-        save_posS = getcurpos()
-        posE = searchpos(regexE, 'ce')
+        let posS = searchpos(regexS, 'c')
+        let save_posS = getcurpos()
+        let posE = searchpos(regexE, 'ce')
     endwhile
     call s:debugLog('alignCr:end')
     call s:debugLog('alignCrReplace:start')
@@ -2381,8 +2389,8 @@ def s:alignLinesCR(bufnr: number, preCr: string)
     else
         call s:gotoWin(cbufnr)
     endif
-#endfunction
-enddef
+endfunction
+"enddef
 
 function s:alignLinesCRsetpos(bufnr, curpos)
     let bufnr = a:bufnr
@@ -2417,46 +2425,46 @@ function s:alignLinesCRsetpos(bufnr, curpos)
     call s:debugLog('alignCrReplace>:end')
 endfunction
 
-def s:alignMain(preCr: string)
-#function s:alignMain(preCr)
-    var preCr = a:preCr
-    var bufnr = s:bufnr(get(get(getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {}), 'data', {}), 'reloadBufnr', s:bufnr('%')))
+"def s:alignMain(preCr: string)
+function s:alignMain(preCr) abort
+    let preCr = a:preCr
+    let bufnr = s:bufnr(get(get(getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {}), 'data', {}), 'reloadBufnr', s:bufnr('%')))
     call s:alignLinesCR(bufnr, a:preCr)
-    var dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-    var lines = []
+    let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
+    let lines = []
     if !empty(dbiclient_bufmap) && !empty(get(dbiclient_bufmap, 'maxcols', []))
-        lines = s:getalignlist2(getbufline(bufnr, 0, '$'), dbiclient_bufmap.maxcols)
+        let lines = s:getalignlist2(getbufline(bufnr, 0, '$'), dbiclient_bufmap.maxcols)
     else
-        lines = s:getalignlist(getbufline(bufnr, 0, '$'))
+        let lines = s:getalignlist(getbufline(bufnr, 0, '$'))
     endif
-    var i = 1
+    let i = 1
     for line in lines
         call s:setbufline(bufnr, i, line)
-        i += 1
+        let i += 1
     endfor
-#endfunction
-enddef
+endfunction
+"enddef
 
-def s:getalignlist2(lines: list<string>, maxCols: list<number>): list<string>
-#function s:getalignlist2(lines, maxCols) abort
-    #var lines = a:lines
-    #var maxCols = a:maxCols
+"def s:getalignlist2(lines: list<string>, maxCols: list<number>): list<string>
+function s:getalignlist2(lines, maxCols) abort
+    let lines = a:lines
+    let maxCols = a:maxCols
     if empty(lines)
         return []
     endif
     call s:debugLog('align:start')
-    var colsize = len(split(lines[0], g:dbiclient_col_delimiter, 1))
+    let colsize = len(split(lines[0], g:dbiclient_col_delimiter, 1))
     call s:debugLog('align:lines ' .. len(lines))
-    var lines3 = []
-    lines3 = mapnew(lines, (_, x) => mapnew(split(x, g:dbiclient_col_delimiter, 1), (_, xx) => substitute(xx, s:tab_placefolder, "\t", 'g')))
+    let lines3 = []
+    let lines3 = mapnew(lines, {_, x -> mapnew(split(x, g:dbiclient_col_delimiter, 1), {_, xx -> substitute(xx, s:tab_placefolder, "\t", 'g')})})
     call s:debugLog('align:copy')
     call s:debugLog('align:maxCols' .. string(maxCols))
-    var lines4 = []
-    lines4 = mapnew(lines3, (_, cols) => colsize ==# len(cols) ? join(mapnew(cols, (i, col) => col .. repeat(' ', maxCols[i] + 1 - strdisplaywidth(col))), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter))
+    let lines4 = []
+    let lines4 = mapnew(lines3, {_, cols -> colsize ==# len(cols) ? join(mapnew(cols, {i, col -> col .. repeat(' ', maxCols[i] + 1 - strdisplaywidth(col))}), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter)})
     call s:debugLog('align:end')
     return lines4
-#endfunction
-enddef
+endfunction
+"enddef
 
 function s:getalignlist(lines) abort
     if empty(a:lines)
@@ -2622,41 +2630,41 @@ function s:parseSQL(sql, cols) abort
     return parseSQL
 endfunction
 
-def s:lex(sql: string): list<string>
-#function s:lex(sql) abort
-    var tokenList = []
-    var sqllist = split(sql, "\n")
-    var i = 1
+"def s:lex(sql: string): list<string>
+function s:lex(sql) abort
+    let tokenList = []
+    let sqllist = split(a:sql, "\n")
+    let i = 1
     for sql2 in sqllist
-        var start = 0
-        var regex  = '\v^\_s+|'
-        regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
-        regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
-        regex ..= '\v^\/\*\_.{-}\*\/|'
-        regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
-        regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
-        regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
-        regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
-        regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
-        regex ..= '\v^[[:punct:]]\ze'
-        var msp = []
+        let start = 0
+        let regex  = '\v^\_s+|'
+        let regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+        let regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
+        let regex ..= '\v^\/\*\_.{-}\*\/|'
+        let regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+        let regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+        let regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+        let regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+        let regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
+        let regex ..= '\v^[[:punct:]]\ze'
+        let msp = []
         while start > -1
-            msp = matchstrpos(sql2, regex, start)
+            let msp = matchstrpos(sql2, regex, start)
             call add(tokenList, msp[0])
-            start = msp[2]
+            let start = msp[2]
         endwhile
         if i != len(sqllist)
             call add(tokenList, "\n")
         endif
-        i += 1
+        let i += 1
     endfor
-    return filter(tokenList, (_, x) => x !~ '^$')
-#endfunction
-enddef
+    return filter(tokenList, {_, x -> x !~ '^$'})
+endfunction
+"enddef
 
-def s:resolveToken(token: string): string
-#function s:resolveToken(token) abort
-    var patternList = [['WHITESPACE',   '\v^\s+$'],
+"def s:resolveToken(token: string): string
+function s:resolveToken(token) abort
+    let patternList = [['WHITESPACE',   '\v^\s+$'],
                 \ ['SINGLE-QUOTE', '\v^'''],
                 \ ['Q-QUOTE',      '\v^[qQ]'''],
                 \ ['DOUBLE-QUOTE', '\v^"'],
@@ -2687,15 +2695,15 @@ def s:resolveToken(token: string): string
                 \ ['PARENTHESES',  '^\V)']]
 
     for pattern in patternList
-        if token =~? pattern[1]
+        if a:token =~? pattern[1]
             return pattern[0]
         endif
     endfor
     return 'TOKEN'
     #var pattern = filter(patternList, (_, x) => token =~? x[1])
     #return get(get(pattern, 0, []), 0, 'TOKEN')
-#endfunction
-enddef
+endfunction
+"enddef
 
 function s:parseSQL2(sql) abort
     let dic = {}
@@ -3499,7 +3507,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
                 \, 'reloadBufname' : bufname
                 \, 'reloadBufnr'   : bufnr}
     call s:appendbufline(bufnr, '$', ['Now loading...'])
-    exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
+    "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     call s:f.readonly(bufnr)
     call s:gotoWin(bufnr)
     call s:getQueryAsync('', s:callbackstr(a:alignFlg), -1, opt, a:port)

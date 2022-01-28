@@ -76,6 +76,7 @@ postgreの例
 | :DBIExecuteNoSplit[!]          | ビジュアルモードで選択したSQLを一つ実行する             |
 | :DBICommit                     | コミットする                                                                       |
 | :DBIRollback                   | ロールバックする                                                                   |
+| :DBICancel                     | 実行中のSQLをキャンセルする                                                                   |
 | :DBIHistory                    | SQL履歴を表示する                                                                  |
 | :DBISetSecurePassword [name]   | パスワードファイルを作成する                                                       |
 
