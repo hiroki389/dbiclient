@@ -270,6 +270,15 @@ function dbiclient#cancel() abort
     call s:cancel(s:getCurrentPort())
 endfunction
 
+function dbiclient#clearCache() abort
+    let port = s:getCurrentPort()
+    let connInfo = get(s:params, port, {})
+    let schema = s:getuser(connInfo)
+    for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/' .. schema .. '_*')), "\n")
+        call delete(file)
+    endfor
+endfunction
+
 function s:bufdel(port, cbufnr) abort
     "let bufnr = s:bufsearch(reverse(get(get(s:params, a:port, {}), 'buflist', [])[:]), a:cbufnr)
     let bufnr = s:bufsearch(reverse(map(s:bufferList2[:], {_, x -> x[1]})), a:cbufnr)
@@ -409,7 +418,7 @@ function s:loadQueryHistoryCmd(port) abort
     if !filereadable(sqlpath)
         return []
     endif
-    let list = s:readfile(sqlpath)
+    let list = s:readfileTakeRows(sqlpath, g:dbiclient_hist_cnt * -1)
     "let list = map(list, {_, x -> substitute(x, '\V{DELIMITER_CR}', "\n", 'g')})
     "let list = filter(list, {_, x -> x =~? '\v^.{-}DSN:.{-}SQL:'})
     return list
@@ -2570,7 +2579,7 @@ function s:selectHistory(port) abort
     call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
     "call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
     call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':call <SID>dbhistoryCmd(<SID>getPort())<CR>')
-    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmd(<SID>getPort()), line(".")  - len(b:dbiclient_disableline) - 1, 1)<CR>:call <SID>dbhistoryCmd(<SID>getPort())<CR>')
+    "call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmd(<SID>getPort()), line(".")  - len(b:dbiclient_disableline) - 1, 1)<CR>:call <SID>dbhistoryCmd(<SID>getPort())<CR>')
     call s:setallmap(bufnr)
 
     let dbiclient_bufmap = {}
@@ -2582,7 +2591,7 @@ function s:selectHistory(port) abort
     call add(msgList, [get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':PREVIEW'])
     "call add(msgList, [get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':SQL_PREVIEW'])
     call add(msgList, [get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':RELOAD'])
-    call add(msgList, [get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':DELETE'])
+    "call add(msgList, [get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':DELETE'])
     call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
     let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
     for tuple in tupleList
@@ -3795,6 +3804,15 @@ endfunction
 function s:readfile(file) abort
     if filereadable(a:file)
         let lines = readfile(a:file)
+    else
+        let lines = []
+    endif
+    return lines
+endfunction
+
+function s:readfileTakeRows(file, rows) abort
+    if filereadable(a:file)
+        let lines = readfile(a:file, '', a:rows)
     else
         let lines = []
     endif

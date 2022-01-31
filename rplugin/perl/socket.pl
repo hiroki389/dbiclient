@@ -607,13 +607,6 @@ sub rutine{
                         die($@);
                     }
                     if ($result->{cnt} > 0) {
-                        my @column_info = ();
-                        my $tempfile3 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_CKEY.dat';
-                        $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
-                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
-                            push (@column_info, $row);
-                        }
-                        nstore \@column_info, $tempfile3;
                         last;
                     }
                 }

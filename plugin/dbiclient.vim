@@ -50,6 +50,7 @@ command! -nargs=1 DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args
 command! DBICommit :call dbiclient#commit()
 command! DBIRollback :call dbiclient#rollback()
 command! DBICancel :call dbiclient#cancel()
+command! DBIClearCache :call dbiclient#clearCache()
 
 command! -range DBICreateDeleteInsert :<line1>,<line2>call dbiclient#createDeleteInsertRange()
 
