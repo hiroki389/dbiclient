@@ -97,6 +97,13 @@ sub exitfunc{
     close(LOCKFILE);
     unlink "${g_basedir}/${g_port}.lock";
 }
+sub uc2{
+    my $data = shift;
+    if (defined($data)) {
+        return uc $data;
+    }
+    return $data;
+}
 sub exitfunc2{
     exitfunc();
     exit(0);
@@ -405,7 +412,7 @@ sub rutine{
 
                 my $column_start_time = Time::HiRes::time; 
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my @schema_list = ($schem,uc $schem);
+                my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
                 $result->{primary_key}=[];
                 $result->{table_info}=[];
@@ -421,8 +428,9 @@ sub rutine{
                                 $schem2 = $schemaTable[0];
                                 $table = $schemaTable[1];
                             }
+                            my $schemName = defined($schem2) ? $schem2 : "NOUSER";
                             if ($g_primarykeyflg == 1) {
-                                my $tempfile1 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_PKEY.dat';
+                                my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_PKEY.dat';
                                 if (-e $tempfile1) {
                                     foreach my $row (@{retrieve($tempfile1)}){
                                         push (@primary_key, $row);
@@ -437,7 +445,7 @@ sub rutine{
                                 }
                             }
                             if ($result->{status} == 1 && $g_columninfoflg == 1) {
-                                my $tempfile2 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_TKEY.dat';
+                                my $tempfile2 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_TKEY.dat';
                                 if (-e $tempfile2) {
                                     foreach my $row (@{retrieve($tempfile2)}){
                                         push(@table_info, $row);
@@ -452,7 +460,7 @@ sub rutine{
                                         nstore \@table_info, $tempfile2;
                                     }
                                 }
-                                my $tempfile3 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_CKEY.dat';
+                                my $tempfile3 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_CKEY.dat';
                                 if (-e $tempfile3) {
                                     foreach my $row (@{retrieve($tempfile3)}){
                                         push (@column_info, $row);
@@ -492,7 +500,7 @@ sub rutine{
                 $ltabletype=!defined($ltabletype) || $ltabletype =~ /^\s*$/ ? undef : $ltabletype;
                 $g_sth=$g_dbh->table_info( undef, $user, $ltableNm, $ltabletype );
                 if ($g_sth->rows == 0) {
-                    $g_sth=$g_dbh->table_info( undef, uc $user, $ltableNm, $ltabletype );
+                    $g_sth=$g_dbh->table_info( undef, uc2 $user, $ltableNm, $ltabletype );
                 }
                 outputlog("SQL: TABLE_INFO", $g_port);
                 eval {
@@ -505,16 +513,17 @@ sub rutine{
                 my $table = $data->{tableNm};
                 outputlog("SQL: COLUMN_INFO_DATA(" . $table . ')', $g_port);
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my @schema_list = ($schem,uc $schem);
+                my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
+                    my $schemName = defined($schem2) ? $schem2 : "NOUSER";
                     $result->{primary_key}=[];
                     $result->{table_info}=[];
                     $result->{column_info}=[];
                     my @primary_key = ();
                     my @table_info = ();
                     my @column_info = ();
-                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_PKEY.dat';
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_PKEY.dat';
                     if (-e $tempfile1) {
                         foreach my $row (@{retrieve($tempfile1)}){
                             push (@primary_key, $row);
@@ -527,7 +536,7 @@ sub rutine{
                             nstore \@primary_key, $tempfile1;
                         }
                     }
-                    my $tempfile2 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_TKEY.dat';
+                    my $tempfile2 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_TKEY.dat';
                     if (-e $tempfile2) {
                         foreach my $row (@{retrieve($tempfile2)}){
                             push(@table_info, $row);
@@ -542,7 +551,7 @@ sub rutine{
                             nstore \@table_info, $tempfile2;
                         }
                     }
-                    my $tempfile3 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_CKEY.dat';
+                    my $tempfile3 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_CKEY.dat';
                     if (-e $tempfile3) {
                         foreach my $row (@{retrieve($tempfile3)}){
                             push (@column_info, $row);
@@ -573,11 +582,12 @@ sub rutine{
             }elsif($data->{column_info} == 1){
                 my $table = $data->{tableNm};
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
-                my @schema_list = ($schem,uc $schem);
+                my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
+                    my $schemName = defined($schem2) ? $schem2 : "NOUSER";
                     my @primary_key = ();
-                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem2 . '_' . $table . '_PKEY.dat';
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_PKEY.dat';
                     if (-e $tempfile1) {
                         foreach my $row (@{retrieve($tempfile1)}){
                             push (@primary_key, $row);

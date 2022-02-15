@@ -3901,8 +3901,20 @@ endfunction
 
 function s:belowPeditBuffer(bufname, ...) abort
     if g:dbiclient_previewwindow
-        let hight = winheight(s:getwid(s:bufnr(a:bufname)))
-        let hight = hight == -1 && !&previewwindow  ? g:dbiclient_new_window_hight : ''
+        let pflg = 0
+        let tabnr = tabpagenr()
+        for wid in map(range(tabpagewinnr(tabnr,'$')),{_,x->win_getid(x+1,tabnr)})
+            if getwinvar(wid, '&previewwindow')
+                let pflg = 1
+                break
+            endif
+        endfor
+        if pflg
+            let hight = ''
+        else
+            let hight = winheight(s:getwid(s:bufnr(a:bufname)))
+            let hight = hight == -1 && !&previewwindow  ? g:dbiclient_new_window_hight : ''
+        endif
         let [bufnr, cbufnr] = s:f.newBuffer('bo pedit', hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
     else
         let [bufnr, cbufnr] = s:f.newBuffer('below new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
