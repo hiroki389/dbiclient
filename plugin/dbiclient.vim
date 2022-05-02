@@ -44,6 +44,7 @@ command! DBIJobList :call dbiclient#joblist()
 command! DBIClose :call dbiclient#jobStopNext()
 command! DBIHistory :call dbiclient#dbhistoryCmd()
 command! DBITables :call dbiclient#userTablesMain()
+command! DBIOpenBuf :call dbiclient#openbuf()
 
 command! -nargs=1 DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args>)
 

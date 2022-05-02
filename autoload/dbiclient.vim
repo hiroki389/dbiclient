@@ -60,6 +60,7 @@ let s:connect_opt_schema_list = 'connect_opt_schema_list'
 let s:connect_opt_limitrows = 'connect_opt_limitrows'
 let s:connect_opt_encoding = 'connect_opt_encoding'
 let s:connect_opt_history_data_flg = 'connect_opt_history_data_flg'
+let s:history_data = {}
 
 let s:nmap_job_CH = '<CR>'
 let s:nmap_job_ST = 'ms'
@@ -279,6 +280,23 @@ function dbiclient#clearCache() abort
     endfor
 endfunction
 
+function dbiclient#openbuf() abort
+    if bufexists(s:currentBuf)
+        if g:dbiclient_previewwindow
+            let cwid = s:getwidCurrentTab(s:currentBuf)
+            silent! wincmd P
+            if !getbufvar(s:bufnr('%'), '&previewwindow')
+                bo new
+                silent! setlocal previewwindow
+            endif
+        else
+            bo new
+        endif
+        exe 'b ' .. s:currentBuf
+        call s:sethl(bufnr('%'))
+    endif
+endfunction
+
 function s:bufdel(port, cbufnr) abort
     "let bufnr = s:bufsearch(reverse(get(get(s:params, a:port, {}), 'buflist', [])[:]), a:cbufnr)
     let bufnr = s:bufsearch(reverse(map(s:bufferList2[:], {_, x -> x[1]})), a:cbufnr)
@@ -416,6 +434,7 @@ endfunction
 function s:loadQueryHistoryCmd(port) abort
     let sqlpath = s:getHistoryPathCmd(a:port)
     if !filereadable(sqlpath)
+        let s:history_data[sqlpath] = []
         return []
     endif
     let list = s:readfileTakeRows(sqlpath, g:dbiclient_hist_cnt * -1)
@@ -1758,8 +1777,13 @@ function s:cb_do(ch, dict) abort
         let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
         let dbiclient_bufmap = a:dict
         call add(bufVals, string(dbiclient_bufmap))
-        let ww=[datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
+
+        call s:loadQueryHistoryCmd(port)
+        "let lastnum = str2nr(get(s:history_data[path], -1, '')->matchstr('\v^[0-9]+\ze ')) + 1
+        "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
+        let ww = [datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         call writefile(ww, path, 'a')
+        call add(s:history_data[path], ww[0])
         if s:params[port].history_data_flg ==# 0 && filereadable(a:dict.data.tempfile)
             call delete(a:dict.data.tempfile)
         endif
@@ -2124,8 +2148,13 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let sql = substitute(s:getSqlLine(get(a:dict.data, 'sql', '')), '\t', ' ', 'g')
         let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
         call add(bufVals, string(dbiclient_bufmap))
-        let ww=[datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
+
+        call s:loadQueryHistoryCmd(port)
+        "let lastnum = str2nr(get(s:history_data[path], -1, '')->matchstr('\v^[0-9]+\ze ')) + 1
+        "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
+        let ww = [datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         call writefile(ww, path, 'a')
+        call add(s:history_data[path], ww[0])
         if s:params[port].history_data_flg ==# 0 && filereadable(a:dict.data.tempfile)
             call delete(a:dict.data.tempfile)
         endif
@@ -3811,10 +3840,15 @@ function s:readfile(file) abort
 endfunction
 
 function s:readfileTakeRows(file, rows) abort
-    if filereadable(a:file)
-        let lines = readfile(a:file, '', a:rows)
+    if has_key(s:history_data, a:file)
+        let lines = s:history_data[a:file][:]
     else
-        let lines = []
+        if filereadable(a:file)
+            let lines = readfile(a:file, '', a:rows)
+        else
+            let lines = []
+        endif
+        let s:history_data[a:file] = lines[:]
     endif
     return lines
 endfunction
