@@ -529,10 +529,6 @@ function s:error3(...) abort
         call s:echoMsg('EO01')
         return 1
     endif
-    if dbiclient_bufmap.data.tableJoinNm =~? ' '
-        call s:echoMsg('EO10')
-        return 1
-    endif
     return 0
 endfunction
 
@@ -566,7 +562,7 @@ function s:getTableJoinList(sql) abort
     let table = dbiclient#funclib#List(s:split(suba, "\n")).matchstr('\v\c\s+%(from|join)\s+\zs([[:alnum:]_$#.]+|".{-}")%((\s+as)?\s+([^[:space:]]+))?\ze').value()
     let table = filter(table, {_, x -> x !~# '\v^\s*[_$#.]+\s*$'})
     let table = map(table, {_, x -> split(x, '\v\s+') })
-    let table = map(table, {_, x -> {'tableNm':get(x, 0, ''), 'AS':get(x, 1, '') =~? '\v(<on>|<where>|<group>|<order>|<join>|<left>|<right>|<cross>|<natural>|<having>|<union>|<minus>|<except>|<using>)' ? '' : get(x, 1, '')}})
+    let table = map(table, {_, x -> {'tableNm':get(x, 0, ''), 'AS':get(x, 1, '') =~? '\v(<on>|<where>|<group>|<order>|<join>|<left>|<right>|<cross>|<natural>|<having>|<union>|<minus>|<except>|<using>|<as>|<of>)' ? '' : get(x, 1, '')}})
     if empty(table)
         return []
     else
@@ -618,9 +614,13 @@ function s:doDeleteInsert() abort
         return
     endif
     let bufnr = s:bufnr('%')
-    let dbiclient_col_line = getbufvar(bufnr, 'dbiclient_col_line', 0) + 1
     let dbiclient_disp_headerline = g:dbiclient_disp_headerline ? 1 : 0
-    let list = getline(dbiclient_col_line + dbiclient_disp_headerline, '$')
+    let firstline = getbufvar(bufnr, 'dbiclient_col_line', 0) + dbiclient_disp_headerline + 1
+    let lastline = line('$')
+    let list = getline(firstline, lastline)
+    let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
+    let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
+    let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[firstline - offset + remarkrow : lastline - offset + remarkrow]
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     if get(dbiclient_bufmap, 'hasnext', 1) ==# 1
         return
@@ -632,26 +632,39 @@ function s:doDeleteInsert() abort
     let as = get(get(s:getTableJoinList(get(get(dbiclient_bufmap, 'data', {}), 'sql', '')), 0, {}), 'AS', '')
     let tableNm = dbiclient_bufmap.data.tableNm
     let where = get(get(get(dbiclient_bufmap, 'opt', {}), 'extend', {}), 'where', '')
-    let list2 = extend(['DELETE FROM ' .. tableNm .. ' ' .. as .. ' ' .. where .. g:dbiclient_sql_delimiter1], s:createInsert(cols, list, tableNm))
+    let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+    let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+    let createInsert = s:createInsert(cols, param, param2, dbiclient_bufmap.alignFlg, tableNm)
+    let list2 = extend(['DELETE FROM ' .. tableNm .. ' ' .. as .. ' ' .. where .. g:dbiclient_sql_delimiter1], createInsert)
     let sqllist = s:splitSql(list2[:], 1)
     call s:dBCommandAsync({"doText":list2[:], "do":sqllist}, 's:cb_do', port)
 endfunction
 
-function s:createInsert(keys, vallist, tableNm) abort
+function s:createInsert(keys, vallist, beforevallist, alignFlg, tableNm) abort
     if a:tableNm ==# ""
         return []
     endif
     let result=[]
     let cols = join(a:keys, ", ")
-    for record in a:vallist
+    let i=0
+    for items in a:vallist
+        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
+        let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
+        if a:alignFlg
+            let collist = dbiclient#funclib#List(items)
+                        \.fmap({item -> trim(item[1]) !=# trim(get(beforedict, item[0], '')) || !has_key(beforedict, item[0]) ? item[1] : get(beforedict, item[0], '')})
+                        \.foldl({item -> item}, []).value()
+        else
+            let collist = dbiclient#funclib#List(items).foldl({item -> item[1]}, []).value()
+        endif
         let res  = "INSERT INTO "
         let res ..= a:tableNm
         let res ..= "("
         let res ..= cols
         let res ..= ")VALUES("
-        let collist = s:split(record, g:dbiclient_col_delimiter)
         let collist = map(collist, {_, x -> s:trim_surround(x)})
         call add(result, res .. join(map(collist, {_, xs -> "'" .. substitute(xs, "'", "''", 'g') .. "'"}), ", ") .. ");")
+        let i += 1
     endfor
     return result
 endfunction
@@ -663,6 +676,9 @@ function s:createInsertRange() range abort
     endif
     let bufname = "ScratchCreateInsert"
     let list = getline(a:firstline, a:lastline)
+    let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
+    let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
+    let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -677,46 +693,9 @@ function s:createInsertRange() range abort
         let bufnr = s:aboveNewBuffer(bufname)
     endif
     call s:deletebufline(bufnr, 1, '$')
-    call s:appendbufline(bufnr, '$', s:createInsert(cols, list, tableNm))
-endfunction
-
-function dbiclient#createDeleteInsertRange() range abort
-    let port = s:getPort()
-    let bufname = "ScratchCreateDeleteInsert"
-    let list = getline(a:firstline, a:lastline)->filter({_,x -> !empty(x) && x !~ '\v^[-+\t]+$'})
-    if len(list) < 3
-        return
-    endif
-    let tableNm = list[0]
-    let cols = s:split(list[1], g:dbiclient_col_delimiter)
-    let bufnr = s:bufnr(bufname)
-    if s:gotoWinCurrentTab(bufnr) ==# -1
-        let bufnr = s:aboveNewBuffer(bufname)
-    endif
-    let keys = s:getPrimaryKeys(tableNm, port)
-    let idxlist = []
-    let i = 0
-    for col in cols
-        if filter(keys[:], {_,x -> col == x})->len() > 0
-            call add(idxlist, i)
-        endif
-        let i += 1
-    endfor
-    let res2 = []
-    for record in list[2:]
-        let temp = []
-        let values = s:split(record, g:dbiclient_col_delimiter)
-        for idx in idxlist
-            call add(temp, "'" .. values[idx] .. "'")
-        endfor
-        call add(res2, '(' .. join(temp,',') .. ')')
-    endfor
-    let res = []
-    call add(res,"DELETE FROM " .. tableNm)
-    call add(res," WHERE (" .. join(keys,',') .. ') IN (')
-    call add(res, join(res2,',') .. " );")
-    call s:appendbufline(bufnr, '$', res)
-    call s:appendbufline(bufnr, '$', s:createInsert(cols, list[2:], tableNm))
+    let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+    let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+    call s:appendbufline(bufnr, '$', s:createInsert(cols, param, param2, dbiclient_bufmap.alignFlg, tableNm))
 endfunction
 
 function s:trim_surround(val) abort
@@ -727,7 +706,7 @@ function s:trim_surround(val) abort
     endif
 endfunction
 
-function s:createUpdate(vallist, beforevallist, tableNm, port) abort
+function s:createUpdate(vallist, beforevallist, tableNm, alignFlg, port) abort
     call s:debugLog('createUpdate start')
     call s:debugLog('getPrimaryKeys start')
     let keys = s:getPrimaryKeys(a:tableNm, a:port)
@@ -735,17 +714,14 @@ function s:createUpdate(vallist, beforevallist, tableNm, port) abort
     if a:tableNm ==# ""
         return []
     endif
-    if len(a:beforevallist) < len(a:vallist)
-        return []
-    endif
     let result=[]
     let i=0
     for items in a:vallist
-        let beforedict = dbiclient#funclib#List(a:beforevallist[i]).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
+        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
         let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
         let res  = "UPDATE " .. a:tableNm .. " SET "
         let collist = dbiclient#funclib#List(items)
-                    \.filter({item -> item[1] !=# beforedict[item[0]]})
+                    \.filter({item -> a:alignFlg ? trim(item[1]) !=# trim(get(beforedict, item[0], '')) : item[1] !=# get(beforedict, item[0], '')})
                     \.foldl({item -> item[0] .. ' = ' .. "'" .. s:trim_surround(item[1]) .. "'"}, []).value()
         if len(collist) > 0
             let res  ..= join(collist, ', ')
@@ -753,8 +729,12 @@ function s:createUpdate(vallist, beforevallist, tableNm, port) abort
             let res  ..= '<*>'
         endif
         if(len(keys) > 0)
-            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}(keys[0])
-            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}, []).value())
+            let diffList = keys[:]->filter({_, key -> trim(s:trim_surround(get(beforedict, key, '<*>'))) !=# trim(s:trim_surround(get(dict, key, '<*>')))})->map({_, key -> trim(s:trim_surround(get(beforedict, key, '<*>'))) .. ' != ' .. trim(s:trim_surround(get(dict, key, '<*>')))})
+            if diffList->len() > 0
+                let res  = '/* Change primary key */ ' .. res
+            endif
+            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}(keys[0])
+            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}, []).value())
         else
             let res ..= ' WHERE <*>'
         endif
@@ -794,10 +774,10 @@ function s:createUpdateRange() range abort
     call s:deletebufline(bufnr, 1, '$')
     let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
     let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
-    call s:appendbufline(bufnr, '$', s:createUpdate(param, param2, tableNm, port))
+    call s:appendbufline(bufnr, '$', s:createUpdate(param, param2, tableNm, dbiclient_bufmap.alignFlg, port))
 endfunction
 
-function s:createDelete(vallist, tableNm, port) abort
+function s:createDelete(vallist, beforevallist, tableNm, port) abort
     call s:debugLog('getPrimaryKeys start')
     let keys = s:getPrimaryKeys(a:tableNm, a:port)
     call s:debugLog('getPrimaryKeys end')
@@ -805,16 +785,23 @@ function s:createDelete(vallist, tableNm, port) abort
         return []
     endif
     let result=[]
+    let i=0
     for items in a:vallist
+        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
         let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:x[1]}}, {}).value()
         let res  = "DELETE FROM " .. a:tableNm
-        if(len(keys)>0)
-            let res ..= {key->' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}(keys[0])
-            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}, []).value())
+        if(len(keys) > 0)
+            let diffList = keys[:]->filter({_, key -> trim(s:trim_surround(get(beforedict, key, '<*>'))) !=# trim(s:trim_surround(get(dict, key, '<*>')))})->map({_, key -> trim(s:trim_surround(get(beforedict, key, '<*>'))) .. ' != ' .. trim(s:trim_surround(get(dict, key, '<*>')))})
+            if diffList->len() > 0
+                let res  = '/* Use the old primary key */ ' .. res
+            endif
+            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}(keys[0])
+            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}, []).value())
         else
             let res ..= ' WHERE <*>'
         endif
         call add(result, res .. ";")
+        let i += 1
     endfor
     return result
 endfunction
@@ -829,6 +816,9 @@ function s:createDeleteRange() range abort
     endif
     let bufname = "ScratchCreateDelete"
     let list = getline(a:firstline, a:lastline)
+    let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
+    let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
+    let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -844,7 +834,8 @@ function s:createDeleteRange() range abort
     endif
     call s:deletebufline(bufnr, 1, '$')
     let param = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
-    call s:appendbufline(bufnr, '$', s:createDelete(param, tableNm, port))
+    let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+    call s:appendbufline(bufnr, '$', s:createDelete(param, param2, tableNm, port))
 endfunction
 
 function s:joblist(moveFlg) abort
