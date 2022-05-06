@@ -432,14 +432,17 @@ function s:deleteHistory(sqlpath, no, removefile) abort
 endfunction
 
 function s:loadQueryHistoryCmd(port) abort
+    call s:debugLog('loadQueryHistoryCmd:start')
     let sqlpath = s:getHistoryPathCmd(a:port)
     if !filereadable(sqlpath)
+        call s:debugLog('loadQueryHistoryCmd:end(empty)')
         let s:history_data[sqlpath] = []
         return []
     endif
     let list = s:readfileTakeRows(sqlpath, g:dbiclient_hist_cnt * -1)
     "let list = map(list, {_, x -> substitute(x, '\V{DELIMITER_CR}', "\n", 'g')})
     "let list = filter(list, {_, x -> x =~? '\v^.{-}DSN:.{-}SQL:'})
+    call s:debugLog('loadQueryHistoryCmd:end')
     return list
 endfunction
 
@@ -793,10 +796,10 @@ function s:createDelete(vallist, beforevallist, tableNm, port) abort
         if(len(keys) > 0)
             let diffList = keys[:]->filter({_, key -> trim(s:trim_surround(get(beforedict, key, '<*>'))) !=# trim(s:trim_surround(get(dict, key, '<*>')))})->map({_, key -> trim(s:trim_surround(get(beforedict, key, '<*>'))) .. ' != ' .. trim(s:trim_surround(get(dict, key, '<*>')))})
             if diffList->len() > 0
-                let res  = '/* Use the old primary key */ ' .. res
+                let res  = '/* Change primary key */ ' .. res
             endif
-            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}(keys[0])
-            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}, []).value())
+            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}(keys[0])
+            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}, []).value())
         else
             let res ..= ' WHERE <*>'
         endif
@@ -1024,6 +1027,7 @@ function s:connect(port, dsn, user, pass, opt) abort
     function! s:cb_jobout(ch, dict) closure abort
         if a:dict ==# port
             call s:connect_base(a:dsn, a:user, pass, limitrows, encoding, opt)
+            call s:loadQueryHistoryCmd(port)
         endif
     endfunction
     function! s:cb_joberr(ch, dict) closure abort
@@ -1058,9 +1062,9 @@ function s:connect(port, dsn, user, pass, opt) abort
                 \ , 'stoponexit':''
                 \ , 'out_cb':funcref('s:cb_jobout')
                 \ })
-
     let s:params[port]={}
     let s:params[port].port = port
+
 endfunction
 
 function s:kill_job(port) abort
@@ -1769,7 +1773,6 @@ function s:cb_do(ch, dict) abort
         let dbiclient_bufmap = a:dict
         call add(bufVals, string(dbiclient_bufmap))
 
-        call s:loadQueryHistoryCmd(port)
         "let lastnum = str2nr(get(s:history_data[path], -1, '')->matchstr('\v^[0-9]+\ze ')) + 1
         "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         let ww = [datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
@@ -2140,7 +2143,6 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
         call add(bufVals, string(dbiclient_bufmap))
 
-        call s:loadQueryHistoryCmd(port)
         "let lastnum = str2nr(get(s:history_data[path], -1, '')->matchstr('\v^[0-9]+\ze ')) + 1
         "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         let ww = [datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
