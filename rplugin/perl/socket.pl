@@ -428,6 +428,7 @@ sub rutine{
                                 $schem2 = $schemaTable[0];
                                 $table = $schemaTable[1];
                             }
+                            my $upper_table = uc2 $table;
                             my $schemName = defined($schem2) ? $schem2 : "NOUSER";
                             if ($g_primarykeyflg == 1) {
                                 my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_PKEY.dat';
@@ -438,6 +439,11 @@ sub rutine{
                                 } else {
                                     foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
                                         push (@primary_key, $row);
+                                    }
+                                    if (@primary_key == 0) {
+                                        foreach my $row ($g_dbh->primary_key( undef, $schem2, $upper_table)){
+                                            push (@primary_key, $row);
+                                        }
                                     }
                                     if (@primary_key > 0) {
                                         nstore \@primary_key, $tempfile1;
@@ -456,6 +462,13 @@ sub rutine{
                                         push(@table_info, $row);
                                     }
                                     $g_sth->finish();
+                                    if (@table_info == 0) {
+                                        $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, undef );
+                                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                            push(@table_info, $row);
+                                        }
+                                        $g_sth->finish();
+                                    }
                                     if (@table_info > 0) {
                                         nstore \@table_info, $tempfile2;
                                     }
@@ -471,6 +484,13 @@ sub rutine{
                                         push (@column_info, $row);
                                     }
                                     $g_sth->finish();
+                                    if (@column_info == 0) {
+                                        $g_sth=$g_dbh->column_info( undef, $schem2, $upper_table, undef );
+                                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                            push (@column_info, $row);
+                                        }
+                                        $g_sth->finish();
+                                    }
                                     if (@column_info > 0) {
                                         nstore \@column_info, $tempfile3;
                                     }
@@ -500,7 +520,8 @@ sub rutine{
                 $ltabletype=!defined($ltabletype) || $ltabletype =~ /^\s*$/ ? undef : $ltabletype;
                 $g_sth=$g_dbh->table_info( undef, $user, $ltableNm, $ltabletype );
                 if ($g_sth->rows == 0) {
-                    $g_sth=$g_dbh->table_info( undef, uc2 $user, $ltableNm, $ltabletype );
+                    my $upper_user = uc2 $user;
+                    $g_sth=$g_dbh->table_info( undef, $upper_user, $ltableNm, $ltabletype );
                 }
                 outputlog("SQL: TABLE_INFO", $g_port);
                 eval {
@@ -511,6 +532,7 @@ sub rutine{
                 }
             }elsif($data->{column_info_data} == 1){
                 my $table = $data->{tableNm};
+                my $upper_table = uc2 $table;
                 outputlog("SQL: COLUMN_INFO_DATA(" . $table . ')', $g_port);
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                 my @schema_list = ($schem,uc2 $schem);
@@ -532,6 +554,11 @@ sub rutine{
                         foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
                             push (@primary_key, $row);
                         }
+                        if (@primary_key == 0) {
+                            foreach my $row ($g_dbh->primary_key( undef, $schem2, $upper_table)){
+                                push (@primary_key, $row);
+                            }
+                        }
                         if (@primary_key > 0) {
                             nstore \@primary_key, $tempfile1;
                         }
@@ -547,6 +574,13 @@ sub rutine{
                             push(@table_info, $row);
                         }
                         $g_sth->finish();
+                        if (@table_info == 0) {
+                            $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, undef );
+                            foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                push(@table_info, $row);
+                            }
+                            $g_sth->finish();
+                        }
                         if (@table_info > 0) {
                             nstore \@table_info, $tempfile2;
                         }
@@ -562,6 +596,13 @@ sub rutine{
                             push (@column_info, $row);
                         }
                         $g_sth->finish();
+                        if (@column_info == 0) {
+                            $g_sth=$g_dbh->column_info( undef, $schem2, $upper_table, undef );
+                            foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                push (@column_info, $row);
+                            }
+                            $g_sth->finish();
+                        }
                         if (@column_info > 0) {
                             nstore \@column_info, $tempfile3;
                         }
@@ -581,6 +622,7 @@ sub rutine{
                 }
             }elsif($data->{column_info} == 1){
                 my $table = $data->{tableNm};
+                my $upper_table = uc2 $table;
                 my $schem = $data->{schem} eq '' ? $user : $data->{schem};
                 my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
@@ -595,6 +637,11 @@ sub rutine{
                     } else {
                         foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
                             push (@primary_key, $row);
+                        }
+                        if (@primary_key == 0) {
+                            foreach my $row ($g_dbh->primary_key( undef, $schem2, $upper_table)){
+                                push (@primary_key, $row);
+                            }
                         }
                         if (@primary_key > 0) {
                             nstore \@primary_key, $tempfile1;
@@ -615,6 +662,16 @@ sub rutine{
                     };
                     if ($@) {
                         die($@);
+                    }
+                    if ($result->{cnt} == 0) {
+                        $g_sth=$g_dbh->column_info( undef, $schem2, $upper_table, undef );
+                        outputlog("SQL: COLUMN_INFO(" . $upper_table . ')', $g_port);
+                        eval {
+                            exec_sql($data,$sig,$tempfile,$result,$start_time,0);
+                        };
+                        if ($@) {
+                            die($@);
+                        }
                     }
                     if ($result->{cnt} > 0) {
                         last;
@@ -769,3 +826,4 @@ sub exec_sql{
 }
 
 exitfunc();
+

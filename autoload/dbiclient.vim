@@ -1191,11 +1191,88 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
     let save_dbiclient_previewwindow = g:dbiclient_previewwindow
     if len(sqllist) > 1
         let g:dbiclient_previewwindow = 0
+        let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
+        let opt = {}
+        let bufname='ResultRows_' .. s:getuser(s:params[port]) .. '_' .. port .. '_' .. ymdhmss
+        let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
+        let opt.reloadBufname = bufname
+        let opt.reloadBufnr = bufnr
+        let opt.nonowloading = 1
+        let tupleList = []
+        let msgList = []
+        let connInfo = get(s:params, port, {})
+        let status = s:getStatus(port, connInfo)
+        call add(msgList, ['PID', '=' .. get(connInfo, 'process', '')])
+        call add(msgList, ['PORT', '=' .. port])
+        call add(msgList, ['SCHEMA', '=' .. s:getuser(connInfo)])
+        call add(msgList, ['DSN', '=' .. s:getdsn(connInfo.dsn)])
+        call add(msgList, ['STATUS', '=' .. (connInfo.port ==# s:getCurrentPort() ? status .. '*' : status)])
+        call add(tupleList, s:Tuple('"Connection info', msgList))
+        let matchadds=[]
+        call add(matchadds, ['Comment', '\v%1l^".{-}:'])
+        call add(matchadds, ['String', '\v%1l^".{-}:\zs.*$'])
+        call add(matchadds, ['Function', '\v%1l( \[)@<=.{-}(\=)@='])
+        let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+        for tuple in tupleList
+            let info = tuple.Get1() .. (repeat(' ', maxsize - len(tuple.Get1())) .. ' :')
+            let info ..= s:f2.Foldl({x, y -> x .. y}, "", map(tuple.Get2(), {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
+            call s:appendbufline(bufnr, '$', [info])
+        endfor
+        if !empty(matchadds)
+            call setbufvar(bufnr, 'dbiclient_matches', matchadds)
+            call s:sethl(bufnr)
+        endif
+        for sql in sqllist
+            let channel = s:getQueryAsync(trim(sql), 's:cb_outputResultMany', limitrows, opt, port)
+        endfor
+    else
+        let channel = s:getQueryAsync(trim(sqllist[0]), s:callbackstr(a:alignFlg), limitrows, {}, port)
     endif
-    for sql in sqllist
-        let channel = s:getQueryAsync(trim(sql), s:callbackstr(a:alignFlg), limitrows, {}, port)
-    endfor
     let g:dbiclient_previewwindow = save_dbiclient_previewwindow
+endfunction
+
+function s:cb_outputResultMany(ch, dict) abort
+    let opt = get(a:dict.data, 'opt', {})
+    let starttime = localtime()
+    let port = get(a:dict.data.connInfo, 'port')
+    let opt = get(a:dict.data, 'opt', {})
+    let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
+    let bufname = get(a:dict.data, 'reloadBufname', '')
+    let bufnr = s:bufnr(get(a:dict.data, 'reloadBufnr', -1))
+    let lines = s:readfile(a:dict.data.tempfile)
+    let cols = get(a:dict, 'cols',[])
+    let colsstr = join(cols, "\t")
+    let columnsRemarks = s:getColumnsTableRemarks(get(a:dict, 'column_info', []))
+    if g:dbiclient_disp_remarks
+        let head = map(cols[:], {i, x -> get(columnsRemarks, x, '')})
+        if !empty(filter(head[:], {_, x -> x !=# ''}))
+            let headstr = join(head, "\t")
+        endif
+    endif
+    let table = a:dict.data.tableNm
+    let tableRemarks = ''
+    for table in split(a:dict.data.tableJoinNm, ' ')
+        let remarks = get(s:getTableRemarks(get(a:dict, 'table_info', [])), table, '')
+        if g:dbiclient_disp_remarks && !empty(remarks)
+            let tableRemarks .= table .. ' (' .. remarks .. ') '
+        else
+            let remarks = get(s:getTableRemarks(get(a:dict, 'table_info', [])), toupper(table), '')
+            if g:dbiclient_disp_remarks && !empty(remarks)
+                let tableRemarks .= table .. ' (' .. remarks .. ') '
+            else
+                let tableRemarks .= table .. ' '
+            endif
+        endif
+    endfor
+    let tmp = s:getSqlLine(a:dict.data.sql)
+    let tmp = (strdisplaywidth(tmp) > 2000 ? strcharpart(tmp,0,2000) .. '...' : tmp)
+    call appendbufline(bufnr, '$', [tmp])
+    call appendbufline(bufnr, '$', [tableRemarks])
+    call appendbufline(bufnr, '$', [headstr])
+    call appendbufline(bufnr, '$', [colsstr])
+    call appendbufline(bufnr, '$', lines)
+    call appendbufline(bufnr, '$', [''])
+    return 0
 endfunction
 
 function s:split(str, delim) abort
@@ -1411,14 +1488,16 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         call s:addbufferlist(a:port, bufnr)
     else
         call s:f.noreadonly(bufnr)
-        call s:deletebufline(bufnr, 1, '$')
-        call setbufvar(bufnr, 'dbiclient_bufmap', {})
-        call setbufvar(bufnr, 'dbiclient_col_line', 0)
-        call setbufvar(bufnr, 'dbiclient_header', [])
-        call setbufvar(bufnr, 'dbiclient_lines', [])
-        call setbufvar(bufnr, 'dbiclient_matches', [])
-        call setbufvar(bufnr, 'dbiclient_nmap', [])
-        call setbufvar(bufnr, 'dbiclient_vmap', [])
+        if !get(a:opt, 'nonowloading', 0)
+            call s:deletebufline(bufnr, 1, '$')
+            call setbufvar(bufnr, 'dbiclient_bufmap', {})
+            call setbufvar(bufnr, 'dbiclient_col_line', 0)
+            call setbufvar(bufnr, 'dbiclient_header', [])
+            call setbufvar(bufnr, 'dbiclient_lines', [])
+            call setbufvar(bufnr, 'dbiclient_matches', [])
+            call setbufvar(bufnr, 'dbiclient_nmap', [])
+            call setbufvar(bufnr, 'dbiclient_vmap', [])
+        endif
         let cbufnr = bufnr('%')
     endif
     if sql !=# ''
@@ -1449,7 +1528,9 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , <SID>input("TABLE_NAME:", get(<SID>getParams(), "table_name", "")) , get(<SID>getParams(), "tabletype", "")                        , <SID>getPort())<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , <SID>input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", "")) , <SID>getPort())<CR>')
     endif
-    call s:appendbufline(bufnr, '$', ['Now loading...'])
+    if !get(a:opt, 'nonowloading', 0)
+        call s:appendbufline(bufnr, '$', ['Now loading...'])
+    endif
     if !empty(get(a:opt, 'reloadBufname', ''))
         call s:debugLog('reloadBufname')
         call s:gotoWin(bufnr)
@@ -1974,7 +2055,12 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
                 if g:dbiclient_disp_remarks && !empty(remarks)
                     let tableRemarks .= table .. ' (' .. remarks .. ') '
                 else
-                    let tableRemarks .= table .. ' '
+                    let remarks = get(s:getTableRemarks(get(a:dict, 'table_info', [])), toupper(table), '')
+                    if g:dbiclient_disp_remarks && !empty(remarks)
+                        let tableRemarks .= table .. ' (' .. remarks .. ') '
+                    else
+                        let tableRemarks .= table .. ' '
+                    endif
                 endif
             endfor
             call s:appendbufline(bufnr, '$', [tableRemarks])
@@ -4133,14 +4219,7 @@ function s:ch_open2status(port) abort
 endfunction
 
 function s:getwid(bufnr)
-    for tabnr in range(1, tabpagenr('$'))
-        for wid in map(range(tabpagewinnr(tabnr, '$')),{_, x -> win_getid(x + 1, tabnr)})
-            if(s:any(map(win_findbuf(a:bufnr), {_, x -> wid == x}), {x -> x != 0}))
-                return wid
-            endif
-        endfor
-    endfor
-    return -1
+    return s:getwidCurrentTab(a:bufnr)
 endfunction
 
 function s:gotoWin(bufnr)
