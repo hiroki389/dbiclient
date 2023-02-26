@@ -136,6 +136,7 @@ POSIX::sigaction( SIGINT, $cancelsub ); # register them handler
 
 binmode STDIN,  (":encoding(" . $g_vimencoding . ')');
 binmode STDOUT,  (":encoding(" . $g_vimencoding . ')');
+binmode STDERR,  (":encoding(" . $g_vimencoding . ')');
 STDERR->autoflush;
 STDOUT->autoflush;
 LOGFILE->autoflush;

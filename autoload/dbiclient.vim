@@ -586,7 +586,7 @@ function s:getColumns(tableNm, port) abort
     let cols = get(get(s:params, a:port, {}), a:tableNm, [])
     if !has_key(get(s:params, a:port, {}), a:tableNm)
         let s:params[a:port][a:tableNm] = []
-        let opt={'tableNm':a:tableNm, 'column_info_data':1}
+        let opt = {'tableNm':a:tableNm, 'column_info_data':1}
         let cols = get(s:getQuery('', -1, opt, a:port),'column_info',[])->map({_,x -> x.COLUMN_NAME})
         if empty(cols)
             let cols = get(s:getQuery('SELECT * FROM ' .. a:tableNm, 0, {}, a:port),'cols',[])
@@ -1232,6 +1232,9 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
 endfunction
 
 function s:cb_outputResultMany(ch, dict) abort
+    if type(a:ch) ==# v:t_channel && s:ch_statusOk(a:ch)
+        call ch_close(a:ch)
+    endif
     let opt = get(a:dict.data, 'opt', {})
     let starttime = localtime()
     let port = get(a:dict.data.connInfo, 'port')
@@ -1243,6 +1246,7 @@ function s:cb_outputResultMany(ch, dict) abort
     let cols = get(a:dict, 'cols',[])
     let colsstr = join(cols, "\t")
     let columnsRemarks = s:getColumnsTableRemarks(get(a:dict, 'column_info', []))
+    let headstr = ""
     if g:dbiclient_disp_remarks
         let head = map(cols[:], {i, x -> get(columnsRemarks, x, '')})
         if !empty(filter(head[:], {_, x -> x !=# ''}))
@@ -1266,11 +1270,21 @@ function s:cb_outputResultMany(ch, dict) abort
     endfor
     let tmp = s:getSqlLine(a:dict.data.sql)
     let tmp = (strdisplaywidth(tmp) > 2000 ? strcharpart(tmp,0,2000) .. '...' : tmp)
+    let surr='\V'
+    let lines = map(lines[:], {_, line -> substitute(substitute(line, surr .. s:getprelinesep() .. '\v|\V' .. s:getprelinesep() .. surr, '', 'g'), s:tab_placefolder, "\t", 'g')})
     call appendbufline(bufnr, '$', [tmp])
-    call appendbufline(bufnr, '$', [tableRemarks])
-    call appendbufline(bufnr, '$', [headstr])
-    call appendbufline(bufnr, '$', [colsstr])
-    call appendbufline(bufnr, '$', lines)
+    if !empty(tableRemarks)
+        call appendbufline(bufnr, '$', [tableRemarks])
+    endif
+    if !empty(headstr)
+        call appendbufline(bufnr, '$', [headstr])
+    endif
+    if !empty(colsstr)
+        call appendbufline(bufnr, '$', [colsstr])
+    endif
+    if !empty(lines)
+        call appendbufline(bufnr, '$', lines)
+    endif
     call appendbufline(bufnr, '$', [''])
     return 0
 endfunction
@@ -3631,7 +3645,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
 endfunction
 
 function s:getColumnsTableRemarks(data) abort
-    let data = a:data
+    let data = deepcopy(a:data)
 
     if !empty(data)
         let itemmap = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(data[:], {_, x -> empty(trim(get(x, 'REMARKS', ''))) ? {} : {get(x, 'COLUMN_NAME', '') : get(x, 'REMARKS', '')}}))
@@ -3643,7 +3657,7 @@ function s:getColumnsTableRemarks(data) abort
 endfunction
 
 function s:getTableRemarks(data) abort
-    let data = a:data
+    let data = deepcopy(a:data)
 
     if !empty(data)
         let itemmap = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(data[:], {_, x -> empty(trim(get(x, 'REMARKS', ''))) ? {} : {get(x, 'TABLE_NAME', '') : get(x, 'REMARKS', '')}}))
@@ -4174,7 +4188,8 @@ function s:ch_statusStrOk(str) abort
 endfunction
 
 function s:ch_statusOk(channel) abort
-    return s:ch_statusStrOk(ch_status(a:channel))
+    let ret = s:ch_statusStrOk(ch_status(a:channel))
+    return ret
 endfunction
 
 function s:input(prompt, ...) abort
