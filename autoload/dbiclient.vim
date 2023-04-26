@@ -666,7 +666,7 @@ function s:createInsert(keys, vallist, beforevallist, alignFlg, tableNm) abort
         let res ..= cols
         let res ..= ")VALUES("
         let collist = map(collist, {_, x -> s:trim_surround(x)})
-        call add(result, res .. join(map(collist, {_, xs -> "'" .. substitute(xs, "'", "''", 'g') .. "'"}), ", ") .. ");")
+        call add(result, res .. join(map(collist, {_, xs -> "'" .. substitute(xs, "'", "''", 'g') .. "'"}), ", ")->substitute('\V' .. g:dbiclient_dblinesep, "' || " .. g:dbiclient_dblinesep .. " || '", 'g') .. ");")
         let i += 1
     endfor
     return result
@@ -679,6 +679,8 @@ function s:createInsertRange() range abort
     endif
     let bufname = "ScratchCreateInsert"
     let list = getline(a:firstline, a:lastline)
+    let tmp = list->join(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> substitute(m[0], g:dbiclient_prelinesep, g:dbiclient_dblinesep,'g')->substitute('\v^"|"$', '', 'g')}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
@@ -1549,7 +1551,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         call s:debugLog('reloadBufname')
         call s:gotoWin(bufnr)
     endif
-    "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
+    exe 'autocmd CursorMoved <buffer=' .. bufnr .. '> :call s:PopupColInfo()'
     if ro
         call s:f.readonly(bufnr)
     endif
@@ -2084,6 +2086,8 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let cols = get(a:dict, 'cols',[])
         if get(opt, "nocols", 0) ==# 0 && !empty(cols)
             let columnsRemarks = s:getColumnsTableRemarks(get(a:dict, 'column_info', []))
+            let columnsPopupInfo = s:getColumnsPopupInfo(get(a:dict, 'column_info', []))
+            let a:dict.data.columnsPopupInfo = columnsPopupInfo
             if g:dbiclient_disp_remarks
                 let head = map(cols[:], {i, x -> get(columnsRemarks, x, '')})
                 if !empty(filter(head[:], {_, x -> x !=# ''}))
@@ -3654,6 +3658,28 @@ function s:getColumnsTableRemarks(data) abort
         let itemmap={}
     endif
     return itemmap
+endfunction
+
+function s:getColumnsPopupInfo(data) abort
+    let data = deepcopy(a:data)
+
+    if !empty(data)
+        let itemmap = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(data[:], {_, x -> {get(x, 'COLUMN_NAME', '') : (get(x, 'TYPE_NAME', '') .. '(' .. get(x, 'COLUMN_SIZE', '') .. (get(x, 'DECIMAL_DIGITS', v:null) == v:null ? '' : ',' .. get(x, 'DECIMAL_DIGITS', v:null))  .. ')')}}))
+        call filter(map(itemmap, {k, v -> empty(v) ? '' : v}), {_, x -> !empty(trim(x))})
+    else
+        let itemmap={}
+    endif
+    return itemmap
+endfunction
+
+function s:PopupColInfo() abort
+    let col = matchstr(expand('<cWORD>'), '\v(\w|[$#.])+')
+    if exists('b:dbiclient_bufmap.data.columnsPopupInfo')
+        let info = get(b:dbiclient_bufmap.data.columnsPopupInfo, col, '')
+        if !empty(info) && line('.') == get(b:, 'dbiclient_col_line', -1)
+            call popup_atcursor(info, #{moved:'any', line: 'cursor-1', col: 'cursor'})
+        endif
+    endif
 endfunction
 
 function s:getTableRemarks(data) abort

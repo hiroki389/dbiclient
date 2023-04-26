@@ -29,6 +29,7 @@ let g:dbiclient_hist_cnt               = get(g:,'dbiclient_hist_cnt', 1000)
 let g:dbiclient_testdata_fixedmap      = get(g:,'dbiclient_testdata_fixedmap', {})
 let g:Dbiclient_call_after_connected   = get(g:,'Dbiclient_call_after_connected', {-> dbiclient#userTablesMain()})
 let g:dbiclient_disp_headerline        = get(g:,'dbiclient_disp_headerline', 1)
+let g:dbiclient_dblinesep              = get(g:,'dbiclient_dblinesep', 'CHR(13) || CHR(10)')
 
 " connect opt default 
 let g:dbiclient_connect_opt_columninfoflg     = get(g:,'dbiclient_connect_opt_columninfoflg', 0)
