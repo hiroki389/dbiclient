@@ -62,6 +62,8 @@ command! -nargs=? -complete=customlist,dbiclient#getTables DBIColumnsTable :call
 command! -bang -range DBIExecute :<line1>,<line2>call dbiclient#dBExecRangeSQLDo("<bang>")
 command! -bang -range DBIExecuteNoSplit :<line1>,<line2>call dbiclient#dBExecRangeSQLDoNoSplit("<bang>")
 
+command! -range -nargs=? DBICreateDeleteInsertSql :<line1>,<line2>call dbiclient#createDeleteInsertSql(<f-args>)
+
 
 let &cpo = s:cpo_save
 unlet s:cpo_save
