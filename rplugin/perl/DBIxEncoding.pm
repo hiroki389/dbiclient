@@ -38,15 +38,11 @@ sub prepare {
 
 sub do {
     my ($self, $stmt, $attr, @args) = @_;
-    my $sth = $self->SUPER::do($stmt, $attr, @args);
-    $sth->{private_dbix_encoding} = $self->{private_dbix_encoding};
-    return $sth;
+    return $self->SUPER::do($stmt, $attr, @args);
 }
 sub primary_key {
     my ($self, @args) = @_;
-    my $sth = $self->SUPER::primary_key(@args);
-    $sth->{private_dbix_encoding} = $self->{private_dbix_encoding};
-    return $sth;
+    return $self->SUPER::primary_key(@args);
 }
 
 sub primary_key_info {
@@ -93,7 +89,6 @@ sub bind_param {
 
 sub execute {
     my ($self, @args) = @_;
-    my $encoding = $self->{private_dbix_encoding}->{encoding};
     return $self->SUPER::execute(@args);
 }
 
