@@ -276,15 +276,19 @@ function dbiclient#createDeleteInsertSql(...) range abort
         if trim(sql) != ''
             let res = dbiclient#getQuery(sql ,limitrows,{})
             if has_key(res ,'data')
-                let tmp = readfile(res.data.tempfile)->join(g:dbiclient_prelinesep)
-                let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> substitute(m[0], g:dbiclient_prelinesep, g:dbiclient_dblinesep,'g')->substitute('\v^"|"$', '', 'g')}, 'g')->split(g:dbiclient_prelinesep)
-                let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(res.cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
-                let row = s:createDelete(param, param, res.data.tableNm, s:getCurrentPort())
-                call s:appendbufline(bufnr, '$', row)
-                call s:appendbufline(bufnr, '$', [''])
-                let row = dbiclient#createInsert(res.cols, param, res.data.tableNm)
-                call s:appendbufline(bufnr, '$', row)
-                call s:appendbufline(bufnr, '$', [''])
+                if filereadable(res.data.tempfile .. '.err')
+                    throw readfile(res.data.tempfile .. '.err')->join(g:dbiclient_prelinesep)
+                else
+                    let tmp = readfile(res.data.tempfile)->join(g:dbiclient_prelinesep)
+                    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> substitute(m[0], g:dbiclient_prelinesep, g:dbiclient_dblinesep,'g')->substitute('\v^"|"$', '', 'g')}, 'g')->split(g:dbiclient_prelinesep)
+                    let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(res.cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+                    let row = s:createDelete(param, param, res.data.tableNm, s:getCurrentPort())
+                    call s:appendbufline(bufnr, '$', row)
+                    call s:appendbufline(bufnr, '$', [''])
+                    let row = dbiclient#createInsert(res.cols, param, res.data.tableNm)
+                    call s:appendbufline(bufnr, '$', row)
+                    call s:appendbufline(bufnr, '$', [''])
+                endif
             endif
         endif
     endfor
