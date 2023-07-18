@@ -1517,15 +1517,13 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     let tableJoinNm = join(s:getTableJoinListUniq(sql), " ")
     let tableJoinNmWithAs = s:getTableJoinList(a:sql)
     let cols = []
-    if len(tableJoinNmWithAs) <= 20
-        for item in tableJoinNmWithAs
-            let prefix = empty(item.AS) ? '' : item.AS .. '.'
-            if empty(prefix) && len(tableJoinNmWithAs) > 1
-                let prefix = item.tableNm .. '.'
-            endif
-            let cols = extend(cols, map(s:getColumns(item.tableNm, a:port), {_, x -> prefix .. x}))
-        endfor
-    endif
+    for item in tableJoinNmWithAs
+        let prefix = empty(item.AS) ? '' : item.AS .. '.'
+        if empty(prefix) && len(tableJoinNmWithAs) > 1
+            let prefix = item.tableNm .. '.'
+        endif
+        let cols = extend(cols, map(s:getColumns(item.tableNm, a:port), {_, x -> prefix .. x}))
+    endfor
     let channel = ch_open('localhost:' .. a:port)
     if !s:ch_statusOk(channel)
         return {}
@@ -3900,7 +3898,7 @@ function s:selectExtends(bufname, orderflg, dict) abort
     let dbiclient_bufmap = getbufvar(curbufnr, 'dbiclient_bufmap', {})
     let opt = get(dbiclient_bufmap, 'opt', {})
     let cols = extend(get(dbiclient_bufmap.data, 'cols', [])[:], get(a:dict, 'selectUnmatchCols', []))
-    if has_key(a:dict, 'selectdict')
+    if has_key(a:dict, 'selectdict') && !empty(keys(get(a:dict, 'selectdictstr',{})))
         let list=[]
         let keys = keys(a:dict.selectdictstr)
         for key in cols

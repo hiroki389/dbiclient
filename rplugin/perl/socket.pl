@@ -419,11 +419,11 @@ sub rutine{
                 $result->{table_info}=[];
                 $result->{column_info}=[];
                 foreach my $schem2 (@schema_list){
-                    my @primary_key = ();
-                    my @table_info = ();
-                    my @column_info = ();
                     if (@tableJoinNm <= 20) {
                         foreach my $table (@tableJoinNm){
+                            my @primary_key = ();
+                            my @table_info = ();
+                            my @column_info = ();
                             my @schemaTable = split(/\./, $table);
                             if (@schemaTable == 2) {
                                 $schem2 = $schemaTable[0];
