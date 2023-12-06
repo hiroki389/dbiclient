@@ -1265,7 +1265,9 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
             let channel = s:getQueryAsync(trim(sql), 's:cb_outputResultMany', limitrows, opt, port)
         endfor
     else
-        let channel = s:getQueryAsync(trim(sqllist[0]), s:callbackstr(a:alignFlg), limitrows, {}, port)
+        if len(sqllist) > 0
+            let channel = s:getQueryAsync(trim(sqllist[0]), s:callbackstr(a:alignFlg), limitrows, {}, port)
+        endif
     endif
     let g:dbiclient_previewwindow = save_dbiclient_previewwindow
 endfunction
@@ -1553,8 +1555,8 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     endif
     if sql !=# ''
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>where()<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reload(<SID>bufnr("%"))<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reloadLimit(<SID>bufnr("%"), <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reload(<SID>bufnr("%"), "")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reloadLimit(<SID>bufnr("%"), "", <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>select()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>ijoin("INNER")<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LJ', s:nmap_result_LJ),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>ijoin("LEFT")<CR>')
@@ -3056,8 +3058,9 @@ function s:extendquery(alignFlg, extend) abort
     let opt.extend.group = group
     let opt.extend.having = having
     let dbiclient_bufmap.data.sql = sql
-    call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:reload(dbiclient_bufmap.data.reloadBufnr)
+
+    "call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+    call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql)
 endfunction
 
 function s:editSqlDo() abort
@@ -3087,8 +3090,8 @@ function s:editSql() abort
         let dbiclient_bufmap.data.single_table = ''
         let dbiclient_bufmap.opt = {}
         let limitrows = get(dbiclient_bufmap, 'limitrows', s:getLimitrows())
-        call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
-        call s:reload(dbiclient_bufmap.data.reloadBufnr)
+        "call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
+        call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3525,13 +3528,18 @@ function s:getSqlHistory(str) abort
     return []
 endfunction
 
-function s:reload(bufnr) abort
+function s:reload(bufnr, sql) abort
     let bufnr = a:bufnr
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-    call s:reloadLimit(a:bufnr, get(get(dbiclient_bufmap, 'data', {}), 'limitrows', s:getLimitrows()))
+    let sql = a:sql
+    if empty(sql)
+        let sql = get(get(dbiclient_bufmap, 'data', {}), 'sql', '')
+        let dbiclient_bufmap.reload = 1
+    endif
+    call s:reloadLimit(bufnr, sql, get(get(dbiclient_bufmap, 'data', {}), 'limitrows', s:getLimitrows()))
 endfunction
 
-function s:reloadLimit(bufnr, limitrows) abort
+function s:reloadLimit(bufnr, sql, limitrows) abort
     let bufnr = a:bufnr
     let limitrows = a:limitrows
     if limitrows !~ '\v^-?[[0-9]+$'
@@ -3566,11 +3574,16 @@ function s:reloadLimit(bufnr, limitrows) abort
     endif
 
     if !empty(dbiclient_bufmap)
-        call s:reloadMain(bufnr, get(dbiclient_bufmap, "alignFlg", 0), limitrows, delbufnr)
+        let sql = a:sql
+        if empty(sql)
+            let sql = get(get(dbiclient_bufmap, 'data', {}), 'sql', '')
+            let dbiclient_bufmap.reload = 1
+        endif
+        call s:reloadMain(bufnr, sql, get(dbiclient_bufmap, "alignFlg", 0), limitrows, delbufnr)
     endif
 endfunction
 
-function s:reloadMain(bufnr, alignFlg, limitrows, delbufnr) abort
+function s:reloadMain(bufnr, sql, alignFlg, limitrows, delbufnr) abort
     let bufnr = a:bufnr
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     let connInfo = s:getconninfo(dbiclient_bufmap)
@@ -3581,16 +3594,15 @@ function s:reloadMain(bufnr, alignFlg, limitrows, delbufnr) abort
     if a:delbufnr != -1
         exe 'silent! bwipeout! ' .. a:delbufnr
     endif
-    let dbiclient_bufmap.alignFlg = a:alignFlg
     let limitrows = a:limitrows
-    let sql = dbiclient_bufmap.data.sql
-    let opt = dbiclient_bufmap.opt
-    let alignFlg = dbiclient_bufmap.alignFlg
-    let opt.reloadBufname = dbiclient_bufmap.data.reloadBufname
-    let opt.reloadBufnr = bufnr
-    let opt.precols = dbiclient_bufmap.data.cols[:]
+    let sql = a:sql
+    let opt = {}
+    let alignFlg = a:alignFlg
+    if get(dbiclient_bufmap, 'reload', 0) == 1 
+        let opt.reloadBufname = dbiclient_bufmap.data.reloadBufname
+        let opt.reloadBufnr = bufnr
+    endif
     call s:getQueryAsync(sql, s:callbackstr(alignFlg), limitrows, opt, port)
-    let selectdict = getbufvar(bufnr, 'selectdict', {})
 endfunction
 
 function s:callbackstr(alignFlg) abort
