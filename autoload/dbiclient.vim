@@ -1385,7 +1385,7 @@ function s:dBExecRangeSQLDo(bang, splitFlg) range abort
 endfunction
 
 def s:splitSql(sqllist: list<string>, doFlg: number): list<string>
-    var delim = g:dbiclient_sql_delimiter1
+    var delim: string = g:dbiclient_sql_delimiter1
     if len(filter(sqllist[:], (_, x) => trim(x) ==# g:dbiclient_sql_delimiter2)) > 0
         delim = g:dbiclient_sql_delimiter2
     endif
@@ -2889,9 +2889,10 @@ def s:parseSQL2(sql1: string): dict<any>
         return join(map(filter(data2[:], ((_, x) => x[1] != 'COMMENT')), ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])), '')
     enddef
 
-    def SplitSql2(data2: any, delim: any): list<string>
+    def SplitSql2(data2: any, delim: string): list<string>
         var type = delim ==# g:dbiclient_sql_delimiter1 ? 'SEMICOLON' : delim ==# g:dbiclient_sql_delimiter2 ? 'SLASH' : ''
-        var indexes = filter(map(data2[:], ((i, x) => x[1] ==# type ? i : '')), ((_, x) => x != ''))
+        var data3 = map(data2[:], ((i, x: list<any>) => x[1] ==# type ? i : -1))
+        var indexes = filter(data3[:], ((_, x) => x != -1))
         add(indexes, 0)
         var ret1 = []
         var start = 0
@@ -2913,7 +2914,7 @@ def s:parseSQL2(sql1: string): dict<any>
         return GetSqlLineDelComment2(GetNotMaintype(self.data, mtype))
     enddef
 
-    def DictSplitSql3(self: dict<any>, delim: any): any
+    def DictSplitSql3(self: dict<any>, delim: string): any
         var sql = SplitSql2(self.data, delim)
         return sql
     enddef
