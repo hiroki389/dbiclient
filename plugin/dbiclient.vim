@@ -25,6 +25,7 @@ let g:dbiclient_perl_binmode           = get(g:,'dbiclient_perl_binmode', 'utf8'
 let g:dbiclient_buffer_encoding        = get(g:,'dbiclient_buffer_encoding', 'utf8')
 let g:dbiclient_disp_remarks           = get(g:,'dbiclient_disp_remarks', 1)
 let g:dbiclient_prelinesep             = get(g:,'dbiclient_prelinesep', '<<CRR>>')
+let g:dbiclient_prelinesep2            = get(g:,'dbiclient_prelinesep2', '<<2CRR2>>')
 let g:dbiclient_hist_cnt               = get(g:,'dbiclient_hist_cnt', 1000)
 let g:dbiclient_testdata_fixedmap      = get(g:,'dbiclient_testdata_fixedmap', {})
 let g:Dbiclient_call_after_connected   = get(g:,'Dbiclient_call_after_connected', {-> dbiclient#userTablesMain()})
