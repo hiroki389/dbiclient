@@ -671,7 +671,7 @@ function s:doDeleteInsert() abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[firstline - offset + remarkrow : lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '\r', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     if get(dbiclient_bufmap, 'hasnext', 1) ==# 1
@@ -733,7 +733,7 @@ function s:createInsertRange() range abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '\r', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
@@ -824,7 +824,7 @@ function s:createUpdateRange() range abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '\r', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
@@ -889,7 +889,7 @@ function s:createDeleteRange() range abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '\r', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
