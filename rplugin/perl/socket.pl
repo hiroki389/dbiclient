@@ -421,10 +421,10 @@ sub rutine{
                 $result->{primary_key}=[];
                 $result->{table_info}=[];
                 $result->{column_info}=[];
-                foreach my $schem2 (@schema_list){
-                    outputlog("schem2:" . $schem2);
-                    if (@tableJoinNm <= 20) {
-                        foreach my $table (@tableJoinNm){
+                if (@tableJoinNm <= 20) {
+                    foreach my $table (@tableJoinNm){
+                        foreach my $schem2 (@schema_list){
+                            outputlog("schem2:" . $schem2);
                             my @primary_key = ();
                             my @table_info = ();
                             my @column_info = ();
@@ -435,6 +435,30 @@ sub rutine{
                             }
                             my $upper_table = uc2 $table;
                             my $schemName = defined($schem2) ? $schem2 : "NOUSER";
+                            my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
+                            if (-e $tempfile2) {
+                                foreach my $row (@{retrieve($tempfile2)}){
+                                    push(@table_info, $row);
+                                }
+                            } else {
+                                $g_sth=$g_dbh->table_info( undef, $schem2, $table, "TABLE" );
+                                foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                    push(@table_info, $row);
+                                }
+                                $g_sth->finish();
+                                if (@table_info == 0) {
+                                    $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, "TABLE" );
+                                    foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                        push(@table_info, $row);
+                                    }
+                                    $g_sth->finish();
+                                }
+                                if (@table_info > 0) {
+                                    nstore \@table_info, $tempfile2;
+                                } else {
+                                    next;
+                                }
+                            }
                             if ($g_primarykeyflg == 1) {
                                 my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
                                 if (-e $tempfile1) {
@@ -456,28 +480,6 @@ sub rutine{
                                 }
                             }
                             if ($result->{status} == 1 && $g_columninfoflg == 1) {
-                                my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
-                                if (-e $tempfile2) {
-                                    foreach my $row (@{retrieve($tempfile2)}){
-                                        push(@table_info, $row);
-                                    }
-                                } else {
-                                    $g_sth=$g_dbh->table_info( undef, $schem2, $table, "TABLE" );
-                                    foreach my $row (@{$g_sth->fetchall_arrayref({})}){
-                                        push(@table_info, $row);
-                                    }
-                                    $g_sth->finish();
-                                    if (@table_info == 0) {
-                                        $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, "TABLE" );
-                                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
-                                            push(@table_info, $row);
-                                        }
-                                        $g_sth->finish();
-                                    }
-                                    if (@table_info > 0) {
-                                        nstore \@table_info, $tempfile2;
-                                    }
-                                }
                                 my $tempfile3 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_CKEY.dat';
                                 if (-e $tempfile3) {
                                     foreach my $row (@{retrieve($tempfile3)}){
@@ -510,10 +512,10 @@ sub rutine{
                             foreach my $row (@column_info){
                                 push(@{$result->{column_info}}, $row);
                             }
+                            if (@{$result->{table_info}} > 0) {
+                                last;
+                            }
                         }
-                    }
-                    if (@{$result->{table_info}} > 0) {
-                        last;
                     }
                 }
                 my $t_offset = int((Time::HiRes::time - $column_start_time)*1000);
@@ -550,24 +552,6 @@ sub rutine{
                     my @primary_key = ();
                     my @table_info = ();
                     my @column_info = ();
-                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
-                    if (-e $tempfile1) {
-                        foreach my $row (@{retrieve($tempfile1)}){
-                            push (@primary_key, $row);
-                        }
-                    } else {
-                        foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
-                            push (@primary_key, $row);
-                        }
-                        if (@primary_key == 0) {
-                            foreach my $row ($g_dbh->primary_key( undef, $schem2, $upper_table)){
-                                push (@primary_key, $row);
-                            }
-                        }
-                        if (@primary_key > 0) {
-                            nstore \@primary_key, $tempfile1;
-                        }
-                    }
                     my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
                     if (-e $tempfile2) {
                         foreach my $row (@{retrieve($tempfile2)}){
@@ -588,6 +572,26 @@ sub rutine{
                         }
                         if (@table_info > 0) {
                             nstore \@table_info, $tempfile2;
+                        } else {
+                            next;
+                        }
+                    }
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
+                    if (-e $tempfile1) {
+                        foreach my $row (@{retrieve($tempfile1)}){
+                            push (@primary_key, $row);
+                        }
+                    } else {
+                        foreach my $row ($g_dbh->primary_key( undef, $schem2, $table)){
+                            push (@primary_key, $row);
+                        }
+                        if (@primary_key == 0) {
+                            foreach my $row ($g_dbh->primary_key( undef, $schem2, $upper_table)){
+                                push (@primary_key, $row);
+                            }
+                        }
+                        if (@primary_key > 0) {
+                            nstore \@primary_key, $tempfile1;
                         }
                     }
                     my $tempfile3 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_CKEY.dat';
