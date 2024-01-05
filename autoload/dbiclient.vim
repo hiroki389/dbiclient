@@ -278,10 +278,12 @@ function dbiclient#createDeleteInsertSql(...) range abort
             if has_key(res ,'data')
                 if filereadable(res.data.tempfile .. '.err')
                     throw readfile(res.data.tempfile .. '.err')->join(g:dbiclient_prelinesep)
+                elseif empty(get(res, 'cols', []))
+                    throw 'empty'
                 else
                     let tmp = readfile(res.data.tempfile)->join(g:dbiclient_prelinesep)
                     let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
-                    let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(res.cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
+                    let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(get(res, 'cols', []), s:split(x, g:dbiclient_col_delimiter))}, []).value()
                     let row = s:createDelete(param, param, res.data.tableNm, s:getCurrentPort())
                     call s:appendbufline(bufnr, '$', row)
                     call s:appendbufline(bufnr, '$', [''])

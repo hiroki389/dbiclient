@@ -419,6 +419,7 @@ sub rutine{
                 $result->{table_info}=[];
                 $result->{column_info}=[];
                 foreach my $schem2 (@schema_list){
+                    outputlog("schem2:" . $schem2);
                     if (@tableJoinNm <= 20) {
                         foreach my $table (@tableJoinNm){
                             my @primary_key = ();
@@ -458,13 +459,13 @@ sub rutine{
                                         push(@table_info, $row);
                                     }
                                 } else {
-                                    $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
+                                    $g_sth=$g_dbh->table_info( undef, $schem2, $table, "TABLE" );
                                     foreach my $row (@{$g_sth->fetchall_arrayref({})}){
                                         push(@table_info, $row);
                                     }
                                     $g_sth->finish();
                                     if (@table_info == 0) {
-                                        $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, undef );
+                                        $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, "TABLE" );
                                         foreach my $row (@{$g_sth->fetchall_arrayref({})}){
                                             push(@table_info, $row);
                                         }
@@ -570,13 +571,13 @@ sub rutine{
                             push(@table_info, $row);
                         }
                     } else {
-                        $g_sth=$g_dbh->table_info( undef, $schem2, $table, undef );
+                        $g_sth=$g_dbh->table_info( undef, $schem2, $table, "TABLE" );
                         foreach my $row (@{$g_sth->fetchall_arrayref({})}){
                             push(@table_info, $row);
                         }
                         $g_sth->finish();
                         if (@table_info == 0) {
-                            $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, undef );
+                            $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, "TABLE" );
                             foreach my $row (@{$g_sth->fetchall_arrayref({})}){
                                 push(@table_info, $row);
                             }
