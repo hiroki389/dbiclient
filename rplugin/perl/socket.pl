@@ -434,8 +434,8 @@ sub rutine{
                                 $table = $schemaTable[1];
                             }
                             my $upper_table = uc2 $table;
-                            my $schemName = defined($schem2) ? $schem2 : "NOUSER";
-                            my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
+                            my $schemName = defined($schem) ? $schem : "NOUSER";
+                            my $tempfile2 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
                             if (-e $tempfile2) {
                                 foreach my $row (@{retrieve($tempfile2)}){
                                     push(@table_info, $row);
@@ -460,7 +460,7 @@ sub rutine{
                                 }
                             }
                             if ($g_primarykeyflg == 1) {
-                                my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
+                                my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
                                 if (-e $tempfile1) {
                                     foreach my $row (@{retrieve($tempfile1)}){
                                         push (@primary_key, $row);
@@ -480,7 +480,7 @@ sub rutine{
                                 }
                             }
                             if ($result->{status} == 1 && $g_columninfoflg == 1) {
-                                my $tempfile3 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_CKEY.dat';
+                                my $tempfile3 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_CKEY.dat';
                                 if (-e $tempfile3) {
                                     foreach my $row (@{retrieve($tempfile3)}){
                                         push (@column_info, $row);
@@ -545,14 +545,14 @@ sub rutine{
                 my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
-                    my $schemName = defined($schem2) ? $schem2 : "NOUSER";
+                    my $schemName = defined($schem) ? $schem : "NOUSER";
                     $result->{primary_key}=[];
                     $result->{table_info}=[];
                     $result->{column_info}=[];
                     my @primary_key = ();
                     my @table_info = ();
                     my @column_info = ();
-                    my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
+                    my $tempfile2 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
                     if (-e $tempfile2) {
                         foreach my $row (@{retrieve($tempfile2)}){
                             push(@table_info, $row);
@@ -576,7 +576,7 @@ sub rutine{
                             next;
                         }
                     }
-                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
                     if (-e $tempfile1) {
                         foreach my $row (@{retrieve($tempfile1)}){
                             push (@primary_key, $row);
@@ -594,7 +594,7 @@ sub rutine{
                             nstore \@primary_key, $tempfile1;
                         }
                     }
-                    my $tempfile3 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_CKEY.dat';
+                    my $tempfile3 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_CKEY.dat';
                     if (-e $tempfile3) {
                         foreach my $row (@{retrieve($tempfile3)}){
                             push (@column_info, $row);
@@ -636,7 +636,8 @@ sub rutine{
                 my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
-                    my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
+                    my $schemName = defined($schem) ? $schem : "NOUSER";
+                    my $tempfile2 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
                     my @primary_key = ();
                     my @table_info = ();
                     if (-e $tempfile2) {
@@ -662,7 +663,7 @@ sub rutine{
                             next;
                         }
                     }
-                    my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
+                    my $tempfile1 = $g_basedir . '/dictionary/' . $schemName . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
                     if (-e $tempfile1) {
                         foreach my $row (@{retrieve($tempfile1)}){
                             push (@primary_key, $row);
