@@ -636,8 +636,32 @@ sub rutine{
                 my @schema_list = ($schem,uc2 $schem);
                 push(@schema_list, @{$g_schema_list});
                 foreach my $schem2 (@schema_list){
-                    my $schemName = defined($schem2) ? $schem2 : "NOUSER";
+                    my $tempfile2 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_TKEY.dat';
                     my @primary_key = ();
+                    my @table_info = ();
+                    if (-e $tempfile2) {
+                        foreach my $row (@{retrieve($tempfile2)}){
+                            push(@table_info, $row);
+                        }
+                    } else {
+                        $g_sth=$g_dbh->table_info( undef, $schem2, $table, "TABLE" );
+                        foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                            push(@table_info, $row);
+                        }
+                        $g_sth->finish();
+                        if (@table_info == 0) {
+                            $g_sth=$g_dbh->table_info( undef, $schem2, $upper_table, "TABLE" );
+                            foreach my $row (@{$g_sth->fetchall_arrayref({})}){
+                                push(@table_info, $row);
+                            }
+                            $g_sth->finish();
+                        }
+                        if (@table_info > 0) {
+                            nstore \@table_info, $tempfile2;
+                        } else {
+                            next;
+                        }
+                    }
                     my $tempfile1 = $g_basedir . '/dictionary/' . $schem . '_' . $table . '_' . $g_sha256_sum . '_PKEY.dat';
                     if (-e $tempfile1) {
                         foreach my $row (@{retrieve($tempfile1)}){
@@ -660,10 +684,7 @@ sub rutine{
                         foreach my $row (@primary_key){
                             push(@{$result->{primary_key}}, $row);
                         }
-                        last;
                     }
-                }
-                foreach my $schem2 (@schema_list){
                     $g_sth=$g_dbh->column_info( undef, $schem2, $table, undef );
                     outputlog("SQL: COLUMN_INFO(" . $table . ')', $g_port);
                     eval {
