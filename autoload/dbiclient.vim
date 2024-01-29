@@ -1970,6 +1970,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
     let bufnr = a:bufnr
     if type(a:ch) ==# v:t_channel && s:ch_statusOk(a:ch)
         call ch_close(a:ch)
+
     endif
 
     let status = s:getStatus(port, connInfo)
@@ -2661,12 +2662,12 @@ function s:selectTableOfList(schemtable, port) abort
     if s:isDisableline() || s:error2CurrentBuffer(a:port)
         return
     endif
-    call s:selectTableCmn(1, a:schemtable .. ' T', a:port)
+    call s:selectTableCmn(1, a:schemtable, a:port)
 endfunction
 
 function s:selectTable(alignFlg, wordFlg, table) abort
     let port = s:getCurrentPort()
-    call s:selectTableCmn(a:alignFlg, s:getTableNm(a:wordFlg, a:table) .. (a:table == '' ? ' T' : ''), port, s:getLimitrows())
+    call s:selectTableCmn(a:alignFlg, s:getTableNm(a:wordFlg, a:table), port, s:getLimitrows())
 endfunction
 
 function s:selectTableCmn(alignFlg, table, port, ...) abort
@@ -4217,8 +4218,15 @@ function s:ch_statusStrOk(str) abort
 endfunction
 
 function s:ch_statusOk(channel) abort
-    let ret = s:ch_statusStrOk(ch_status(a:channel))
-    return ret
+    let stat = ch_status(a:channel)
+    let starttime = localtime()
+    while stat ==# 'buffered' && (localtime() - starttime) < 30
+        let stat = ch_status(a:channel)
+    endwhile
+    if stat ==# 'buffered'
+        throw 'error ch_status(buffered)'
+    endif
+    return s:ch_statusStrOk(stat)
 endfunction
 
 function s:input(prompt, ...) abort

@@ -424,7 +424,6 @@ sub rutine{
                 if (@tableJoinNm <= 20) {
                     foreach my $table (@tableJoinNm){
                         foreach my $schem2 (@schema_list){
-                            outputlog("schem2:" . $schem2);
                             my @primary_key = ();
                             my @table_info = ();
                             my @column_info = ();
