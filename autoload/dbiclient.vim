@@ -608,9 +608,10 @@ function s:getTableJoinList(sql) abort
     let regex = '\v\c\s+%(from|join)\s+([[:alnum:]_$#.]+|".{-}")%((\s+as)?\s+([^[:space:]]+|<on>|<using>))?'
     let suba = substitute(sql, regex .. '\zs', '\n', 'g')
     let table = dbiclient#funclib#List(s:split(suba, "\n")).matchstr('\v\c\s+%(from|join)\s+\zs([[:alnum:]_$#.]+|".{-}")%((\s+as)?\s+([^[:space:]]+))?\ze').value()
+    let table = map(table, {_, x -> split(x, ',') })->flattennew()
     let table = filter(table, {_, x -> x !~# '\v^\s*[_$#.]+\s*$'})
-    let table = map(table, {_, x -> split(x, '\v\s+') })
-    let table = map(table, {_, x -> {'tableNm':get(x, 0, ''), 'AS':get(x, 1, '') =~? '\v(<on>|<where>|<group>|<order>|<join>|<left>|<right>|<cross>|<natural>|<having>|<union>|<minus>|<except>|<using>|<as>|<of>)' ? '' : get(x, 1, '')}})
+    let table = map(table, {_, x -> split(x, '\v[[:space:]]+') })
+    let table = map(table, {_, x -> {'tableNm':get(x, 0, ''), 'AS':get(x, 1, '') =~? '\v(<on>|<where>|<group>|<order>|<join>|<left>|<right>|<inner>|<cross>|<natural>|<having>|<union>|<minus>|<except>|<using>|<as>|<of>)' ? '' : get(x, 1, '')}})
     if empty(table)
         return []
     else
@@ -1144,10 +1145,7 @@ function s:kill_job(port) abort
     let channel = ch_open('localhost:' .. port)
     if s:ch_statusOk(channel)
         let result = s:ch_evalexpr(channel, {"kill" : 1} , {"timeout":30000})
-        let status = ch_status(channel)
-        if status ==# 'open'
-            call ch_close(channel)
-        endif
+        call s:ch_close(channel)
     else
     endif
     if has_key(s:jobs, port)
@@ -1303,9 +1301,7 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
 endfunction
 
 function s:cb_outputResultMany(ch, dict) abort
-    if type(a:ch) ==# v:t_channel && s:ch_statusOk(a:ch)
-        call ch_close(a:ch)
-    endif
+    call s:ch_close(a:ch)
     let opt = get(a:dict.data, 'opt', {})
     let starttime = localtime()
     let port = get(a:dict.data.connInfo, 'port')
@@ -1477,9 +1473,7 @@ def s:getQuery(sql: any, limitrows2: any, opt2: any, port2: any): any
         s:joblist(0)
     endif
     if type(result) ==# v:t_dict
-        if ch_status(channel) ==# 'open'
-            ch_close(channel)
-        endif
+        s:ch_close(channel)
         ret2 = result
         def DictGetData(): any
             return s:getData(ret2)
@@ -1487,9 +1481,7 @@ def s:getQuery(sql: any, limitrows2: any, opt2: any, port2: any): any
         ret2.GetData = DictGetData
         return ret2
     else
-        if ch_status(channel) ==# 'open'
-            ch_close(channel)
-        endif
+        s:ch_close(channel)
         return ret2
     endif
 enddef
@@ -1526,7 +1518,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     let tableJoinNmWithAs = s:getTableJoinList(a:sql)
     let cols = []
     for item in tableJoinNmWithAs
-        let prefix = empty(item.AS) ? '' : item.AS .. '.'
+        let prefix = empty(item.AS) ? item.tableNm .. '.' : item.AS .. '.'
         if empty(prefix) && len(tableJoinNmWithAs) > 1
             let prefix = item.tableNm .. '.'
         endif
@@ -1561,7 +1553,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     endif
     if sql !=# ''
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_WH', s:nmap_result_WH),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>where()<CR>')
-        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reload(<SID>bufnr("%"), "")<CR>')
+        call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_RE', s:nmap_result_RE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reload(<SID>bufnr("%"), "", 1)<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_LI', s:nmap_result_LI),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>reloadLimit(<SID>bufnr("%"), "", <SID>input("LIMIT:", <SID>getLimitrowsaBuffer()))<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_SE', s:nmap_result_SE),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>select()<CR>')
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_result_IJ', s:nmap_result_IJ),      ':<C-u>call <SID>bufCopy()<CR>:<C-u>call <SID>ijoin("INNER")<CR>')
@@ -1710,14 +1702,10 @@ function s:dBCommandNoChk(port, command) abort
     let result = s:ch_evalexpr(channel, command, {"timeout":60000})
     if s:ch_statusOk(channel)
         if type(result) ==# v:t_dict
-            if ch_status(channel) ==# 'open'
-                call ch_close(channel)
-            endif
+            call s:ch_close(channel)
             return result
         else
-            if ch_status(channel) ==# 'open'
-                call ch_close(channel)
-            endif
+            call s:ch_close(channel)
             return errret
         endif
     else
@@ -1809,9 +1797,7 @@ function s:cb_do(ch, dict) abort
     let starttime = localtime()
     let port = get(a:dict.data.connInfo, 'port')
     let connInfo = get(a:dict.data, 'connInfo')
-    if type(a:ch) ==# v:t_channel && s:ch_statusOk(a:ch)
-        call ch_close(a:ch)
-    endif
+    call s:ch_close(a:ch)
     let bufnr = s:bufnr(get(get(a:dict, 'data', {}), 'reloadBufnr', -1))
     let ro = getbufvar(bufnr, '&readonly', 0)
     let matchadds=[]
@@ -1968,10 +1954,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
     let port = get(a:dict.data.connInfo, 'port')
     let connInfo = get(a:dict.data, 'connInfo')
     let bufnr = a:bufnr
-    if type(a:ch) ==# v:t_channel && s:ch_statusOk(a:ch)
-        call ch_close(a:ch)
-
-    endif
+    call s:ch_close(a:ch)
 
     let status = s:getStatus(port, connInfo)
     let opt = get(a:dict.data, 'opt', {})
@@ -2267,21 +2250,21 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let dbiclient_bufmap.opt.select.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.select.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : '*' .. (i+1) .. ' ' .. F1(x)}}))
         let dbiclient_bufmap.opt.select.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(selectStr[:], {i, x -> {F1(x) : 0}}))
-        let dbiclient_bufmap.opt.select.selectUnmatchCols = uniq(sort(filter(selectStr[:], {i, x -> match(cols, '\V' .. trim(x)) == -1})))
+        let dbiclient_bufmap.opt.select.selectUnmatchCols = uniq(sort(filter(selectStr[:], {i, x -> match(cols, '\V' .. substitute(trim(x), '\\', '\\\\', 'g')) == -1})))
 
         let orderStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.order, '\n', ' ', 'g'), '\v\c<order>\s+<by> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let dbiclient_bufmap.opt.order = {}
         let dbiclient_bufmap.opt.order.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : i+1}}))
         let dbiclient_bufmap.opt.order.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : (x =~? '\v\c<desc>' ? '[DESC]' : '[ASC]') .. (i+1) .. ' ' .. F2(x)}}))
         let dbiclient_bufmap.opt.order.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(orderStr[:], {i, x -> {F2(x) : x =~? '\v\c<desc>' ? 1 : 0}}))
-        let dbiclient_bufmap.opt.order.selectUnmatchCols = uniq(sort(filter(orderStr[:], {i, x -> match(cols, '\V' .. trim(substitute(x, '\v\c\s+(<desc>|<asc>)', '', ''))) == -1})))
+        let dbiclient_bufmap.opt.order.selectUnmatchCols = uniq(sort(filter(orderStr[:], {i, x -> match(cols, '\V' .. substitute(trim(substitute(x, '\v\c\s+(<desc>|<asc>)', '', '')), '\\', '\\\\', 'g')) == -1})))
 
         let groupStr = map(split(matchstr(substitute(dbiclient_bufmap.opt.extend.group, '\n', ' ', 'g'), '\v\c<group>\s+<by> \zs.{-}\ze\s*$'), '\v\s*,\s*'), {_, x -> trim(x)})
         let dbiclient_bufmap.opt.group = {}
         let dbiclient_bufmap.opt.group.selectdict = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : i+1}}))
         let dbiclient_bufmap.opt.group.selectdictstr = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : '*' .. (i+1) .. ' ' .. F1(x)}}))
         let dbiclient_bufmap.opt.group.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : 0}}))
-        let dbiclient_bufmap.opt.group.selectUnmatchCols = uniq(sort(filter(groupStr[:], {i, x -> match(cols, '\V' .. trim(x)) == -1})))
+        let dbiclient_bufmap.opt.group.selectUnmatchCols = uniq(sort(filter(groupStr[:], {i, x -> match(cols, '\V' .. substitute(trim(x), '\\', '\\\\', 'g')) == -1})))
     endif
     if get(a:dict, "status", 9) !=# 9 && get(a:dict, 'restoreFlg', 0) !=# 1 && !empty(get(a:dict.data, 'sql', ''))
         let path = s:getHistoryPathCmd(port)
@@ -2996,7 +2979,7 @@ def s:parseSqlLogicR(tokenList: list<any>, index1: number, subflg: number): list
     return data
 enddef
 
-function s:extendquery(alignFlg, extend) abort
+function s:extendquery(alignFlg, extend, reloadflg) abort
     let [select, from, ijoin, where, order, group, having] = [get(a:extend, 'select', ''), get(a:extend, 'from', ''), get(a:extend, 'ijoin', ''), get(a:extend, 'where', ''), get(a:extend, 'order', ''), get(a:extend, 'group', ''), get(a:extend, 'having', '')]
     let port = s:getPort()
     if s:error2CurrentBuffer(port)
@@ -3019,7 +3002,7 @@ function s:extendquery(alignFlg, extend) abort
     let dbiclient_bufmap.data.sql = sql
 
     "call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
-    call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql)
+    call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql, a:reloadflg)
 endfunction
 
 function s:editSqlDo() abort
@@ -3050,7 +3033,7 @@ function s:editSql() abort
         let dbiclient_bufmap.opt = {}
         let limitrows = get(dbiclient_bufmap, 'limitrows', s:getLimitrows())
         "call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
-        call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql)
+        call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql, 0)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3100,7 +3083,7 @@ function s:order() abort
         let dbiclient_bufmap.opt.order.selectUnmatchCols = selectUnmatchCols
         call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         let extend = dbiclient_bufmap.opt.extend
-        call s:extendquery(a:alignFlg, extend)
+        call s:extendquery(a:alignFlg, extend, 1)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3159,7 +3142,7 @@ function s:select() abort
         let dbiclient_bufmap.opt.select.selectUnmatchCols = selectUnmatchCols
         call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         let extend = dbiclient_bufmap.opt.extend
-        call s:extendquery(a:alignFlg, extend)
+        call s:extendquery(a:alignFlg, extend, 1)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3217,7 +3200,7 @@ function s:group() abort
         let dbiclient_bufmap.opt.group.selectUnmatchCols = selectUnmatchCols
         call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         let extend = dbiclient_bufmap.opt.extend
-        call s:extendquery(a:alignFlg, extend)
+        call s:extendquery(a:alignFlg, extend, 1)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3255,7 +3238,9 @@ function s:ijoin(prefix) abort
     function! s:selectIjoin(tableNm) abort
         let s:tableNm = a:tableNm
         let s:asTableNm = s:input(a:tableNm .. ' as ', '')
-        if trim(s:asTableNm) !~? '\v^[a-zA-Z0-9]+$'
+        if empty(trim(s:asTableNm))
+            let s:asTableNm = s:tableNm
+        elseif trim(s:asTableNm) !~? '\v^[a-zA-Z0-9]+$'
             return
         endif
         let port = s:getPort()
@@ -3313,7 +3298,11 @@ function s:ijoin(prefix) abort
         let ijoinAnd = map(filter(getline(0, '$'), {_, x -> x !~# '\v^.{-}\|\s*\=?\s*$'}), {_, x -> substitute(x, '\v^.{-}\zs\s+\|\s*\ze', ' ', '')})
         let ijoinStr = join(ijoinAnd, "\nAND ")
         if trim(ijoinStr) !=# ''
-            let ijoin = "\n" .. s:prefix .. ' JOIN ' .. s:tableNm .. ' ' .. s:asTableNm .. "\n" .. ' ON ' .. ijoinStr
+            if s:asTableNm ==# s:tableNm
+                let ijoin = "\n" .. s:prefix .. ' JOIN ' .. s:tableNm .. "\n" .. ' ON ' .. ijoinStr
+            else
+                let ijoin = "\n" .. s:prefix .. ' JOIN ' .. s:tableNm .. ' ' .. s:asTableNm .. "\n" .. ' ON ' .. ijoinStr
+            endif
             let dbiclient_bufmap.opt.ijoin = a:beforeIjoin
         else
             let ijoin = ''
@@ -3321,7 +3310,7 @@ function s:ijoin(prefix) abort
         let dbiclient_bufmap.opt.extend.ijoin = substitute(dbiclient_bufmap.opt.extend.ijoin, '\v[[:space:]\n]*<join>[[:space:]\n]+\V' .. s:tableNm .. '\v>[[:space:]\n]*\V' .. s:asTableNm  .. '\v[[:space:]\n]*(<on>|<using>).{-}\ze(<inner>|<left>|<right>)?[[:space:]\n]*(<outer>)?[[:space:]\n]*(<join>|$)', '', 'g')
         let dbiclient_bufmap.opt.extend.ijoin ..= ijoin
         let extend = dbiclient_bufmap.opt.extend
-        call s:extendquery(a:alignFlg, extend)
+        call s:extendquery(a:alignFlg, extend, 1)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3333,13 +3322,6 @@ function s:ijoin(prefix) abort
     if s:error2CurrentBuffer(port)
         return
     endif
-    let tableJoinNmWithAs = s:getTableJoinList(get(get(dbiclient_bufmap, 'data', {}), 'sql', ''))
-    for item in tableJoinNmWithAs
-        if empty(item.AS)
-            call s:echoMsg('EO21')
-            return
-        endif
-    endfor
     call s:selectJoinTable()
     let bufnr = s:bufnr('%')
     norm gg$
@@ -3400,7 +3382,7 @@ function s:where() abort
         endif
         let dbiclient_bufmap.opt.extend.where = where
         let extend = dbiclient_bufmap.opt.extend
-        call s:extendquery(a:alignFlg, extend)
+        call s:extendquery(a:alignFlg, extend, 1)
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
@@ -3487,12 +3469,14 @@ function s:getSqlHistory(str) abort
     return []
 endfunction
 
-function s:reload(bufnr, sql) abort
+function s:reload(bufnr, sql, reloadflg) abort
     let bufnr = a:bufnr
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     let sql = a:sql
     if empty(sql)
         let sql = get(get(dbiclient_bufmap, 'data', {}), 'sql', '')
+    endif
+    if a:reloadflg == 1
         let dbiclient_bufmap.reload = 1
     endif
     call s:reloadLimit(bufnr, sql, get(get(dbiclient_bufmap, 'data', {}), 'limitrows', s:getLimitrows()))
@@ -4203,9 +4187,7 @@ function s:zonbie()
         else
             call delete(file)
         endif
-        if ch_status(channel) ==# 'open'
-            call ch_close(channel)
-        endif
+        call s:ch_close(channel)
     endfor
 endfunction
 
@@ -4217,17 +4199,32 @@ function s:ch_statusStrOk(str) abort
     endif
 endfunction
 
-function s:ch_statusOk(channel) abort
-    let stat = ch_status(a:channel)
-    let starttime = localtime()
+def s:ch_statusOk(channel: any): any
+    var stat = ch_status(channel)
+    var starttime = localtime()
     while stat ==# 'buffered' && (localtime() - starttime) < 30
-        let stat = ch_status(a:channel)
+        stat = ch_status(channel)
     endwhile
     if stat ==# 'buffered'
-        throw 'error ch_status(buffered)'
+        throw 'error ch_status:buffered'
     endif
     return s:ch_statusStrOk(stat)
-endfunction
+enddef
+
+def s:ch_close(channel: any)
+    if type(channel) ==# v:t_channel
+        var stat = ch_status(channel)
+        try
+            if stat !=# 'closed'
+                if s:ch_statusOk(channel)
+                    ch_close(channel)
+                endif
+            endif
+        catch /./
+            throw 'error ch_close() ch_status:' .. stat
+        endtry
+    endif
+enddef
 
 function s:input(prompt, ...) abort
     let default = get(a:, 1, '')
@@ -4263,9 +4260,7 @@ function s:ch_open2status(port) abort
     else
         let ch = ch_open('localhost:' .. a:port)
         let ret = ch_status(ch)
-        if ret ==# 'open'
-            call ch_close(ch)
-        endif
+        call s:ch_close(ch)
     endif
     return ret
 endfunction
