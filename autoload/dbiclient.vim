@@ -69,8 +69,8 @@ let s:nmap_job_HI = 'mh'
 
 let s:nmap_result_AL = 'ma'
 let s:nmap_result_ED = 'me'
-let s:nmap_result_BN = 'mn'
-let s:nmap_result_BP = 'mp'
+let s:nmap_result_BN = '+'
+let s:nmap_result_BP = '-'
 let s:nmap_result_BD = 'md'
 let s:nmap_result_GR = 'mg'
 let s:nmap_result_OR = 'mo'
@@ -86,8 +86,8 @@ let s:vmap_result_IN = '<C-I>'
 let s:vmap_result_UP = '<C-U>'
 
 let s:nmap_do_PR = 'me'
-let s:nmap_do_BN = 'mn'
-let s:nmap_do_BP = 'mp'
+let s:nmap_do_BN = '+'
+let s:nmap_do_BP = '-'
 let s:nmap_do_BD = 'md'
 
 let s:nmap_table_SQ = '<CR>'
@@ -674,7 +674,7 @@ function s:doDeleteInsert() abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[firstline - offset + remarkrow : lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     if get(dbiclient_bufmap, 'hasnext', 1) ==# 1
@@ -736,7 +736,7 @@ function s:createInsertRange() range abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
@@ -827,7 +827,7 @@ function s:createUpdateRange() range abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
@@ -892,7 +892,7 @@ function s:createDeleteRange() range abort
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
-    let tmp2 = map(deepcopy(beforeList), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
+    let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
     let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
@@ -1002,7 +1002,7 @@ function s:updateStatus(moveFlg) abort
             let tupleList[0] = tuple
             call setbufvar(bufnr, 'dbiclient_tupleList', tupleList)
 
-            let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+            let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
             let row = 1
             for tuple in tupleList
                 let info = tuple.Get1() .. (repeat(' ', maxsize - len(tuple.Get1())) .. ' :')
@@ -1279,7 +1279,7 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
         call add(matchadds, ['Comment', '\v%1l^".{-}:'])
         call add(matchadds, ['String', '\v%1l^".{-}:\zs.*$'])
         call add(matchadds, ['Function', '\v%1l( \[)@<=.{-}(\=)@='])
-        let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+        let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
         for tuple in tupleList
             let info = tuple.Get1() .. (repeat(' ', maxsize - len(tuple.Get1())) .. ' :')
             let info ..= s:f2.Foldl({x, y -> x .. y}, "", map(tuple.Get2(), {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
@@ -1671,7 +1671,7 @@ function s:connect_base(dsn, user, pass, limitrows, encoding, opt) abort
         let s:params[port].history_data_flg = get(opt, s:connect_opt_history_data_flg, g:dbiclient_connect_opt_history_data_flg)
         let s:params[port].envdict = get(opt, s:connect_opt_envdict, g:dbiclient_connect_opt_envdict)
         let s:params[port].process = job_info(s:jobs[port]).process
-        let command = deepcopy(s:params[port])
+        let command = deepcopy(s:params[port], 1)
         let command.pass = a:pass
         let ret = s:dBCommandNoChk(port, command)
         let s:params[port].connect = get(ret, 'status', 9)
@@ -1859,7 +1859,7 @@ function s:cb_do(ch, dict) abort
         call add(msgList, [get(g:, 'dbiclient_nmap_do_BD', s:nmap_do_BD), ':DELBUF'])
         call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
         call setbufvar(bufnr, 'dbiclient_tupleList', tupleList)
-        let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+        let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
         for tuple in tupleList
             let info = tuple.Get1() .. (repeat(' ', maxsize - len(tuple.Get1())) .. ' :')
             let info ..= s:f2.Foldl({x, y -> x .. y}, "", map(tuple.Get2(), {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
@@ -1914,7 +1914,7 @@ function s:cb_do(ch, dict) abort
     let endttime = localtime()
     if bufnr !=# -1
         let tupleList = getbufvar(bufnr, 'dbiclient_tupleList', [])
-        let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+        let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
         let tuple = tupleList[1]
         let msgList = tuple.Get2()
         call add(msgList, ['VIM', '=' .. (endttime - starttime) .. 'sec'])
@@ -1924,7 +1924,7 @@ function s:cb_do(ch, dict) abort
         let info ..= s:f2.Foldl({x, y -> x .. y}, "", map(tuple.Get2(), {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
         call s:setbufline(bufnr, 2, info)
         call setbufvar(bufnr, 'dbiclient_tupleList', tupleList)
-        call setbufvar(bufnr, 'dbiclient_bufmap', deepcopy(a:dict))
+        call setbufvar(bufnr, 'dbiclient_bufmap', deepcopy(a:dict, 1))
         if !empty(matchadds)
             call setbufvar(bufnr, 'dbiclient_matches', matchadds)
             call s:sethl(bufnr)
@@ -2073,7 +2073,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
     endif
     let disableline = []
     call setbufvar(bufnr, 'dbiclient_tupleList', tupleList)
-    let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+    let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
     for tuple in tupleList
         let info = tuple.Get1() .. (repeat(' ', maxsize - len(tuple.Get1())) .. ' :')
         let info ..= s:f2.Foldl({x, y -> x .. y}, "", map(tuple.Get2(), {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
@@ -2175,7 +2175,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             call s:appendbufline(bufnr, '$', lines)
         endif
     endif
-    let dbiclient_bufmap = deepcopy(a:dict)
+    let dbiclient_bufmap = deepcopy(a:dict, 1)
     let dbiclient_bufmap.opt = opt
     if has_key(dbiclient_bufmap.opt, 'reloadBufname')
         call remove(dbiclient_bufmap.opt, 'reloadBufname')
@@ -2343,7 +2343,7 @@ function s:cb_outputResult(ch, dict) abort
     endif
     let endttime = localtime()
     let tupleList = getbufvar(bufnr, 'dbiclient_tupleList', [])
-    let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+    let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
     let tuple = tupleList[1]
     let msgList = tuple.Get2()
     call add(msgList, ['VIM', '=' .. (endttime - starttime) .. 'sec'])
@@ -2412,7 +2412,7 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
     endif
     let endttime = localtime()
     let tupleList = getbufvar(bufnr, 'dbiclient_tupleList', [])
-    let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+    let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
     let tuple = tupleList[1]
     let msgList = tuple.Get2()
     call add(msgList, ['VIM', '=' .. (endttime - starttime) .. 'sec'])
@@ -2601,7 +2601,8 @@ def s:alignMain(preCr: string)
     endfor
 enddef
 
-def s:getalignlist2(lines: list<string>, maxCols: list<number>): list<string>
+def s:getalignlist2(lines0: list<string>, maxCols: list<number>): list<string>
+    var lines = deepcopy(lines0, 1)
     if empty(lines)
         return []
     endif
@@ -2631,7 +2632,7 @@ function s:getalignlist(lines) abort
     call s:debugLog('align:lines2 ' .. len(lines2))
     let lines = map(lines , {_, x -> map(split(x, g:dbiclient_col_delimiter, 1), {_, x -> substitute(x, s:tab_placefolder, "\t", 'g')})})
     call s:debugLog('align:copy')
-    let linesLen = map(deepcopy(lines), {_, x -> map(x, {_, y -> strdisplaywidth(y)})})
+    let linesLen = map(deepcopy(lines, 1), {_, x -> map(x, {_, y -> strdisplaywidth(y)})})
     call s:debugLog('align:linesLen')
     let maxCols = copy(linesLen[0])
     call map(copy(linesLen), {_, cols -> map(maxCols, {i, col -> colsize ==# len(cols) && col < cols[i] ? cols[i] : col})})
@@ -2737,7 +2738,7 @@ function s:selectHistory(port) abort
     call add(msgList, [get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':RELOAD'])
     "call add(msgList, [get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':DELETE'])
     call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
-    let maxsize = max(map(deepcopy(tupleList), {_, x -> len(x.Get1())}))
+    let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
     for tuple in tupleList
         let info = tuple.Get1() .. (repeat(' ', maxsize - len(tuple.Get1())) .. ' :')
         let info ..= s:f2.Foldl({x, y -> x .. y}, "", map(tuple.Get2(), {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
@@ -3008,7 +3009,7 @@ endfunction
 function s:editSqlDo() abort
     let port = s:getPort()
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     let bufname = 'SQL_PREVIEW'
     let bufnr = s:aboveNewBuffer(bufname)
     call s:appendbufline(bufnr, '$', get(dbiclient_bufmap.data, 'doText', []))
@@ -3037,7 +3038,7 @@ function s:editSql() abort
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     if empty(get(dbiclient_bufmap, 'data', {}))
         return
     endif
@@ -3087,7 +3088,7 @@ function s:order() abort
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data', {}), 'single_table', ''))
     if !singleTableFlg
         return
@@ -3146,7 +3147,7 @@ function s:select() abort
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data', {}), 'single_table', ''))
     if !singleTableFlg
         return
@@ -3172,7 +3173,7 @@ function s:group() abort
             return
         endif
         let bufnr = s:bufnr('%')
-        let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+        let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
         if !exists('dbiclient_bufmap.opt.extend')
             let dbiclient_bufmap.opt.extend = {}
         endif
@@ -3204,7 +3205,7 @@ function s:group() abort
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data', {}), 'single_table', ''))
     if !singleTableFlg
         return
@@ -3314,7 +3315,7 @@ function s:ijoin(prefix) abort
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data', {}), 'single_table', ''))
     if !singleTableFlg
         return
@@ -3386,7 +3387,7 @@ function s:where() abort
     endfunction
     let bufname = bufname('%')
     let bufnr = s:bufnr('%')
-    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}))
+    let dbiclient_bufmap = deepcopy(getbufvar(bufnr, 'dbiclient_bufmap', {}), 1)
     let singleTableFlg = !empty(get(get(dbiclient_bufmap, 'data', {}), 'single_table', ''))
     if !singleTableFlg
         return
@@ -3639,7 +3640,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
 endfunction
 
 function s:getColumnsTableRemarks(data) abort
-    let data = deepcopy(a:data)
+    let data = deepcopy(a:data, 1)
 
     if !empty(data)
         let itemmap = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(data[:], {_, x -> empty(trim(get(x, 'REMARKS', ''))) ? {} : {get(x, 'COLUMN_NAME', '') : get(x, 'REMARKS', '')}}))
@@ -3651,7 +3652,7 @@ function s:getColumnsTableRemarks(data) abort
 endfunction
 
 function s:getColumnsPopupInfo(data) abort
-    let data = deepcopy(a:data)
+    let data = deepcopy(a:data, 1)
 
     if !empty(data)
         let itemmap = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(data[:], {_, x -> {get(x, 'COLUMN_NAME', '') : (get(x, 'TYPE_NAME', '') .. '(' .. get(x, 'COLUMN_SIZE', '') .. (get(x, 'DECIMAL_DIGITS', v:null) == v:null ? '' : ',' .. get(x, 'DECIMAL_DIGITS', v:null))  .. ')')}}))
@@ -3673,7 +3674,7 @@ function s:PopupColInfo() abort
 endfunction
 
 function s:getTableRemarks(data) abort
-    let data = deepcopy(a:data)
+    let data = deepcopy(a:data, 1)
 
     if !empty(data)
         let itemmap = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(data[:], {_, x -> empty(trim(get(x, 'REMARKS', ''))) ? {} : {get(x, 'TABLE_NAME', '') : get(x, 'REMARKS', '')}}))
@@ -4083,15 +4084,15 @@ function s:setvmap(bufnr, char, command) abort
 endfunction
 
 function s:nmap(char, command) abort
-    if empty(maparg(a:char, 'n', 0, 1))
+    "if empty(maparg(a:char, 'n', 0, 1))
         exe 'nmap <buffer> <nowait> <silent> ' .. a:char .. ' ' a:command
-    endif
+    "endif
 endfunction
 
 function s:vmap(char, command) abort
-    if empty(maparg(a:char, 'v', 0, 1))
+    "if empty(maparg(a:char, 'v', 0, 1))
         exe 'vmap <buffer> <nowait> <silent> ' .. a:char .. ' ' a:command
-    endif
+    "endif
 endfunction
 
 function s:setallmap(bufnr) abort
@@ -4212,17 +4213,28 @@ def s:ch_statusOk(channel: any): any
 enddef
 
 def s:ch_close(channel: any)
+    var errorFlg = 0
     if type(channel) ==# v:t_channel
         var stat = ch_status(channel)
-        try
-            if stat !=# 'closed'
-                if s:ch_statusOk(channel)
-                    ch_close(channel)
+        for i in range(5)
+            errorFlg = 0
+            stat = ch_status(channel)
+            try
+                if stat !=# 'closed'
+                    if s:ch_statusOk(channel)
+                        ch_close(channel)
+                    endif
                 endif
-            endif
-        catch /./
+                break
+            catch /./
+                errorFlg = 1
+                #echoerr 'error ch_close() ch_status:' .. stat
+                sleep 100m
+            endtry
+        endfor
+        if errorFlg == 1
             throw 'error ch_close() ch_status:' .. stat
-        endtry
+        endif
     endif
 enddef
 
