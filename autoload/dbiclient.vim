@@ -1903,7 +1903,9 @@ function s:cb_do(ch, dict) abort
         "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         let ww = [datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         call writefile(ww, path, 'a')
-        call add(s:history_data[path], ww[0])
+        if has_key(s:history_data, path)
+            call add(s:history_data[path], ww[0])
+        endif
         if s:params[port].history_data_flg ==# 0 && filereadable(a:dict.data.tempfile)
             call delete(a:dict.data.tempfile)
         endif
@@ -2282,7 +2284,9 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         let ww = [datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
         call writefile(ww, path, 'a')
-        call add(s:history_data[path], ww[0])
+        if has_key(s:history_data, path)
+            call add(s:history_data[path], ww[0])
+        endif
         if s:params[port].history_data_flg ==# 0 && filereadable(a:dict.data.tempfile)
             call delete(a:dict.data.tempfile)
         endif
