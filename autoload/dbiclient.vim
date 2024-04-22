@@ -1,7 +1,7 @@
 "vim9script
 scriptencoding utf-8
 
-if !exists('g:loaded_dbiclient') || v:version < 802
+if !exists('g:loaded_dbiclient') || v:version < 901
     finish
 endif
 
