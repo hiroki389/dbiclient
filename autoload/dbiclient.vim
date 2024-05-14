@@ -718,7 +718,7 @@ function s:createInsert(keys, vallist, beforevallist, alignFlg, tableNm) abort
         let res ..= cols
         let res ..= ")VALUES("
         let collist = map(collist, {_, x -> s:trim_surround(x)})
-        call add(result, res .. join(map(collist, {_, xs -> "'" .. substitute(xs, "'", "''", 'g') .. "'"}), ", ")->substitute('\V' .. g:dbiclient_prelinesep2, "' || " .. g:dbiclient_dblinesep .. " || '",'g') .. ");")
+        call add(result, res .. join(map(collist, {_, xs -> "'" .. substitute(xs, "'", "''", 'g') .. "'"})->map({_, xs -> xs == "''" ? "NULL" : xs}), ", ")->substitute('\V' .. g:dbiclient_prelinesep2, "' || " .. g:dbiclient_dblinesep .. " || '",'g') .. ");")
         let i += 1
     endfor
     return result
@@ -789,7 +789,7 @@ function s:createUpdate(vallist, beforevallist, tableNm, alignFlg, port) abort
         let res  = "UPDATE " .. a:tableNm .. " SET "
         let collist = dbiclient#funclib#List(items)
                     \.filter({item -> a:alignFlg ? trim(get(dict, item[0], '')) !=# trim(get(beforedict, item[0], '')) : get(dict, item[0], '') !=# get(beforedict, item[0], '')})
-                    \.foldl({item -> item[0] .. ' = ' .. "'" .. s:trim_surround(item[1]) .. "'"}, []).value()
+                    \.foldl({item -> item[0] .. ' = ' .. (s:trim_surround(item[1]) == "" ? "NULL" : ("'" .. s:trim_surround(item[1]) .. "'"))}, []).value()
         if len(collist) > 0
             let res  ..= join(collist, ', ')->s:trim_surround_CRLF()->substitute('\V' .. g:dbiclient_prelinesep2, "' || " .. g:dbiclient_dblinesep .. " || '", 'g')
         else
