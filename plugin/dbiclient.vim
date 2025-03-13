@@ -57,6 +57,8 @@ command! DBIClearCache :call dbiclient#clearCache()
 
 command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRangeSQL("<bang>" == '!' ? 0 : 1,<f-args>)
 command! -bang -nargs=? -complete=customlist,dbiclient#getTables DBISelectFrom :call dbiclient#selectTable("<bang>" == '!' ? 0 : 1,1,<q-args>)
+command! -nargs=* DBICreateTestData :call dbiclient#createTestdata(<f-args>)
+command! -nargs=* DBICreateTestDataNotNullNull1 :call dbiclient#createTestdataNotNullNull1(<f-args>)
 
 command! -nargs=? -complete=customlist,dbiclient#getTables DBIColumnsTable :call dbiclient#selectColumnsTable(1,1,<q-args>)
 

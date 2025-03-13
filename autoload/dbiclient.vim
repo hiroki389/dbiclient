@@ -25,26 +25,17 @@ let s:hardparseDict = {}
 let s:lastparse = {}
 let s:shadowpass = ''
 let s:msg = {
-            \'EO01': 'The specified buffer was not found.',
-            \'EO02': 'The specified file($1) was not found.',
-            \'EO03': 'The specified table($1) was not found.',
-            \'EO04': 'A database error has occurred.($1)',
+            \'EO01': 'Buffer not found.',
+            \'EO02': 'File not found: ($1).',
             \'IO05': '$1',
-            \'IO07': 'Please connect to the database.($1)',
-            \'IO08': 'It is closed port $1.',
-            \'IO09': '$1 updated.',
-            \'EO10': 'It could not the performed for multiple tables.',
-            \'EO11': 'An initial error has occurred. setRootPath({rootpath}) $1',
-            \'EO12': 'An initial error has occurred. setPerlmPath({perlmpath}) $1',
+            \'IO07': 'Database connection required: ($1).',
+            \'EO11': 'Path missing: ($1).',
             \'IO13': 'Commit',
             \'IO14': 'Rollback',
-            \'IO15': 'Success',
-            \'EO16': 'It could not the performed for alignFlg.',
-            \'EO17': 'It could not the performed for bufname.',
-            \'IO18': 'Already job port on running $1.',
-            \'IO19': 'Please start to the socket.pl.',
-            \'IO20': 'It is running sql on server.',
-            \'EO21': 'No table alias has been entered.',
+            \'IO18': 'Job port running: ($1)',
+            \'IO19': 'Start the socket.pl.',
+            \'IO20': 'SQL running on server.',
+            \'IO22': 'SQL running on server.',
             \}
 
 let s:tab_placefolder = '\V<<#TAB#>>'
@@ -236,18 +227,100 @@ function dbiclient#getSqlPrimarykeys(tableNm) abort
     return sql
 endfunction
 
-function dbiclient#createTestdata(tableNm) abort
-    let table = s:getTableNm(1, a:tableNm)
+function dbiclient#createTestdata(...) abort
+    let table = s:getTableNm(1, get(a:000, 0, ''))
+    let setdata = get(a:000, 1, -1)
+    let constData = split(get(a:000, 2, ''), ',')->map({_,x -> split(x, '=', 1)})
+    let constDataMap = dbiclient#funclib#List(constData[:]).foldl({x -> {x[0] : x[1]}}, {}).value()
     let port = s:getCurrentPort()
     let cols = s:getColumns(table, port)
+
+    let opt = {'tableNm':table, 'column_info_data':1}
+    let colsSize = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> x.COLUMN_SIZE})
+    let colsSizeDigits = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> x.DECIMAL_DIGITS})
+    let colsType = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> x.TYPE_NAME})
     let res  = "INSERT INTO "
     let res ..= table
     let res ..= "("
-    let res ..= join(cols, ', ')
+    let res ..= join(cols[:], ', ')
     let res ..= ")VALUES("
-    let res ..= join(map(cols, {i, x -> "'" .. get(g:dbiclient_testdata_fixedmap, x, i) .. "'" }), ', ')
+    let res ..= join(map(cols[:], {i, x -> has_key(constDataMap, x) ? "'" .. constDataMap[x] .. "'" : s:testValue(colsType[i], colsSize[i], colsSizeDigits[i], (setdata == -1 ? i : setdata))}), ', ')
     let res ..= ");"
-    return res
+    let bufname = "ScratchTestData"
+    let bufnr = s:bufnr(bufname)
+    if s:gotoWinCurrentTab(bufnr) ==# -1
+        let bufnr = s:aboveNewBuffer(bufname)
+    endif
+    call s:appendbufline(bufnr, '$', res)
+endfunction
+
+function dbiclient#createTestdataNotNullNull1(...) abort
+    let table = s:getTableNm(1, get(a:000, 0, ''))
+    let port = s:getCurrentPort()
+    let cols = s:getColumns(table, port)
+    let setdata = get(a:000, 1, -1)
+    let constData = split(get(a:000, 2, ''), ',')->map({_,x -> split(x, '=', 1)})
+    let constDataMap = dbiclient#funclib#List(constData).foldl({x -> {x[0] : x[1]}}, {}).value()
+    let sortData = split(get(a:000, 3, ''), ',')
+    if empty(sortData)
+        let sortData = cols[:]
+    endif
+
+    let opt = {'tableNm':table, 'column_info_data':1}
+    let colsSize = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> x.COLUMN_SIZE})
+    let colsSizeDigits = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> x.DECIMAL_DIGITS})
+    let colsType = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> x.TYPE_NAME})
+    let colsNullable = get(s:getQuery('', -1, opt, port),'column_info',[])->map({_,x -> [x.COLUMN_NAME, x.NULLABLE]})
+    let colsNullableMap = dbiclient#funclib#List(colsNullable).filter({x -> x[1] == 0}).foldl({x -> {x[0] : ''}}, {}).value()
+    let primaryKeys = dbiclient#funclib#List(s:getPrimaryKeys(table, port)).foldl({x -> {x : ''}}, {}).value()
+    let flgList = cols[:]->map({_,x -> has_key(primaryKeys,x) ? 2 : has_key(colsNullableMap,x) ? 3 : 0})
+
+    let targetFlg = -1
+
+    if len(flgList) > 0
+        let bufname = "ScratchTestData"
+        let bufnr = s:bufnr(bufname)
+        if s:gotoWinCurrentTab(bufnr) ==# -1
+            let bufnr = s:aboveNewBuffer(bufname)
+        endif
+        for col in sortData[:]
+            if flgList[targetFlg] == 1
+                let flgList[targetFlg] = 0
+            endif
+            for i in range(len(flgList))
+                if cols[i] == col && flgList[i] != 2
+                    let targetFlg = i
+                    let flgList[targetFlg] = 1
+                    break
+                endif
+            endfor
+            if targetFlg == -1 || flgList[targetFlg] == 2
+                continue
+            endif
+            let res  = "INSERT INTO "
+            let res ..= table
+            let res ..= "("
+            let res ..= join(cols[:], ', ')
+            let res ..= ")VALUES("
+            let res ..= join(map(cols[:], {i, x -> (has_key(constDataMap, x) ? "'" .. constDataMap[x] .. "'" : (flgList[i] != 0 ? s:testValue(colsType[i], colsSize[i], colsSizeDigits[i], (setdata == -1 ? i : setdata)) : "''"))}), ', ')
+            let res ..= ");"
+            call s:appendbufline(bufnr, '$', res)
+        endfor
+    endif
+endfunction
+
+function s:testValue(colsType, colsSize, colsSizeDigits, idx) abort
+    let numSize = a:colsSize
+    if a:colsType == 'NUMBER'
+        let numSize = a:colsSize - a:colsSizeDigits
+    endif
+    if a:colsType == 'DATE' || a:colsType =~ 'TIMESTAMP.*'
+        return ("TO_DATE(20000101, 'YYYYMMDD')" .. ' + ' .. (a:idx % ('1' .. repeat('0', len(numSize)))))
+    elseif a:colsType == 'NUMBER' && numSize > 1
+        return ("'1" .. printf('%0' .. (numSize - 1) .. 'd', a:idx % ('1' .. repeat('0', len(numSize - 1)))) .. "'")
+    else
+        return ("'" .. printf('%0' .. numSize .. 'd', a:idx % ('1' .. repeat('0', len(numSize)))) .. "'")
+    endif
 endfunction
 
 function dbiclient#getColumnsTableCmn(table)
@@ -270,7 +343,7 @@ endfunction
 function dbiclient#createDeleteInsertSql(...) range abort
     let limitrows = get(a:, 1, s:getLimitrows())
     let sqls = join(getline(a:firstline, a:lastline),"\n")->split('\v;\s*($|\n)')
-    let bufname = "ScratchCreateDeleteInsert"
+    let bufname = "ScratchDeleteInsert"
     let bufnr = s:aboveNewBuffer(bufname)
     for sql in sqls
         if trim(sql) != ''
@@ -536,9 +609,16 @@ function s:error1(port) abort
     call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
     let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
     if len(sendexprList) > 0
+        sleep 500m
+    endif
+
+    call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
+    let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
+    if len(sendexprList) > 0
         call s:echoMsg('IO20')
         return 1
     endif
+
     return s:error0(port)
 endfunction
 
@@ -560,7 +640,7 @@ function s:error2(port, bufnr) abort
     call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
     let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
     if len(sendexprList) > 0
-        call s:echoMsg('IO20')
+        call s:echoMsg('IO22')
         return 1
     endif
     if s:error1(port)
@@ -729,7 +809,7 @@ function s:createInsertRange() range abort
     if s:isDisableline(a:firstline, a:lastline)
         return
     endif
-    let bufname = "ScratchCreateInsert"
+    let bufname = "ScratchInsert"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
     let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
@@ -820,7 +900,7 @@ function s:createUpdateRange() range abort
     if s:error1CurrentPort() || s:error3()
         return
     endif
-    let bufname = "ScratchCreateUpdate"
+    let bufname = "ScratchUpdate"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
     let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
@@ -885,7 +965,7 @@ function s:createDeleteRange() range abort
     if s:error1CurrentPort() || s:error3()
         return
     endif
-    let bufname = "ScratchCreateDelete"
+    let bufname = "ScratchDelete"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
     let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
@@ -1182,7 +1262,7 @@ endfunction
 function s:jobStop(port) abort
     call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
     if len(filter(s:sendexprList[:], {_, x -> x[0] ==# a:port})) > 0
-        call s:echoMsg('IO05', 'running channel ' .. string(s:sendexprList))
+        call s:echoMsg('IO05', 'Running process... ' .. string(s:sendexprList))
         return 0
     endif
     let port = a:port
@@ -1245,10 +1325,10 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
     let sqllist = s:splitSql(sqllist, 0)
     let sqllist = map(sqllist, {_, x -> substitute(x, '\v\c\&\&(%(' .. defineKeys .. ')>\.?)' , {m -> get(defineDict, matchstr(m[1], '\v^.{-}\ze\.?$'), m[0])}, 'g')})
 
-    if len(sqllist) > 10
+    if len(sqllist) > 25
         redraw
         echohl ErrorMsg
-        echo 'You cannot execute more than 10 sql at the same time.'
+        echo 'You cannot execute more than 25 sql at the same time.'
         echohl None
         return {}
     endif
@@ -1373,7 +1453,7 @@ function s:echoMsg(id, ...) abort
     else
         echohl WarningMsg
     endif
-    echo msg
+    echo a:id .. ':' .. msg
     echohl None
 endfunction
 
@@ -1580,7 +1660,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':<C-u>call <SID>userTables(b:dbiclient_bufmap.alignFlg , get(<SID>getParams(), "table_name", "")                        , <SID>input("TABLE_TYPE:", get(<SID>getParams(), "tabletype", "")) , <SID>getPort())<CR>')
     endif
     if !get(a:opt, 'nonowloading', 0)
-        call s:appendbufline(bufnr, '$', ['Now loading...'])
+        call s:appendbufline(bufnr, '$', ['Processing...'])
     endif
     if !empty(get(a:opt, 'reloadBufname', ''))
         call s:debugLog('reloadBufname')
@@ -1776,7 +1856,7 @@ function s:dBCommandAsync(command, callback, port) abort
             call setbufvar(bufnr, 'dbiclient_vmap', [])
             let cbufnr = bufnr('%')
         endif
-        call s:appendbufline(bufnr, '$', ['Now loading...'])
+        call s:appendbufline(bufnr, '$', ['Processing...'])
         "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
         if ro
             call s:f.readonly(bufnr)
@@ -3636,7 +3716,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
                 \, 'table_name'    : tableNm
                 \, 'reloadBufname' : bufname
                 \, 'reloadBufnr'   : bufnr}
-    call s:appendbufline(bufnr, '$', ['Now loading...'])
+    call s:appendbufline(bufnr, '$', ['Processing...'])
     "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
     call s:f.readonly(bufnr)
     call s:gotoWin(bufnr)
@@ -4171,7 +4251,7 @@ function s:init() abort
             return 0
         endif
         if s:getPerlmPath() ==# "" || !filereadable(s:getPerlmPath())
-            call s:echoMsg('EO12', s:getPerlmPath())
+            call s:echoMsg('EO11', s:getPerlmPath())
             return 0
         endif
         let logpath = s:getRootPath()
