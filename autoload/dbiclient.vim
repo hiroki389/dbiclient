@@ -1160,7 +1160,7 @@ function s:connect_secure(port, dsn, user, passwordName, opt) abort
         if empty(pass)
             redraw
             echohl WarningMsg
-            echo 'Password is incorrect'
+            echo 'Invalid password.'
             echohl None
             return
         endif
@@ -1328,7 +1328,7 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
     if len(sqllist) > 25
         redraw
         echohl ErrorMsg
-        echo 'You cannot execute more than 25 sql at the same time.'
+        echo 'Concurrent SQL execution limit exceeded (25).'
         echohl None
         return {}
     endif
@@ -2487,7 +2487,7 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
         if s:endbufline(bufnr) >= 100000
             redraw
             echohl WarningMsg
-            echo 'It did not "align" because it took a long time to display.'
+            echo 'The data was not aligned correctly because of the time it took to display the results.'
             echohl None
             call s:align(0, bufnr, s:getprelinesep())
         else
@@ -3371,7 +3371,7 @@ function s:ijoin(prefix) abort
             norm gg$
             redraw
             echohl ErrorMsg
-            echo 'Only the value can be edited.'
+            echo 'Only the data values can be changed.'
             echohl None
             return
         endif
@@ -3448,7 +3448,7 @@ function s:where() abort
             norm gg$
             redraw
             echohl ErrorMsg
-            echo 'Only the value can be edited.'
+            echo 'Only the data values can be changed.'
             echohl None
             return
         endif
