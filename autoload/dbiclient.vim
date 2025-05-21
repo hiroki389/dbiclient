@@ -1,7 +1,7 @@
 "vim9script
 scriptencoding utf-8
 
-if !exists('g:loaded_dbiclient') || v:version < 901
+if !exists('g:loaded_dbiclient')
     finish
 endif
 
@@ -407,13 +407,13 @@ function dbiclient#sethl(bufnr) abort
     call s:sethl(a:bufnr)
 endfunction
 
-def s:bufnr(bufname: any): any
-    if empty(bufname)
+function s:bufnr(bufname)
+    if empty(a:bufname)
         return -1
     else
-        return bufnr(bufname)
+        return bufnr(a:bufname)
     endif
-enddef
+endfunction
 
 function s:bufdel(port, cbufnr) abort
     "let bufnr = s:bufsearch(reverse(get(get(s:params, a:port, {}), 'buflist', [])[:]), a:cbufnr)
@@ -993,68 +993,117 @@ function s:createDeleteRange() range abort
     call s:appendbufline(bufnr, '$', s:createDelete(param, param2, tableNm, port))
 endfunction
 
-def s:joblist(moveFlg: any)
-    var cbufnr = s:bufnr('%')
-    s:init()
-    var port: number = s:getCurrentPort()
-    filter(s:sendexprList, ((_, x) => s:ch_statusOk(x[1])))
-    def Dbinfo(port2: any): any
-        var msgList = []
-        var connInfo = get(s:params, port2, {})
-        add(msgList, ['PID', '=' .. get(connInfo, 'process', '')])
-        add(msgList, ['SCHEMA', '=' .. s:getuser(connInfo)])
-        add(msgList, ['DSN', '=' .. s:getdsn(connInfo.dsn)])
-        add(msgList, ['STATUS', '=' .. s:ch_open2status(port2)])
-        add(msgList, ['RUNNING', '=' .. join(map(filter(s:sendexprList[:], ((_, x) => x[0] ==# port2)), ((_, x) => string(x[1]))), ', ')])
-        var msg2 = 'Info:'
-        msg2 ..= s:f2.Foldl(((x, y) => x .. y), "", map(msgList, ((_, val) => ' [' .. val[0] ..  val[1] .. ']')))
-        return msg2
-    enddef
-    var list = map(keys(s:params)->map(((_, z) => str2nr(z))), ((_, x) => (port ==# x ? '*' : '') .. x .. ' ' .. Dbinfo(x)))
-    var bufname = 'DBIJobList'
-    var bufnrNm = s:bufnr(bufname)
-    var save_cursor = getcurpos()
-    if (moveFlg && s:f.getwidCurrentTab(bufnrNm) ==# -1) || (!moveFlg && s:f.getwid(bufnrNm) ==# -1)
-        bufnrNm = s:enewBuffer(bufname)
-        s:f.noreadonly(bufnrNm)
-        save_cursor = getcurpos()
+function s:joblist(moveFlg)
+    " var cbufnr = s:bufnr('%') -> VimLではlet
+    let l:cbufnr = s:bufnr('%')
+    call s:init()
+    " var port: number = s:getCurrentPort() -> VimLではlet
+    let l:port = s:getCurrentPort()
+    " filter(s:sendexprList, ((_, x) => s:ch_statusOk(x[1]))) -> VimLのfilterは直接関数を受け取る
+    call filter(s:sendexprList, 's:ch_statusOk(v:val[1])')
+
+    " def Dbinfo(port2: any): any -> VimLではfunction (ネストされた関数はVimLではサポートされない)
+    " ネストされた関数をトップレベルに移動し、必要に応じて引数を調整するか、
+    " s:joblist の中でしか使わないのであれば、s:joblist の外で s:Dbinfo として定義する
+    " ただし、この場合はクロージャのような振る舞いはできないため、
+    " s:joblist の中で必要な変数を引数として渡す必要がある。
+    " ここでは、s:joblist の外に定義し、必要な変数を引数として渡す形にする。
+    " s:params, s:f2, s:getuser, s:getdsn, s:ch_open2status は s:joblist のスコープ外で定義されている前提。
+
+    " Dbinfo 関数は s:joblist の外に定義されるべき
+    " ここでは関数定義は削除し、後で s:Dbinfo として追加します。
+
+    " var list = map(keys(s:params)->map(((_, z) => str2nr(z))), ((_, x) => (port ==# x ? '*' : '') .. x .. ' ' .. Dbinfo(x)))
+    " ->map は Vim9 script の機能。VimLではmap()関数をネストして使う。
+    " ネストされたDbinfo関数はVimLでは使えないため、s:Dbinfoを呼び出す。
+    let l:list = map(map(keys(s:params), 'str2nr(v:val)'), ' (l:port ==# v:val ? "*" : "") . v:val . " " . s:Dbinfo(v:val) ')
+
+    " var bufname = 'DBIJobList' -> VimLではlet
+    let l:bufname = 'DBIJobList'
+    " var bufnrNm = s:bufnr(bufname) -> VimLではlet
+    let l:bufnrNm = s:bufnr(l:bufname)
+    " var save_cursor = getcurpos() -> VimLではlet
+    let l:save_cursor = getcurpos()
+
+    if (a:moveFlg && s:f.getwidCurrentTab(l:bufnrNm) ==# -1) || (!a:moveFlg && s:f.getwid(l:bufnrNm) ==# -1)
+        let l:bufnrNm = s:enewBuffer(l:bufname)
+        call s:f.noreadonly(l:bufnrNm)
+        let l:save_cursor = getcurpos()
     else
-        s:gotoWinCurrentTab(bufnrNm)
-        save_cursor = getcurpos()
-        s:f.noreadonly(bufnrNm)
-        s:deletebufline(bufnrNm, 1, '$')
+        call s:gotoWinCurrentTab(l:bufnrNm)
+        let l:save_cursor = getcurpos()
+        call s:f.noreadonly(l:bufnrNm)
+        call s:deletebufline(l:bufnrNm, 1, '$')
     endif
-    if getbufvar(bufnrNm, '&previewwindow')
-        setbufvar(bufnrNm, '&previewwindow', 0)
+
+    if getbufvar(l:bufnrNm, '&previewwindow')
+        call setbufvar(l:bufnrNm, '&previewwindow', 0)
     endif
-    s:setnmap(bufnrNm, get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\v^\*?\zs\d+''), 1)<CR>')
-    s:setnmap(bufnrNm, get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
-    s:setnmap(bufnrNm, get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
-    s:setnmap(bufnrNm, get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':<C-u>call <SID>dbhistoryCmd(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
-    s:setallmap(bufnrNm)
-    var msgList = []
-    add(msgList, [get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':' .. 'CHANGE'])
-    add(msgList, [get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':' .. 'STOP'])
-    add(msgList, [get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':' .. 'TABLES'])
-    add(msgList, [get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':' .. 'HISTORY'])
-    var info = '"Quick Help<nmap> :'
-    info ..= s:f2.Foldl(((x, y) => x .. y), "", map(msgList, ((_, val) => ' [' .. val[0] .. val[1] .. ']')))
-    s:appendbufline(bufnrNm, '$', info)
-    s:appendbufline(bufnrNm, '$', list)
-    setpos('.', save_cursor)
-    if !moveFlg
-        s:gotoWin(cbufnr)
+
+    " s:setnmap は s:joblist の外で定義されている前提
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''), 1)<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''))<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''))<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':<C-u>call <SID>dbhistoryCmd(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''))<CR>')
+    call s:setallmap(l:bufnrNm)
+
+    " var msgList = [] -> VimLではlet
+    let l:msgList = []
+    call add(l:msgList, [get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':' .. 'CHANGE'])
+    call add(l:msgList, [get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':' .. 'STOP'])
+    call add(l:msgList, [get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':' .. 'TABLES'])
+    call add(l:msgList, [get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':' .. 'HISTORY'])
+
+    " var info = '"Quick Help<nmap> :' -> VimLではlet
+    let l:info = '"Quick Help<nmap> :'
+    " info ..= s:f2.Foldl(((x, y) => x .. y), "", map(msgList, ((_, val) => ' [' .. val[0] .. val[1] .. ']')))
+    " -> VimLのmapは直接関数を受け取る
+    let l:info .= s:f2.Foldl('v:val[0] . v:val[1]', "", map(l:msgList, ' " [" . v:val[0] . v:val[1] . "]" '))
+
+    call s:appendbufline(l:bufnrNm, '$', l:info)
+    call s:appendbufline(l:bufnrNm, '$', l:list)
+    call setpos('.', l:save_cursor)
+
+    if !a:moveFlg
+        call s:gotoWin(l:cbufnr)
     endif
-    s:f.readonly(bufnrNm)
-    var matchadds = []
-    add(matchadds, ['Comment', '\v^".{-}:'])
-    add(matchadds, ['Identifier', '^\*.*'])
-    add(matchadds, ['String', '\v%1l^".{-}:\zs.*$'])
-    add(matchadds, ['Function', '\v%1l( \[)@<=.{-}(\:)@='])
-    add(matchadds, ['ErrorMsg', 'fail'])
-    setbufvar(bufnrNm, 'dbiclient_matches', matchadds)
-    s:sethl(bufnrNm)
-enddef
+
+    call s:f.readonly(l:bufnrNm)
+
+    " var matchadds = [] -> VimLではlet
+    let l:matchadds = []
+    call add(l:matchadds, ['Comment', '\v^".{-}:'])
+    call add(l:matchadds, ['Identifier', '^\*.*'])
+    call add(l:matchadds, ['String', '\v%1l^".{-}:\zs.*$'])
+    call add(l:matchadds, ['Function', '\v%1l( \[)@<=.{-}(\:)@='])
+    call add(l:matchadds, ['ErrorMsg', 'fail'])
+    call setbufvar(l:bufnrNm, 'dbiclient_matches', l:matchadds)
+    call s:sethl(l:bufnrNm)
+endfunction
+
+" ネストされていたDbinfo関数をトップレベルに移動
+" s:joblist の中で使われている s:params, s:getuser, s:getdsn, s:ch_open2status, s:sendexprList, s:f2 は
+" s:Dbinfo のスコープ外で定義されているため、これらは s:Dbinfo が呼び出される時点で
+" グローバル変数 (g:) またはスクリプトローカル変数 (s:) としてアクセス可能である必要があります。
+" s:params, s:sendexprList, s:f2 は s: で定義されているので問題ありません。
+" s:getuser, s:getdsn, s:ch_open2status も s: で定義されている前提です。
+function s:Dbinfo(port2)
+    let l:msgList = []
+    let l:connInfo = get(s:params, a:port2, {})
+    call add(l:msgList, ['PID', '=' .. get(l:connInfo, 'process', '')])
+    call add(l:msgList, ['SCHEMA', '=' .. s:getuser(l:connInfo)])
+    call add(l:msgList, ['DSN', '=' .. s:getdsn(l:connInfo.dsn)])
+    call add(l:msgList, ['STATUS', '=' .. s:ch_open2status(a:port2)])
+    " filter と map のコールバックは文字列形式に変換
+    let l:running_filtered = filter(copy(s:sendexprList), 'v:val[0] ==# a:port2')
+    let l:running_mapped = map(l:running_filtered, 'string(v:val[1])')
+    call add(l:msgList, ['RUNNING', '=' .. join(l:running_mapped, ', ')])
+
+    let l:msg2 = 'Info:'
+    " s:f2.Foldl のコールバックも文字列形式に変換
+    let l:msg2 .= s:f2.Foldl('v:prev . " [" . v:val[0] . v:val[1] . "]"', "", l:msgList)
+    return l:msg2
+endfunction
 
 function s:updateStatus(moveFlg) abort
     let cport = s:getCurrentPort()
@@ -1168,54 +1217,98 @@ function s:connect_secure(port, dsn, user, passwordName, opt) abort
     endif
 endfunction
 
-def s:connect(port: any, dsn: string, user: string, pass: string, opt2: any)
-    s:init()
-    var port2 = empty(port) ? s:getUnusedPort() : port
-    var limitrows2 = get(opt2, s:connect_opt_limitrows, s:limitrows)
-    var encoding2 = get(opt2, s:connect_opt_encoding, 'utf8')
-    s:dbi_job_port = port2
-    var portStr = string(port2)
-    def Cb_jobout2(ch2: any, msg2: any)
-        if msg2 ==# portStr
-            s:connect_base(dsn, user, pass, limitrows2, encoding2, opt2)
-            s:loadQueryHistoryCmd(port2)
-        endif
-    enddef
-    def Cb_joberr2(ch2: any, msg2: any)
-        s:kill_job(port2)
-        redraw
-        echohl ErrorMsg
-        echom iconv(string(msg2), get(get(s:params, portStr, {}), 'encoding', &enc), g:dbiclient_buffer_encoding)
-        echohl None
-    enddef
+" Cb_jobout2 は s:connect_base, s:loadQueryHistoryCmd の呼び出しに必要な情報を
+" s:params から取得するように変更します。
+" この関数は s:connect よりも前に定義されている必要があります。
+function s:Cb_jobout2(channel_id, msg2)
+    let l:portStr = a:msg2 " ジョブが準備完了時に自身のポート番号を msg2 として出力すると想定
+    if !has_key(s:params, l:portStr)
+        " パラメータが見つからない場合はエラーメッセージを表示して終了
+        call s:print('Error: Connection parameters not found for port ' . l:portStr, 0)
+        return
+    endif
 
-    if has_key(s:params, portStr) && get(opt2, 'reconnect', 0) ==# 0
-        opt2.reconnect = 1
-        s:jobStop(port2)
-        s:connect(port2, dsn, user, pass, opt2)
+    " s:params に保存された接続情報を取得
+    let l:conn_info = s:params[l:portStr]
+    let l:dsn = get(l:conn_info, 'dsn', '')
+    let l:user = get(l:conn_info, 'user', '')
+    let l:pass = get(l:conn_info, 'pass', '')
+    let l:limitrows = get(l:conn_info, 'limitrows', s:limitrows)
+    let l:encoding = get(l:conn_info, 'encoding', 'utf8')
+    let l:opt = get(l:conn_info, 'opt', {})
+
+    " msg2 がポート番号と一致した場合のみ処理を実行
+    if a:msg2 ==# l:portStr
+        call s:connect_base(l:dsn, l:user, l:pass, l:limitrows, l:encoding, l:opt)
+        call s:loadQueryHistoryCmd(str2nr(l:portStr))
+    endif
+endfunction
+
+" Cb_joberr2 も s:connect よりも前に定義されている必要があります。
+function s:Cb_joberr2(channel_id, msg2)
+    " err_cb の channel_id は job_id (この場合はポート番号) を含む
+    let l:port = a:channel_id
+    call s:kill_job(l:port)
+    redraw
+    echohl ErrorMsg
+    " エラーメッセージのエンコーディングを取得するため、s:params を使用
+    let l:current_encoding = get(get(s:params, l:port, {}), 'encoding', &enc)
+    echom iconv(a:msg2, l:current_encoding, g:dbiclient_buffer_encoding)
+    echohl None
+endfunction
+
+function s:connect(port, dsn, user, pass, opt2)
+    call s:init()
+    let l:port2 = empty(a:port) ? s:getUnusedPort() : a:port
+    let l:limitrows2 = get(a:opt2, s:connect_opt_limitrows, s:limitrows)
+    let l:encoding2 = get(a:opt2, s:connect_opt_encoding, 'utf8')
+    let s:dbi_job_port = l:port2
+    let l:portStr = printf('%s', l:port2) " 数値を文字列に変換して辞書のキーとして使用
+
+    if has_key(s:params, l:portStr) && get(a:opt2, 'reconnect', 0) ==# 0
+        let a:opt2.reconnect = 1
+        call s:jobStop(l:port2)
+        call s:connect(l:port2, a:dsn, a:user, a:pass, a:opt2)
         return
     endif
-    if portStr !~# '\v^[[0-9]+$'
-        throw 'port error ' .. portStr
+
+    if l:portStr !~# '\v^[[0-9]+$'
+        throw 'port error ' .. l:portStr
     endif
-    if !has_key(s:params, portStr) && s:ch_statusStrOk(s:ch_open2status(port2))
-        s:echoMsg('IO18', port2)
+
+    " 既存のジョブが同じポートで実行中かどうかのチェック
+    if !has_key(s:params, l:portStr) && s:ch_statusStrOk(s:ch_open2status(l:port2))
+        call s:echoMsg('IO18', l:port2)
         return
     endif
-    var logpath = s:getRootPath()
-    var cmdlist = ['perl', s:getPerlmPath(), port2, logpath, g:dbiclient_perl_binmode, get(opt2, s:connect_opt_debuglog, 0)]
-    s:debugLog(join(cmdlist, ' '))
-    if has_key(opt2, 'reconnect')
-        opt2.reconnect = 0
+
+    let l:logpath = s:getRootPath()
+    " job_start に渡す cmdlist の要素も文字列に変換
+    let l:cmdlist = ['perl', s:getPerlmPath(), printf('%s', l:port2), l:logpath, g:dbiclient_perl_binmode, printf('%s', get(a:opt2, s:connect_opt_debuglog, 0))]
+    call s:debugLog(join(l:cmdlist, ' '))
+
+    " コールバック関数からアクセスできるように、s:params に接続情報をすべて保存
+    let s:params[l:portStr] = {
+                \ 'port': l:port2,
+                \ 'dsn': a:dsn,
+                \ 'user': a:user,
+                \ 'pass': a:pass,
+                \ 'limitrows': l:limitrows2,
+                \ 'encoding': l:encoding2,
+                \ 'opt': a:opt2,
+                \ }
+
+    if has_key(a:opt2, 'reconnect')
+        let a:opt2.reconnect = 0
     endif
-    s:jobs[portStr] = job_start(cmdlist, {
-                  'err_cb': Cb_joberr2,
-                  'stoponexit': '',
-                  'out_cb': Cb_jobout2
-                 })
-    s:params[portStr] = {}
-    s:params[portStr].port = port2
-enddef
+
+    " job_start のコールバックに funcref で関数名を渡す
+    let s:jobs[l:portStr] = job_start(l:cmdlist, {
+                \ 'err_cb': funcref('s:Cb_joberr2'),
+                \ 'stoponexit': '',
+                \ 'out_cb': funcref('s:Cb_jobout2')
+                \ })
+endfunction
 
 function s:kill_job(port) abort
     let port = a:port
@@ -1478,93 +1571,129 @@ function s:dBExecRangeSQLDo(bang, splitFlg) range abort
     call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0)}, 's:cb_do', port)
 endfunction
 
-def s:splitSql(sqllist: list<string>, doFlg: number): list<string>
-    var delim: string = g:dbiclient_sql_delimiter1
-    if len(filter(sqllist[:], (_, x) => trim(x) ==# g:dbiclient_sql_delimiter2)) > 0
-        delim = g:dbiclient_sql_delimiter2
+function s:splitSql(sqllist, doFlg)
+    " var delim: string = g:dbiclient_sql_delimiter1 -> VimLではlet
+    let l:delim = g:dbiclient_sql_delimiter1
+
+    " filter(sqllist[:], (_, x) => trim(x) ==# g:dbiclient_sql_delimiter2)
+    " -> VimLのfilterは文字列形式の式を受け取る
+    if len(filter(copy(a:sqllist), 'trim(v:val) ==# g:dbiclient_sql_delimiter2')) > 0
+        let l:delim = g:dbiclient_sql_delimiter2
     endif
-    var list = sqllist[:]
-    list = filter(list, (_, x) => !empty(trim(x)))
-    var sql = join(list, "\n")
-    if doFlg && delim ==# g:dbiclient_sql_delimiter2
-        var ret1 = []
-        var start = 0
-        while start > -1
-            var msp = matchstrpos(sql, '\v^.{-}\n\s*\' .. delim .. '\s*(\n|$)', start)
-            if msp[2] > -1
-                call add(ret1, substitute(trim(msp[0]), '\v\' .. delim .. '\s*%$', '', ''))
+
+    " var list = sqllist[:] -> VimLではlet
+    let l:list = copy(a:sqllist) " リストのコピー
+    " list = filter(list, (_, x) => !empty(trim(x))) -> VimLのfilter
+    let l:list = filter(l:list, '!empty(trim(v:val))')
+
+    " var sql = join(list, "\n") -> VimLではlet
+    let l:sql = join(l:list, "\n")
+
+    if a:doFlg && l:delim ==# g:dbiclient_sql_delimiter2
+        " var ret1 = [] -> VimLではlet
+        let l:ret1 = []
+        " var start = 0 -> VimLではlet
+        let l:start = 0
+
+        while l:start > -1
+            " var msp = matchstrpos(sql, '\v^.{-}\n\s*\' .. delim .. '\s*(\n|$)', start) -> VimLではlet
+            " 正規表現内のバックスラッシュはさらにエスケープが必要な場合がある
+            let l:msp = matchstrpos(l:sql, '\v^.{-}\n\s*\\' .. l:delim .. '\s*(\n|$)', l:start)
+            
+            " msp[2] は matchstrpos が見つからなかった場合に -1 を返す
+            if l:msp[2] > -1
+                " substitute(trim(msp[0]), '\v\' .. delim .. '\s*%$', '', '')
+                call add(l:ret1, substitute(trim(l:msp[0]), '\v\\' .. l:delim .. '\s*%$', '', ''))
             else
-                call add(ret1, substitute(trim(sql[start : ]), '\v\' .. delim .. '\s*%$', '', ''))
+                " substitute(trim(sql[start : ]), '\v\' .. delim .. '\s*%$', '', '')
+                " VimLでは文字列のスライスは sql[start:] のように書く
+                call add(l:ret1, substitute(trim(l:sql[l:start : ]), '\v\\' .. l:delim .. '\s*%$', '', ''))
             endif
-            start = msp[2]
+            let l:start = l:msp[2]
         endwhile
-        return filter(ret1, (_, x) => !empty(trim(x)))
+        " return filter(ret1, (_, x) => !empty(trim(x))) -> VimLのfilter
+        return filter(l:ret1, '!empty(trim(v:val))')
     else
-        if sql =~? '\v^\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
-            return s:split(sql, '\v' .. delim .. '\s*(\n|$)')->filter(((_, x) => !empty(trim(x))))
+        if l:sql =~? '\v^\\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
+            " return s:split(sql, '\v' .. delim .. '\s*(\n|$)')->filter(((_, x) => !empty(trim(x))))
+            " ->filter は Vim9 script の機能。VimLではmap()やfilter()をネストする。
+            let l:temp_list = s:split(l:sql, '\v' .. l:delim .. '\s*(\n|$)')
+            return filter(l:temp_list, '!empty(trim(v:val))')
         else
-            var parsedata = s:parseSQL2(sql)
-            return parsedata.splitSql3(parsedata, delim)
+            " var parsedata = s:parseSQL2(sql) -> VimLではlet
+            let l:parsedata = s:parseSQL2(l:sql)
+            return l:parsedata.splitSql3(l:parsedata, l:delim)
         endif
     endif
-enddef
+endfunction
 
 function s:getQuerySync(sql, callback, limitrows, opt, port) abort
     let data = s:getQuery(a:sql, a:limitrows, a:opt, a:port)
     return funcref(a:callback)({}, data)
 endfunction
 
-def s:getQuery(sql: any, limitrows2: any, opt2: any, port2: any): any
-    var ret2 = {}
-    if s:error1(port2)
-        return ret2
+" DictGetData 関数は s:getQuery 関数よりも前に定義されている必要があります。
+function s:DictGetData(result_dict)
+    " funcref でバインドされた ret2 (a:result_dict) を使って s:getData を呼び出す
+    return s:getData(a:result_dict)
+endfunction
+
+function s:getQuery(sql, limitrows2, opt2, port2)
+    let l:ret2 = {}
+    if s:error1(a:port2)
+        return l:ret2
     endif
-    var schemtableNm = s:getTableName(sql, get(opt2, 'tableNm', ''))
-    var tableNm = matchstr(schemtableNm, '\v^(.{-}\.)?\zs.*')
-    var schem = matchstr(schemtableNm, '\v\zs^(.{-})\ze\..*')
-    var tableJoinNm = join(s:getTableJoinListUniq(sql), " ")
-    var tableJoinNmWithAs = s:getTableJoinList(sql)
-    var channel = ch_open('localhost:' .. port2)
-    if !s:ch_statusOk(channel)
-        return ret2
+
+    let l:schemtableNm = s:getTableName(a:sql, get(a:opt2, 'tableNm', ''))
+    let l:tableNm = matchstr(l:schemtableNm, '\v^(.{-}\.)?\zs.*')
+    let l:schem = matchstr(l:schemtableNm, '\v\zs^(.{-})\ze\..*')
+    let l:tableJoinNm = join(s:getTableJoinListUniq(a:sql), " ")
+    let l:tableJoinNmWithAs = s:getTableJoinList(a:sql)
+    " 文字列結合に . を使用
+    let l:channel = ch_open('localhost:' . a:port2)
+
+    if !s:ch_statusOk(l:channel)
+        return l:ret2
     endif
-    var param = {
-                "sql": sql,
-                "tableNm": tableNm,
-                "schem": schem,
-                "tableJoinNm": tableJoinNm,
-                "tableJoinNmWithAs": tableJoinNmWithAs,
-                "cols": [],
-                'connInfo': s:params[port2],
-                "limitrows": limitrows2,
-                'linesep': get(opt2, 'linesep', g:dbiclient_linesep),
-                'surround': get(opt2, 'surround', g:dbiclient_surround),
-                'null': get(opt2, 'null', g:dbiclient_null),
-                'table_info': get(opt2, 'table_info', 0),
-                'column_info': get(opt2, 'column_info', 0),
-                'column_info_data': get(opt2, 'column_info_data', 0),
-                'single_table': get(opt2, 'single_table', ''),
-                'reloadBufname': get(opt2, 'reloadBufname', ''),
-                'reloadBufnr': get(opt2, 'reloadBufnr', -1),
-                'tempfile': s:tempname()
-    }
-    var result = s:ch_evalexpr(channel, param, {"timeout": 30000})
+
+    let l:param = {
+                \ "sql": a:sql,
+                \ "tableNm": l:tableNm,
+                \ "schem": l:schem,
+                \ "tableJoinNm": l:tableJoinNm,
+                \ "tableJoinNmWithAs": l:tableJoinNmWithAs,
+                \ "cols": [],
+                \ 'connInfo': s:params[a:port2],
+                \ "limitrows": a:limitrows2,
+                \ 'linesep': get(a:opt2, 'linesep', g:dbiclient_linesep),
+                \ 'surround': get(a:opt2, 'surround', g:dbiclient_surround),
+                \ 'null': get(a:opt2, 'null', g:dbiclient_null),
+                \ 'table_info': get(a:opt2, 'table_info', 0),
+                \ 'column_info': get(a:opt2, 'column_info', 0),
+                \ 'column_info_data': get(a:opt2, 'column_info_data', 0),
+                \ 'single_table': get(a:opt2, 'single_table', ''),
+                \ 'reloadBufname': get(a:opt2, 'reloadBufname', ''),
+                \ 'reloadBufnr': get(a:opt2, 'reloadBufnr', -1),
+                \ 'tempfile': s:tempname()
+                \ }
+
+    let l:result = s:ch_evalexpr(l:channel, l:param, {"timeout": 30000})
+
     if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
-        s:joblist(0)
+        call s:joblist(0)
     endif
-    if type(result) ==# v:t_dict
-        s:ch_close(channel)
-        ret2 = result
-        def DictGetData(): any
-            return s:getData(ret2)
-        enddef
-        ret2.GetData = DictGetData
-        return ret2
+
+    if type(l:result) ==# v:t_dict
+        call s:ch_close(l:channel)
+        let l:ret2 = l:result
+        " GetData メソッドを funcref と部分適用で割り当てる
+        let l:ret2.GetData = funcref('s:DictGetData', [l:ret2])
+        return l:ret2
     else
-        s:ch_close(channel)
-        return ret2
+        call s:ch_close(l:channel)
+        return l:ret2
     endif
-enddef
+endfunction
 
 function s:getData(dbiclient_bufmap) abort
     let result = a:dbiclient_bufmap
@@ -2579,129 +2708,147 @@ function s:rpad(x, n, c) abort
     return a:x .. repeat(a:c, a:n - strdisplaywidth(a:x))
 endfunction
 
-def s:alignLinesCR(bufnr1: number, preCr: string)
-    var cbufnr = s:bufnr('%')
-    var cwid = s:getwidCurrentTab(cbufnr)
-    s:gotoWin(bufnr1)
-    var curpos = 1
-    var save_cursor = getcurpos()
-    norm gg
-    var surr = '\V' .. (empty(g:dbiclient_surround) ? '"' : g:dbiclient_surround)
-    var regexS = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\ze\V' .. surr .. preCr .. '\v(\t|$)'
-    var regexE = '\v(^|\t)\V' .. preCr .. surr .. '\v\zs(\_[^\t]){-}\V' .. surr .. preCr .. '\v\ze(\t|$)'
-    var posS = [0]
-    var posE = [0]
-    var save_posS = []
+function s:alignLinesCR(bufnr1, preCr)
+    let l:cbufnr = s:bufnr('%')
+    let l:cwid = s:getwidCurrentTab(l:cbufnr)
+    call s:gotoWin(a:bufnr1)
+    let l:curpos = 1
+    let l:save_cursor = getcurpos()
+    normal! gg " norm は normal! に変更
+    let l:surr = '\V' . (empty(g:dbiclient_surround) ? '"' : g:dbiclient_surround) " 文字列連結は .
+    let l:regexS = '\v(^|\t)\V' . a:preCr . l:surr . '\v\zs(\_[^\t]){-}\ze\V' . l:surr . a:preCr . '\v(\t|$)'
+    let l:regexE = '\v(^|\t)\V' . a:preCr . l:surr . '\v\zs(\_[^\t]){-}\V' . l:surr . a:preCr . '\v\ze(\t|$)'
+    let l:posS = [0]
+    let l:posE = [0]
+    let l:save_posS = []
     try
-        posS = searchpos(regexS, 'c')
-        save_posS = getcurpos()
-        posE = searchpos(regexE, 'ce')
+        let l:posS = searchpos(l:regexS, 'c')
+        let l:save_posS = getcurpos()
+        let l:posE = searchpos(l:regexE, 'ce')
     catch /./
-        posS = [0]
-        posE = [0]
-        exe '%s/' .. preCr .. '//g'
+        let l:posS = [0]
+        let l:posE = [0]
+        " exe '%s/' .. preCr .. '//g' -> 正規表現のエスケープに注意
+        exe '%s/' . escape(a:preCr, '\/&') . '//g'
     endtry
-    var flg1 = 0
-    s:debugLog('alignCr:start')
-    while posS[0] !=# 0
-        if posS[0] !=# posE[0]
-            var strS = getbufline(bufnr1, posS[0])[0]
-            var strE = getbufline(bufnr1, posE[0])[0]
-            if posE[0] - posS[0] > 1
-                for pos in range(posS[0] + 1, posE[0] - 1)
-                    strS = strS .. "<<CRLF>>" .. getbufline(bufnr1, pos)[0]
+    let l:flg1 = 0
+    call s:debugLog('alignCr:start')
+    while l:posS[0] !=# 0
+        if l:posS[0] !=# l:posE[0]
+            let l:strS = getbufline(a:bufnr1, l:posS[0])[0]
+            let l:strE = getbufline(a:bufnr1, l:posE[0])[0]
+            if l:posE[0] - l:posS[0] > 1
+                for l:pos in range(l:posS[0] + 1, l:posE[0] - 1)
+                    let l:strS = l:strS . "<<CRLF>>" . getbufline(a:bufnr1, l:pos)[0]
                 endfor
             endif
-            s:deletebufline(bufnr1, (posS[0] + 1), (posE[0]))
-            s:setbufline(bufnr1, posS[0], strS .. "<<CRLF>>" .. strE)
-            setpos('.', save_posS)
-            searchpos('\V' .. preCr .. surr .. '\v(\_[^\t]){-}\V' .. surr .. preCr, 'e')
-            flg1 = 1
+            call s:deletebufline(a:bufnr1, (l:posS[0] + 1), (l:posE[0]))
+            call s:setbufline(a:bufnr1, l:posS[0], l:strS . "<<CRLF>>" . l:strE)
+            call setpos('.', l:save_posS)
+            " searchpos('\V' .. preCr .. surr .. '\v(\_[^\t]){-}\V' .. surr .. preCr, 'e')
+            call searchpos('\V' . a:preCr . l:surr . '\v(\_[^\t]){-}\V' . l:surr . a:preCr, 'e')
+            let l:flg1 = 1
         endif
-        posS = searchpos(regexS, 'c')
-        save_posS = getcurpos()
-        posE = searchpos(regexE, 'ce')
+        let l:posS = searchpos(l:regexS, 'c')
+        let l:save_posS = getcurpos()
+        let l:posE = searchpos(l:regexE, 'ce')
     endwhile
-    s:debugLog('alignCr:end')
-    s:debugLog('alignCrReplace:start')
-    if flg1 ==# 1
-        s:alignLinesCRsetpos(bufnr1, curpos)
+    call s:debugLog('alignCr:end')
+    call s:debugLog('alignCrReplace:start')
+    if l:flg1 ==# 1
+        call s:alignLinesCRsetpos(a:bufnr1, l:curpos)
     endif
-    s:debugLog('alignCrReplace:end')
-    setpos('.', save_cursor)
-    if cwid != -1
-        win_gotoid(cwid)
-        s:debugLog('win_gotoid:[' .. s:bufnr('%') .. ',' .. cwid .. ']')
+    call s:debugLog('alignCrReplace:end')
+    call setpos('.', l:save_cursor)
+    if l:cwid != -1
+        call win_gotoid(l:cwid) " win_gotoid は Neovim 固有だが、プラグインで定義されていれば機能する
+        call s:debugLog('win_gotoid:[' . s:bufnr('%') . ',' . l:cwid . ']')
     else
-        s:gotoWin(cbufnr)
+        call s:gotoWin(l:cbufnr)
     endif
-enddef
+endfunction
 
-def s:alignLinesCRsetpos(bufnr1: number, curpos: number)
-    var ret1 = []
-    for colval in getbufline(bufnr1, curpos, '$')->map(((_, x) => split(x, "\t", 1)))
-        var lines = []
-        var emptyline = map(colval[:], ((_, x) => ''))
-        add(lines, colval[:])
-        var colval2 = map(colval[:], ((_, x) => split(x, '<<CRLF>>')))
-        var index = filter(map(colval2[:], ((i, x) => [i, len(x)])), ((_, x) => x[1] > 1))
-        var max = max(map(index[:], ((_, x) => x[1])))
-        if max > 1
-            extend(lines, map(range(max - 1), ((_, x) => emptyline[:])))
-            for id in index
-                for i in range(id[1])
-                    lines[i][id[0]] = colval2[id[0]][i]
+function s:alignLinesCRsetpos(bufnr1, curpos)
+    let l:ret1 = []
+    " getbufline(...)->map(((_, x) => split(x, "\t", 1))) の変換
+    for l:colval in map(getbufline(a:bufnr1, a:curpos, '$'), 'split(v:val, "\\t", 1)')
+        let l:lines = []
+        " map(colval[:], ((_, x) => '')) の変換
+        let l:emptyline = map(copy(l:colval), "''") " copy() で安全にコピー
+        call add(l:lines, copy(l:colval)) " copy() で安全にコピー
+        " map(colval[:], ((_, x) => split(x, '<<CRLF>>'))) の変換
+        let l:colval2 = map(copy(l:colval), 'split(v:val, "<<CRLF>>")')
+        " filter(map(colval2[:], ((i, x) => [i, len(x)])), ((_, x) => x[1] > 1)) の変換
+        let l:index = filter(map(copy(l:colval2), '[v:key, len(v:val)]'), 'v:val[1] > 1')
+        " max(map(index[:], ((_, x) => x[1]))) の変換
+        let l:max = max(map(copy(l:index), 'v:val[1]'))
+
+        if l:max > 1
+            " extend(lines, map(range(max - 1), ((_, x) => emptyline[:]))) の変換
+            call extend(l:lines, map(range(l:max - 1), 'copy(l:emptyline)'))
+            for l:id in l:index
+                for l:i in range(l:id[1])
+                    let l:lines[l:i][l:id[0]] = l:colval2[l:id[0]][l:i]
                 endfor
             endfor
         endif
-        add(ret1, lines)
+        call add(l:ret1, l:lines)
     endfor
 
-    s:debugLog('alignCrReplace>:start')
-    var i = curpos
-    for lines in ret1
-        for line in lines
-            s:setbufline(bufnr1, i, join(line, "\t"))
-            i += 1
+    call s:debugLog('alignCrReplace>:start')
+    let l:i = a:curpos
+    for l:lines in l:ret1
+        for l:line in l:lines
+            call s:setbufline(a:bufnr1, l:i, join(l:line, "\t"))
+            let l:i += 1
         endfor
     endfor
-    s:debugLog('alignCrReplace>:end')
-enddef
+    call s:debugLog('alignCrReplace>:end')
+endfunction
 
-def s:alignMain(preCr: string)
-    var bufnr1 = s:bufnr(get(get(getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {}), 'data', {}), 'reloadBufnr', s:bufnr('%')))
-    s:alignLinesCR(bufnr1, a:preCr)
-    var dbiclient_bufmap = getbufvar(bufnr1, 'dbiclient_bufmap', {})
-    var lines = []
-    if !empty(dbiclient_bufmap) && !empty(get(dbiclient_bufmap, 'maxcols', []))
-        lines = s:getalignlist2(getbufline(bufnr1, 0, '$'), dbiclient_bufmap.maxcols)
+function s:alignMain(preCr)
+    " get(get(getbufvar(...), 'data', {}), 'reloadBufnr', ...) は VimL でも同様に機能
+    let l:bufnr1 = s:bufnr(get(get(getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {}), 'data', {}), 'reloadBufnr', s:bufnr('%')))
+    call s:alignLinesCR(l:bufnr1, a:preCr)
+    let l:dbiclient_bufmap = getbufvar(l:bufnr1, 'dbiclient_bufmap', {})
+    let l:lines = []
+    " ディクショナリのキーアクセスは get() を推奨
+    if !empty(l:dbiclient_bufmap) && !empty(get(l:dbiclient_bufmap, 'maxcols', []))
+        let l:lines = s:getalignlist2(getbufline(l:bufnr1, 0, '$'), get(l:dbiclient_bufmap, 'maxcols'))
     else
-        lines = s:getalignlist(getbufline(bufnr1, 0, '$'))
+        let l:lines = s:getalignlist(getbufline(l:bufnr1, 0, '$'))
     endif
-    var i = 1
-    for line in lines
-        s:setbufline(bufnr1, i, line)
-        i += 1
+    let l:i = 1
+    for l:line in l:lines
+        call s:setbufline(l:bufnr1, l:i, l:line)
+        let l:i += 1
     endfor
-enddef
+endfunction
 
-def s:getalignlist2(lines0: list<string>, maxCols: list<number>): list<string>
-    var lines = deepcopy(lines0, 1)
-    if empty(lines)
+function s:getalignlist2(lines0, maxCols)
+    " deepcopy(lines0, 1) -> VimLでは辞書形式でオプションを渡す
+    let l:lines = deepcopy(a:lines0, 1)
+    if empty(l:lines)
         return []
     endif
-    s:debugLog('align:start')
-    var colsize = len(split(lines[0], g:dbiclient_col_delimiter, 1))
-    s:debugLog('align:lines ' .. len(lines))
-    var lines3 = []
-    lines3 = mapnew(lines, ((_, x) => mapnew(split(x, g:dbiclient_col_delimiter, 1), ((_, xx) => substitute(xx, s:tab_placefolder, "\t", 'g')))))
-    s:debugLog('align:copy')
-    s:debugLog('align:maxCols' .. string(maxCols))
-    var lines4 = []
-    lines4 = mapnew(lines3, ((_, cols) => colsize ==# len(cols) ? join(mapnew(cols, ((i, col) => col .. repeat(' ', maxCols[i] + 1 - strdisplaywidth(col)))), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter)))
-    s:debugLog('align:end')
-    return lines4
-enddef
+    call s:debugLog('align:start')
+    let l:colsize = len(split(l:lines[0], g:dbiclient_col_delimiter, 1))
+    call s:debugLog('align:lines ' . len(l:lines)) " 文字列連結は .
+
+    let l:lines3 = []
+    " mapnew(lines, ((_, x) => mapnew(split(x, ..., 1), ((_, xx) => substitute(...))))) の変換
+    let l:lines3 = map(l:lines, 'map(split(v:val, g:dbiclient_col_delimiter, 1), "substitute(v:val, s:tab_placefolder, \"\\t\", ''g'')")')
+    
+    call s:debugLog('align:copy')
+    call s:debugLog('align:maxCols' . string(a:maxCols)) " 文字列連結は .
+
+    let l:lines4 = []
+    " mapnew(lines3, ((_, cols) => colsize ==# len(cols) ? join(mapnew(cols, (...))), ...) の変換
+    let l:lines4 = map(l:lines3, ' (l:colsize ==# len(v:val) ? join(map(v:val, "v:val . repeat('' '', a:maxCols[v:key] + 1 - strdisplaywidth(v:val))"), g:dbiclient_col_delimiter_align . '' '') : join(v:val, g:dbiclient_col_delimiter)) ')
+    
+    call s:debugLog('align:end')
+    return l:lines4
+endfunction
 
 function s:getalignlist(lines) abort
     if empty(a:lines)
@@ -2868,201 +3015,235 @@ function s:parseSQL(sql, cols) abort
     return parseSQL
 endfunction
 
-def s:lex(sql: string): list<string>
-    var tokenList = []
-    var sqllist = split(sql, "\n")
-    var i = 1
-    for sql2 in sqllist
-        var start = 0
-        var regex  = '\v^\_s+|'
-        regex ..= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
-        regex ..= '\v^[qQ]''(.)\_.{-}\1''|'
-        regex ..= '\v^\/\*\_.{-}\*\/|'
-        regex ..= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
-        regex ..= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
-        regex ..= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
-        regex ..= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
-        regex ..= '\v^%([^[:punct:][:space:]]|[_$])+|'
-        regex ..= '\v^[[:punct:]]\ze'
-        var msp = []
-        while start > -1
-            msp = matchstrpos(sql2, regex, start)
-            add(tokenList, msp[0])
-            start = msp[2]
+function s:lex(sql)
+    let l:tokenList = []
+    let l:sqllist = split(a:sql, "\n")
+    let l:i = 1
+    for l:sql2 in l:sqllist
+        let l:start = 0
+        " 正規表現の文字列結合は . を使用
+        let l:regex = '\v^\_s+|'
+        let l:regex .= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+        let l:regex .= '\v^[qQ]''(.)\_.{-}\1''|'
+        let l:regex .= '\v^\/\*\_.{-}\*\/|'
+        let l:regex .= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+        let l:regex .= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+        let l:regex .= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+        let l:regex .= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+        let l:regex .= '\v^%([^[:punct:][:space:]]|[_$])+|'
+        let l:regex .= '\v^[[:punct:]]\ze'
+        let l:msp = []
+        while l:start > -1
+            let l:msp = matchstrpos(l:sql2, l:regex, l:start)
+            call add(l:tokenList, l:msp[0])
+            let l:start = l:msp[2]
         endwhile
-        if i != len(sqllist)
-            add(tokenList, "\n")
+        if l:i != len(l:sqllist)
+            call add(l:tokenList, "\n")
         endif
-        i += 1
+        let l:i += 1
     endfor
-    return filter(tokenList, ((_, x) => x !~ '^$'))
-enddef
+    " filter(tokenList, ((_, x) => x !~ '^$')) の変換
+    return filter(l:tokenList, 'v:val !~# "^$"')
+endfunction
 
-def s:resolveToken(token: string): string
-    var patternList = [['WHITESPACE',   '\v^\s+$'],
-                 ['SINGLE-QUOTE', '\v^'''],
-                 ['Q-QUOTE',      '\v^[qQ]'''],
-                 ['DOUBLE-QUOTE', '\v^"'],
-                 ['BACK-QUOTE',   '\v^\`'],
-                 ['COMMENT',      '\v^(--|#|\/\*)'],
-                 ['SEMICOLON',    '^\V' .. g:dbiclient_sql_delimiter1],
-                 ['SLASH',        '^\V' .. g:dbiclient_sql_delimiter2],
-                 ['CR',           '\v^\n'],
-                 ['LO',           '\v^<and>|<or>|<in>|<between>|<is>|<not>'],
-                 ['RW',           '\v^<null>|<as>|<by>|<into>|<on>'],
-                 ['CLAUSE',       '\v^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<from>|<where>|<order>|<group>|<having>)$'],
-                 ['JOIN',         '\v^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'],
-                 ['DOT',          '^\V.'],
-                 ['COMMA',        '^\V,'],
-                 ['AT',           '^\V@'],
-                 ['EQ',           '^\V='],
-                 ['LT',           '^\V<'],
-                 ['GT',           '^\V>'],
-                 ['LE',           '^\V<='],
-                 ['GE',           '^\V>='],
-                 ['NE',           '^\V<>'],
-                 ['NE',           '^\V!='],
-                 ['AMP',          '^\V&'],
-                 ['BRACKET',      '^\V['],
-                 ['BRACKET',      '^\V]'],
-                 ['ASTER',        '^\V*'],
-                 ['PARENTHESES',  '^\V('],
-                 ['PARENTHESES',  '^\V)']]
+function s:resolveToken(token)
+    let l:patternList = [['WHITESPACE',     '\v^\s+$'],
+                \     ['SINGLE-QUOTE', '\v^'''],
+                \     ['Q-QUOTE',        '\v^[qQ]'''],
+                \     ['DOUBLE-QUOTE', '\v^"'],
+                \     ['BACK-QUOTE',    '\v^\`'],
+                \     ['COMMENT',      '\v^(--|#|\/\*)'],
+                \     ['SEMICOLON',    '^\V' . g:dbiclient_sql_delimiter1], 
+                \     ['SLASH',        '^\V' . g:dbiclient_sql_delimiter2],
+                \     ['CR',           '\v^\n'],
+                \     ['LO',           '\v^<and>|<or>|<in>|<between>|<is>|<not>'],
+                \     ['RW',           '\v^<null>|<as>|<by>|<into>|<on>'],
+                \     ['CLAUSE',         '\v^(<minus>|<except>|<union>|<fetch>|<offset>|<with>|<select>|<from>|<where>|<order>|<group>|<having>)$'],
+                \     ['JOIN',         '\v^(<join>|<outer>|<left>|<inner>|<right>|<cross>|<natural>|<full>)$'],
+                \     ['DOT',          '^\V.'],
+                \     ['COMMA',        '^\V,'],
+                \     ['AT',           '^\V@'],
+                \     ['EQ',           '^\V='],
+                \     ['LT',           '^\V<'],
+                \     ['GT',           '^\V>'],
+                \     ['LE',           '^\V<='],
+                \     ['GE',           '^\V>='],
+                \     ['NE',           '^\V<>'],
+                \     ['NE',           '^\V!='],
+                \     ['AMP',          '^\V&'],
+                \     ['BRACKET',      '^\V['],
+                \     ['BRACKET',      '^\V]'],
+                \     ['ASTER',        '^\V*'],
+                \     ['PARENTHESES',  '^\V('],
+                \     ['PARENTHESES',  '^\V)']]
 
-    #for pattern in patternList
-    #    if a:token =~? pattern[1]
-    #        return pattern[0]
-    #    endif
-    #endfor
-    #return 'TOKEN'
-    var pattern = filter(patternList, (_, x) => token =~? x[1])
-    return get(get(pattern, 0, []), 0, 'TOKEN')
-enddef
+    " filter(patternList, (_, x) => token =~? x[1]) の変換
+    let l:pattern = filter(l:patternList, 'a:token =~? v:val[1]')
+    " get(get(pattern, 0, []), 0, 'TOKEN') は VimL でも同様に機能
+    return get(get(l:pattern, 0, []), 0, 'TOKEN')
+endfunction
+" --- s:parseSQL2 内でネストされていた関数群 ---
 
-def s:parseSQL2(sql1: string): dict<any>
-    var dic = {}
-    s:debugLog('sql:' .. sql1[0 : 100])
-    s:debugLog('sha256 start')
-    var hash = sha256(sql1)
-    s:debugLog('sha256 end(' .. hash .. ')')
-    var data = get(s:hardparseDict, hash, [])
-    if empty(data)
-        s:debugLog('lex start')
-        var tokens = s:lex(sql1)
-        s:debugLog('lex end')
-        s:debugLog('parse start')
-        s:debugLog('resolve start')
-        var tokens2 = map(tokens[:], ((_, x: string) => [s:resolveToken(x), x]))
-        s:debugLog('resolve end')
-        data = s:parseSqlLogicR(tokens2, 0, 0)
-        s:debugLog('parse end')
-        s:hardparseDict[hash] = data
-    endif
-    dic.data = data
+function s:GetNotMaintype(data2, mtype)
+    " filter(data2[:], ((_, x) => x[0] !~? mtype)) の変換
+    return filter(copy(a:data2), 'v:val[0] !~? a:mtype')
+endfunction
 
-    def GetNotMaintype(data2: any, mtype: any): list<any>
-        return filter(data2[:], ((_, x) => x[0] !~? mtype))
-    enddef
+function s:GetMaintype(data2, mtype)
+    " filter(data2[:], ((_, x) => x[0] =~? mtype)) の変換
+    return filter(copy(a:data2), 'v:val[0] =~? a:mtype')
+endfunction
 
-    def GetMaintype(data2: any, mtype: any): list<any>
-        return filter(data2[:], ((_, x) => x[0] =~? mtype))
-    enddef
+function s:GetSql(data2)
+    " map(data2[:], ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])) の変換
+    " 再帰呼び出しは s:GetSql に変更
+    return join(map(copy(a:data2), 'type(v:val[2]) ==# v:t_list ? s:GetSql(v:val[2]) : v:val[2]'), '')
+endfunction
 
-    def GetSql(data2: any): string
-        return join(map(data2[:], ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])), '')
-    enddef
+function s:GetSqlLineDelComment2(data2)
+    " filter(data2[:], ((_, x) => x[1] != 'COMMENT')) の変換
+    " map(..., ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])) の変換
+    " 再帰呼び出しは s:GetSql に変更
+    return join(map(filter(copy(a:data2), 'v:val[1] !=# "COMMENT"'), 'type(v:val[2]) ==# v:t_list ? s:GetSql(v:val[2]) : v:val[2]'), '')
+endfunction
 
-    def GetSqlLineDelComment2(data2: any): string
-        return join(map(filter(data2[:], ((_, x) => x[1] != 'COMMENT')), ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])), '')
-    enddef
+function s:SplitSql2(data2, delim)
+    let l:type = a:delim ==# g:dbiclient_sql_delimiter1 ? 'SEMICOLON' : a:delim ==# g:dbiclient_sql_delimiter2 ? 'SLASH' : ''
+    " map(data2[:], ((i, x: list<any>) => x[1] ==# type ? i : -1)) の変換 (v:key を使用)
+    let l:data3 = map(copy(a:data2), 'v:val[1] ==# l:type ? v:key : -1')
+    " filter(data3[:], ((_, x) => x != -1)) の変換
+    let l:indexes = filter(copy(l:data3), 'v:val != -1')
+    call add(l:indexes, 0)
+    let l:ret1 = []
+    let l:start = 0
+    for l:i in l:indexes
+        " GetSql は s:GetSql に変更
+        let l:sql = s:GetSql(a:data2[l:start : l:i - 1])
+        if !empty(trim(l:sql))
+            call add(l:ret1, l:sql)
+        endif
+        let l:start = l:i + 1
+    endfor
+    return l:ret1
+endfunction
 
-    def SplitSql2(data2: any, delim: string): list<string>
-        var type = delim ==# g:dbiclient_sql_delimiter1 ? 'SEMICOLON' : delim ==# g:dbiclient_sql_delimiter2 ? 'SLASH' : ''
-        var data3 = map(data2[:], ((i, x: list<any>) => x[1] ==# type ? i : -1))
-        var indexes = filter(data3[:], ((_, x) => x != -1))
-        add(indexes, 0)
-        var ret1 = []
-        var start = 0
-        for i in indexes
-            var sql = GetSql(data2[start : i - 1])
-            if !empty(trim(sql))
-                add(ret1, sql)
-            endif
-            start = i + 1
-        endfor
-        return ret1
-    enddef
+function s:DictGetMaintype(self, mtype)
+    " GetSqlLineDelComment2 と GetMaintype は s: プレフィックス付きで呼び出し
+    return s:GetSqlLineDelComment2(s:GetMaintype(a:self.data, a:mtype))
+endfunction
 
-    def DictGetMaintype(self: dict<any>, mtype: any): any
-        return GetSqlLineDelComment2(GetMaintype(self.data, mtype))
-    enddef
+function s:DictGetNotMaintype(self, mtype)
+    " GetSqlLineDelComment2 と GetNotMaintype は s: プレフィックス付きで呼び出し
+    return s:GetSqlLineDelComment2(s:GetNotMaintype(a:self.data, a:mtype))
+endfunction
 
-    def DictGetNotMaintype(self: dict<any>, mtype: any): any
-        return GetSqlLineDelComment2(GetNotMaintype(self.data, mtype))
-    enddef
+function s:DictSplitSql3(self, delim)
+    " SplitSql2 は s:SplitSql2 に変更
+    let l:sql = s:SplitSql2(a:self.data, a:delim)
+    return l:sql
+endfunction
 
-    def DictSplitSql3(self: dict<any>, delim: string): any
-        var sql = SplitSql2(self.data, delim)
-        return sql
-    enddef
+function s:DictGetSqlLineDelComment1(self)
+    " GetSqlLineDelComment2 は s:GetSqlLineDelComment2 に変更
+    return s:GetSqlLineDelComment2(a:self.data)
+endfunction
 
-    def DictGetSqlLineDelComment1(self: dict<any>): any
-        return GetSqlLineDelComment2(self.data)
-    enddef
-    dic.getMaintype = DictGetMaintype
-    dic.getNotMaintype = DictGetNotMaintype
-    dic.splitSql3 = DictSplitSql3
-    dic.getSqlLineDelComment1 = DictGetSqlLineDelComment1
-    s:lastparse = dic
+" --- s:lenR の変換 ---
 
-    return dic
-enddef
+function s:lenR(list)
+    " map(list[:], ((_, x) => ...)) の変換
+    " s:f2.Foldl が存在することを前提とする
+    " 再帰呼び出しは s:lenR に変更
+    return s:f2.Foldl(
+                \ 'v:val + v:key', " v:key は map() の結果の要素
+                \ 0,
+                \ map(copy(a:list), 'type(v:val) == v:t_list && type(get(v:val, 1, \'\')) == v:t_string && get(v:val, 1, \'\') =~? "^SUBS" ? s:lenR(get(v:val, 2, [])) : 1')
+                \ )
+endfunction
 
-def s:lenR(list: list<any>): number
-    return s:f2.Foldl(((x, y) => x + y), 0, map(list[:], ((_, x) => type(x) == v:t_list && type(get(x, 1, '')) == v:t_string && get(x, 1, '') =~? '^SUBS' ? s:lenR(get(x, 2, [])) : 1)))
-enddef
+" --- s:parseSqlLogicR の変換 ---
 
-def s:parseSqlLogicR(tokenList: list<any>, index1: number, subflg: number): list<any>
-    var data = []
-    var maintype = 'NOP'
-    var index = index1
-    while len(tokenList) > index
-        var tokenName = tokenList[index][0]
-        var token = tokenList[index][1]
+function s:parseSqlLogicR(tokenList, index1, subflg)
+    let l:data = []
+    let l:maintype = 'NOP'
+    let l:index = a:index1
+    while len(a:tokenList) > l:index
+        let l:tokenName = a:tokenList[l:index][0]
+        let l:token = a:tokenList[l:index][1]
 
-        if tokenName ==# 'CLAUSE'
-            if maintype =~ '\v\c<select>' && token !~ '\v\c<from>'
-                maintype = maintype
+        " =~ は =~# に変更
+        if l:tokenName ==# 'CLAUSE'
+            if l:maintype =~# '\v\c<select>' && l:token !~# '\v\c<from>'
+                let l:maintype = l:maintype
             else
-                maintype = toupper(token)
+                let l:maintype = toupper(l:token)
             endif
         endif
-        if tokenName ==# 'JOIN'
-            maintype = 'JOIN'
+        if l:tokenName ==# 'JOIN'
+            let l:maintype = 'JOIN'
         endif
 
-        if token ==# '('
-            var subdata = s:parseSqlLogicR(tokenList, index + 1, subflg + 1)
-            if !empty(subdata)
-                var size = s:lenR(subdata)
-                insert(subdata, [maintype, tokenName, '(', index])
-                add(subdata, [maintype, tokenName, ')', index + size + 1])
-                add(data, [maintype, 'SUBS' .. subflg, subdata])
-                index += (size + 2)
+        if l:token ==# '('
+            " s:parseSqlLogicR の再帰呼び出し
+            let l:subdata = s:parseSqlLogicR(a:tokenList, l:index + 1, a:subflg + 1)
+            if !empty(l:subdata)
+                " s:lenR の呼び出し
+                let l:size = s:lenR(l:subdata)
+                " add/insert は call add/insert に変更
+                call insert(l:subdata, [l:maintype, l:tokenName, '(', l:index])
+                call add(l:subdata, [l:maintype, l:tokenName, ')', l:index + l:size + 1])
+                call add(l:data, [l:maintype, 'SUBS' . a:subflg, l:subdata]) " 文字列結合は .
+                let l:index += (l:size + 2)
                 continue
             endif
-        elseif subflg && token ==# ')'
-            return data
+        elseif a:subflg && l:token ==# ')'
+            return l:data
         endif
 
-        add(data, [maintype, tokenName, token, index])
-        index += 1
+        call add(l:data, [l:maintype, l:tokenName, l:token, l:index])
+        let l:index += 1
     endwhile
-    if subflg
+    if a:subflg
         return []
     endif
-    return data
-enddef
+    return l:data
+endfunction
+
+" --- s:parseSQL2 の変換 ---
+
+function s:parseSQL2(sql1)
+    let l:dic = {}
+    call s:debugLog('sql:' . a:sql1[0 : 100]) " 文字列結合は .
+    call s:debugLog('sha256 start')
+    let l:hash = sha256(a:sql1)
+    call s:debugLog('sha256 end(' . l:hash . ')') " 文字列結合は .
+    let l:data = get(s:hardparseDict, l:hash, [])
+    if empty(l:data)
+        call s:debugLog('lex start')
+        let l:tokens = s:lex(a:sql1)
+        call s:debugLog('lex end')
+        call s:debugLog('parse start')
+        call s:debugLog('resolve start')
+        " map(tokens[:], ((_, x: string) => [s:resolveToken(x), x])) の変換
+        let l:tokens2 = map(copy(l:tokens), '[s:resolveToken(v:val), v:val]')
+        call s:debugLog('resolve end')
+        call s:debugLog('parse start') " ログが重複しているが、元のコードに合わせる
+        let l:data = s:parseSqlLogicR(l:tokens2, 0, 0)
+        call s:debugLog('parse end')
+        let s:hardparseDict[l:hash] = l:data
+    endif
+    let l:dic.data = l:data
+
+    " メソッドの割り当てには funcref を使用
+    let l:dic.getMaintype = funcref('s:DictGetMaintype')
+    let l:dic.getNotMaintype = funcref('s:DictGetNotMaintype')
+    let l:dic.splitSql3 = funcref('s:DictSplitSql3')
+    let l:dic.getSqlLineDelComment1 = funcref('s:DictGetSqlLineDelComment1')
+    let s:lastparse = l:dic
+
+    return l:dic
+endfunction
 
 function s:extendquery(alignFlg, extend, reloadflg) abort
     let [select, from, ijoin, where, order, group, having] = [get(a:extend, 'select', ''), get(a:extend, 'from', ''), get(a:extend, 'ijoin', ''), get(a:extend, 'where', ''), get(a:extend, 'order', ''), get(a:extend, 'group', ''), get(a:extend, 'having', '')]
@@ -4201,18 +4382,30 @@ function s:setallmap(bufnr) abort
     endif
 endfunction
 
-def s:Tuple(a1: any, b1: any): dict<any>
-    var ret = {}
-    def DictGet1(): any
-        return copy(a1)
-    enddef
-    def DictGet2(): any
-        return copy(b1)
-    enddef
-    ret.Get1 = DictGet1
-    ret.Get2 = DictGet2
-    return ret
-enddef
+" s:Tuple 関数内でメソッドとして割り当てられるヘルパー関数
+" これらの関数は s:Tuple 関数よりも前に定義されている必要があります。
+function s:Tuple_Get1_impl(value)
+    " copy() は、a:value がリストやディクショナリなどの参照型の場合に、
+    " オリジナルのデータが変更されないようにするために使用します。
+    return copy(a:value)
+endfunction
+
+function s:Tuple_Get2_impl(value)
+    return copy(a:value)
+endfunction
+
+" s:Tuple 関数の変換
+function s:Tuple(a1, b1)
+    let l:ret = {}
+
+    " funcref を使用して、ヘルパー関数をメソッドとして割り当てます。
+    " funcref の第2引数にリストで渡された値 (a:a1 や a:b1) は、
+    " 割り当てられたメソッドが呼び出されたときに、その関数の最初の引数として渡されます。
+    let l:ret.Get1 = funcref('s:Tuple_Get1_impl', [a:a1])
+    let l:ret.Get2 = funcref('s:Tuple_Get2_impl', [a:b1])
+
+    return l:ret
+endfunction
 
 function s:sethl(bufnr) abort
     let bufnr = a:bufnr
@@ -4284,43 +4477,54 @@ function s:ch_statusStrOk(str) abort
     endif
 endfunction
 
-def s:ch_statusOk(channel: any): any
-    var stat = ch_status(channel)
-    var starttime = localtime()
-    while stat ==# 'buffered' && (localtime() - starttime) < 30
-        stat = ch_status(channel)
+" s:ch_statusOk 関数の変換
+function s:ch_statusOk(channel)
+    let l:stat = ch_status(a:channel)
+    let l:starttime = localtime()
+    while l:stat ==# 'buffered' && (localtime() - l:starttime) < 30
+        let l:stat = ch_status(a:channel)
     endwhile
-    if stat ==# 'buffered'
+    if l:stat ==# 'buffered'
+        " エラーメッセージの文字列結合は . を使用
         throw 'error ch_status:buffered'
     endif
-    return s:ch_statusStrOk(stat)
-enddef
+    return s:ch_statusStrOk(l:stat)
+endfunction
 
-def s:ch_close(channel: any)
-    var errorFlg = 0
-    if type(channel) ==# v:t_channel
-        var stat = ch_status(channel)
-        for i in range(5)
-            errorFlg = 0
-            stat = ch_status(channel)
+" s:ch_close 関数の変換
+function s:ch_close(channel)
+    let l:errorFlg = 0
+    " type() と v:t_channel は VimL でも同様に機能
+    if type(a:channel) ==# v:t_channel
+        let l:stat = ch_status(a:channel)
+        " for と range() は VimL でも同様に機能
+        for l:i in range(5)
+            let l:errorFlg = 0
+            let l:stat = ch_status(a:channel)
             try
-                if stat !=# 'closed'
-                    if s:ch_statusOk(channel)
-                        ch_close(channel)
+                " !=# は VimL でも同様に機能
+                if l:stat !=# 'closed'
+                    " s:ch_statusOk の呼び出し
+                    if s:ch_statusOk(a:channel)
+                        call ch_close(a:channel)
                     endif
                 endif
+                " break は VimL でも同様に機能
                 break
             catch /./
-                errorFlg = 1
-                #echoerr 'error ch_close() ch_status:' .. stat
+                let l:errorFlg = 1
+                " echoerr の文字列結合は . を使用
+                " echoerr 'error ch_close() ch_status:' . l:stat
+                " sleep は VimL でも同様に機能
                 sleep 100m
             endtry
         endfor
-        if errorFlg == 1
-            throw 'error ch_close() ch_status:' .. stat
+        if l:errorFlg == 1
+            " エラーメッセージの文字列結合は . を使用
+            throw 'error ch_close() ch_status:' . l:stat
         endif
     endif
-enddef
+endfunction
 
 function s:input(prompt, ...) abort
     let default = get(a:, 1, '')
