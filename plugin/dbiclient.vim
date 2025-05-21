@@ -1,6 +1,6 @@
 scriptencoding utf-8
 
-if exists('g:loaded_dbiclient') || v:version < 802
+if exists('g:loaded_dbiclient')
     finish
 endif
 let g:loaded_dbiclient = 1
