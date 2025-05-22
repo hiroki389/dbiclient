@@ -1064,7 +1064,7 @@ function s:Dbinfo(port2)
     call add(l:msgList, ['SCHEMA', '=' .. s:getuser(l:connInfo)])
     call add(l:msgList, ['DSN', '=' .. s:getdsn(l:connInfo.dsn)])
     call add(l:msgList, ['STATUS', '=' .. s:ch_open2status(a:port2)])
-    call add(l:msgList, ['RUNNING', '=' .. join(map(filter(s:sendexprList[:], {_, x -> x[0] ==# port2}), {_, x -> string(x[1])}), ', ')])
+    call add(l:msgList, ['RUNNING', '=' .. join(map(filter(s:sendexprList[:], {_, x -> x[0] ==# a:port2}), {_, x -> string(x[1])}), ', ')])
 
     let l:msg2 = 'Info:'
     " s:f2.Foldl のコールバックも文字列形式に変換
