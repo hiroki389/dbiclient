@@ -3106,10 +3106,7 @@ endfunction
 " --- s:lenR の変換 ---
 
 function s:lenR(list)
-    " map(list[:], ((_, x) => ...)) の変換
-    " s:f2.Foldl が存在することを前提とする
-    " 再帰呼び出しは s:lenR に変更
-    return s:f2.Foldl({x, y -> x + y}, 0, map(list[:], {_, x -> type(x) == v:t_list && type(get(x, 1, '')) == v:t_string && get(x, 1, '') =~? '^SUBS' ? s:lenR(get(x, 2, [])) : 1}))
+    return s:f2.Foldl({x, y -> x + y}, 0, map(a:list[:], {_, x -> type(x) == v:t_list && type(get(x, 1, '')) == v:t_string && get(x, 1, '') =~? '^SUBS' ? s:lenR(get(x, 2, [])) : 1}))
 endfunction
 
 " --- s:parseSqlLogicR の変換 ---
