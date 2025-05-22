@@ -994,35 +994,15 @@ function s:createDeleteRange() range abort
 endfunction
 
 function s:joblist(moveFlg)
-    " var cbufnr = s:bufnr('%') -> VimLではlet
     let l:cbufnr = s:bufnr('%')
     call s:init()
-    " var port: number = s:getCurrentPort() -> VimLではlet
     let l:port = s:getCurrentPort()
-    " filter(s:sendexprList, ((_, x) => s:ch_statusOk(x[1]))) -> VimLのfilterは直接関数を受け取る
-    call filter(s:sendexprList, 's:ch_statusOk(v:val[1])')
+    call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
 
-    " def Dbinfo(port2: any): any -> VimLではfunction (ネストされた関数はVimLではサポートされない)
-    " ネストされた関数をトップレベルに移動し、必要に応じて引数を調整するか、
-    " s:joblist の中でしか使わないのであれば、s:joblist の外で s:Dbinfo として定義する
-    " ただし、この場合はクロージャのような振る舞いはできないため、
-    " s:joblist の中で必要な変数を引数として渡す必要がある。
-    " ここでは、s:joblist の外に定義し、必要な変数を引数として渡す形にする。
-    " s:params, s:f2, s:getuser, s:getdsn, s:ch_open2status は s:joblist のスコープ外で定義されている前提。
+    let l:list = map(keys(s:params)->map({_, z -> str2nr(z)}), {_, x -> (port ==# x ? '*' : '') .. x .. ' ' .. s:Dbinfo(x)})
 
-    " Dbinfo 関数は s:joblist の外に定義されるべき
-    " ここでは関数定義は削除し、後で s:Dbinfo として追加します。
-
-    " var list = map(keys(s:params)->map(((_, z) => str2nr(z))), ((_, x) => (port ==# x ? '*' : '') .. x .. ' ' .. Dbinfo(x)))
-    " ->map は Vim9 script の機能。VimLではmap()関数をネストして使う。
-    " ネストされたDbinfo関数はVimLでは使えないため、s:Dbinfoを呼び出す。
-    let l:list = map(map(keys(s:params), 'str2nr(v:val)'), ' (l:port ==# v:val ? "*" : "") . v:val . " " . s:Dbinfo(v:val) ')
-
-    " var bufname = 'DBIJobList' -> VimLではlet
     let l:bufname = 'DBIJobList'
-    " var bufnrNm = s:bufnr(bufname) -> VimLではlet
     let l:bufnrNm = s:bufnr(l:bufname)
-    " var save_cursor = getcurpos() -> VimLではlet
     let l:save_cursor = getcurpos()
 
     if (a:moveFlg && s:f.getwidCurrentTab(l:bufnrNm) ==# -1) || (!a:moveFlg && s:f.getwid(l:bufnrNm) ==# -1)
@@ -1041,10 +1021,10 @@ function s:joblist(moveFlg)
     endif
 
     " s:setnmap は s:joblist の外で定義されている前提
-    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''), 1)<CR>')
-    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''))<CR>')
-    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''))<CR>')
-    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':<C-u>call <SID>dbhistoryCmd(matchstr(getline("."), ''\\v^\\*?\\zs\\d+''))<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\v^\*?\zs\d+''), 1)<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
+    call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':<C-u>call <SID>dbhistoryCmd(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
     call s:setallmap(l:bufnrNm)
 
     " var msgList = [] -> VimLではlet
@@ -1054,11 +1034,8 @@ function s:joblist(moveFlg)
     call add(l:msgList, [get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':' .. 'TABLES'])
     call add(l:msgList, [get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':' .. 'HISTORY'])
 
-    " var info = '"Quick Help<nmap> :' -> VimLではlet
     let l:info = '"Quick Help<nmap> :'
-    " info ..= s:f2.Foldl(((x, y) => x .. y), "", map(msgList, ((_, val) => ' [' .. val[0] .. val[1] .. ']')))
-    " -> VimLのmapは直接関数を受け取る
-    let l:info .= s:f2.Foldl('v:val[0] . v:val[1]', "", map(l:msgList, ' " [" . v:val[0] . v:val[1] . "]" '))
+    let l:info .= s:f2.Foldl({x, y -> x .. y}, "", map(msgList, {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
 
     call s:appendbufline(l:bufnrNm, '$', l:info)
     call s:appendbufline(l:bufnrNm, '$', l:list)
@@ -1070,7 +1047,6 @@ function s:joblist(moveFlg)
 
     call s:f.readonly(l:bufnrNm)
 
-    " var matchadds = [] -> VimLではlet
     let l:matchadds = []
     call add(l:matchadds, ['Comment', '\v^".{-}:'])
     call add(l:matchadds, ['Identifier', '^\*.*'])
@@ -1081,12 +1057,6 @@ function s:joblist(moveFlg)
     call s:sethl(l:bufnrNm)
 endfunction
 
-" ネストされていたDbinfo関数をトップレベルに移動
-" s:joblist の中で使われている s:params, s:getuser, s:getdsn, s:ch_open2status, s:sendexprList, s:f2 は
-" s:Dbinfo のスコープ外で定義されているため、これらは s:Dbinfo が呼び出される時点で
-" グローバル変数 (g:) またはスクリプトローカル変数 (s:) としてアクセス可能である必要があります。
-" s:params, s:sendexprList, s:f2 は s: で定義されているので問題ありません。
-" s:getuser, s:getdsn, s:ch_open2status も s: で定義されている前提です。
 function s:Dbinfo(port2)
     let l:msgList = []
     let l:connInfo = get(s:params, a:port2, {})
@@ -1094,14 +1064,11 @@ function s:Dbinfo(port2)
     call add(l:msgList, ['SCHEMA', '=' .. s:getuser(l:connInfo)])
     call add(l:msgList, ['DSN', '=' .. s:getdsn(l:connInfo.dsn)])
     call add(l:msgList, ['STATUS', '=' .. s:ch_open2status(a:port2)])
-    " filter と map のコールバックは文字列形式に変換
-    let l:running_filtered = filter(copy(s:sendexprList), 'v:val[0] ==# a:port2')
-    let l:running_mapped = map(l:running_filtered, 'string(v:val[1])')
-    call add(l:msgList, ['RUNNING', '=' .. join(l:running_mapped, ', ')])
+    call add(l:msgList, ['RUNNING', '=' .. join(map(filter(s:sendexprList[:], {_, x -> x[0] ==# port2}), {_, x -> string(x[1])}), ', ')])
 
     let l:msg2 = 'Info:'
     " s:f2.Foldl のコールバックも文字列形式に変換
-    let l:msg2 .= s:f2.Foldl('v:prev . " [" . v:val[0] . v:val[1] . "]"', "", l:msgList)
+    let l:msg2 ..= s:f2.Foldl({x, y -> x .. y}, "", map(l:msgList, {_, val -> ' [' .. val[0] ..  val[1] .. ']'}))
     return l:msg2
 endfunction
 
@@ -1267,7 +1234,7 @@ function s:connect(port, dsn, user, pass, opt2)
 
     if has_key(s:params, l:portStr) && get(a:opt2, 'reconnect', 0) ==# 0
         let a:opt2.reconnect = 1
-        call s:jobStop(l:port2)
+        call s:MyJobStop(l:port2)
         call s:connect(l:port2, a:dsn, a:user, a:pass, a:opt2)
         return
     endif
@@ -1302,8 +1269,8 @@ function s:connect(port, dsn, user, pass, opt2)
         let a:opt2.reconnect = 0
     endif
 
-    " job_start のコールバックに funcref で関数名を渡す
-    let s:jobs[l:portStr] = job_start(l:cmdlist, {
+    " s:jobStart のコールバックに funcref で関数名を渡す
+    let s:jobs[l:portStr] = s:jobStart(l:cmdlist, {
                 \ 'err_cb': funcref('s:Cb_joberr2'),
                 \ 'stoponexit': '',
                 \ 'out_cb': funcref('s:Cb_jobout2')
@@ -1315,10 +1282,10 @@ function s:kill_job(port) abort
     if !has_key(s:params, port)
         return
     endif
-    let channel = ch_open('localhost:' .. port)
+    let channel = s:chOpen(port)
     if s:ch_statusOk(channel)
-        let result = s:ch_evalexpr(channel, {"kill" : 1} , {"timeout":30000})
-        call s:ch_close(channel)
+        let result = s:chEvalexpr(channel, {"kill" : 1} , {"timeout":30000})
+        call s:myChClose(channel)
     else
     endif
     if has_key(s:jobs, port)
@@ -1334,15 +1301,16 @@ endfunction
 
 function s:jobStopAll() abort
     for [port, job] in items(s:params)
-        call s:jobStop(port)
+        call s:MyJobStop(port)
     endfor
 endfunction
 
 function s:jobStopNext(port) abort
+    echom 'jobStopNext port: ' .. a:port
     let port = a:port
     let save_cursor = getcurpos()
     let cport = s:getCurrentPort()
-    call s:jobStop(port)
+    call s:MyJobStop(port)
     if port ==# cport
         call s:jobNext()
     else
@@ -1352,7 +1320,7 @@ function s:jobStopNext(port) abort
     call setpos('.', save_cursor)
 endfunction
 
-function s:jobStop(port) abort
+function s:MyJobStop(port) abort
     call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
     if len(filter(s:sendexprList[:], {_, x -> x[0] ==# a:port})) > 0
         call s:echoMsg('IO05', 'Running process... ' .. string(s:sendexprList))
@@ -1393,7 +1361,7 @@ function s:cancel(port) abort
         call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
         let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
         if len(sendexprList) > 0
-            call job_stop(s:jobs[port], 'int')
+            call s:jobStop(s:jobs[port], 'int')
         endif
     endif
 endfunction
@@ -1474,7 +1442,7 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
 endfunction
 
 function s:cb_outputResultMany(ch, dict) abort
-    call s:ch_close(a:ch)
+    call s:myChClose(a:ch)
     let opt = get(a:dict.data, 'opt', {})
     let starttime = localtime()
     let port = get(a:dict.data.connInfo, 'port')
@@ -1650,7 +1618,7 @@ function s:getQuery(sql, limitrows2, opt2, port2)
     let l:tableJoinNm = join(s:getTableJoinListUniq(a:sql), " ")
     let l:tableJoinNmWithAs = s:getTableJoinList(a:sql)
     " 文字列結合に . を使用
-    let l:channel = ch_open('localhost:' . a:port2)
+    let l:channel = s:chOpen(a:port2)
 
     if !s:ch_statusOk(l:channel)
         return l:ret2
@@ -1677,20 +1645,20 @@ function s:getQuery(sql, limitrows2, opt2, port2)
                 \ 'tempfile': s:tempname()
                 \ }
 
-    let l:result = s:ch_evalexpr(l:channel, l:param, {"timeout": 30000})
+    let l:result = s:chEvalexpr(l:channel, l:param, {"timeout": 30000})
 
     if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
         call s:joblist(0)
     endif
 
     if type(l:result) ==# v:t_dict
-        call s:ch_close(l:channel)
+        call s:myChClose(l:channel)
         let l:ret2 = l:result
         " GetData メソッドを funcref と部分適用で割り当てる
         let l:ret2.GetData = funcref('s:DictGetData', [l:ret2])
         return l:ret2
     else
-        call s:ch_close(l:channel)
+        call s:myChClose(l:channel)
         return l:ret2
     endif
 endfunction
@@ -1733,7 +1701,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
         endif
         let cols = extend(cols, map(s:getColumns(item.tableNm, a:port), {_, x -> prefix .. x}))
     endfor
-    let channel = ch_open('localhost:' .. a:port)
+    let channel = s:chOpen(a:port)
     if !s:ch_statusOk(channel)
         return {}
     endif
@@ -1828,7 +1796,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
                 \, 'tempfile'      : s:tempname()}
     let param.setnmaps = getbufvar(bufnr, 'dbiclient_nmap', [])
     let param.setvmaps = getbufvar(bufnr, 'dbiclient_vmap', [])
-    call s:ch_sendexpr(channel, param , {"callback": funcref(a:callback)}, bufnr)
+    call s:chSendexpr(channel, param , {"callback": funcref(a:callback)}, bufnr)
     return channel
 endfunction
 
@@ -1879,7 +1847,7 @@ function s:connect_base(dsn, user, pass, limitrows, encoding, opt) abort
         let s:params[port].schema_list = get(opt, s:connect_opt_schema_list, g:dbiclient_connect_opt_schema_list)
         let s:params[port].history_data_flg = get(opt, s:connect_opt_history_data_flg, g:dbiclient_connect_opt_history_data_flg)
         let s:params[port].envdict = get(opt, s:connect_opt_envdict, g:dbiclient_connect_opt_envdict)
-        let s:params[port].process = job_info(s:jobs[port]).process
+        let s:params[port].process = s:jobInfo(s:jobs[port]).process
         let command = deepcopy(s:params[port], 1)
         let command.pass = a:pass
         let ret = s:dBCommandNoChk(port, command)
@@ -1900,7 +1868,7 @@ endfunction
 
 function s:dBCommandNoChk(port, command) abort
     let port = a:port
-    let channel = ch_open('localhost:' .. port)
+    let channel = s:chOpen(port)
     let errret = {}
     let errret.message = 'channel:' .. channel
     if !s:ch_statusOk(channel)
@@ -1908,32 +1876,18 @@ function s:dBCommandNoChk(port, command) abort
     endif
     let command = a:command
     let command.tempfile = s:tempname()
-    let result = s:ch_evalexpr(channel, command, {"timeout":60000})
+    let result = s:chEvalexpr(channel, command, {"timeout":60000})
     if s:ch_statusOk(channel)
         if type(result) ==# v:t_dict
-            call s:ch_close(channel)
+            call s:myChClose(channel)
             return result
         else
-            call s:ch_close(channel)
+            call s:myChClose(channel)
             return errret
         endif
     else
         return errret
     endif
-endfunction
-
-function s:ch_sendexpr(handle, expr, opt, bufnr) abort
-    let result = ch_sendexpr(a:handle, a:expr, a:opt)
-    call add(s:sendexprList, [a:expr.connInfo.port, a:handle, a:bufnr])
-    if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
-        call s:joblist(0)
-    endif
-    return result
-endfunction
-
-function s:ch_evalexpr(handle, expr, opt) abort
-    let result = ch_evalexpr(a:handle, a:expr, a:opt)
-    return result
 endfunction
 
 function s:dBCommand(port, command) abort
@@ -1956,7 +1910,7 @@ function s:dBCommandAsync(command, callback, port) abort
     if has_key(a:command, 'do') && len(get(a:command, 'do', [])) ==# 0
         return {}
     endif
-    let channel = ch_open('localhost:' .. port)
+    let channel = s:chOpen(port)
     if !s:ch_statusOk(channel)
         return {}
     endif
@@ -1999,14 +1953,14 @@ function s:dBCommandAsync(command, callback, port) abort
         let command.setvmaps = getbufvar(bufnr, 'dbiclient_vmap', [])
     endif
 
-    call s:ch_sendexpr(channel, command, {"callback": funcref(a:callback)}, bufnr)
+    call s:chSendexpr(channel, command, {"callback": funcref(a:callback)}, bufnr)
 endfunction
 
 function s:cb_do(ch, dict) abort
     let starttime = localtime()
     let port = get(a:dict.data.connInfo, 'port')
     let connInfo = get(a:dict.data, 'connInfo')
-    call s:ch_close(a:ch)
+    call s:myChClose(a:ch)
     let bufnr = s:bufnr(get(get(a:dict, 'data', {}), 'reloadBufnr', -1))
     let ro = getbufvar(bufnr, '&readonly', 0)
     let matchadds=[]
@@ -2165,7 +2119,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
     let port = get(a:dict.data.connInfo, 'port')
     let connInfo = get(a:dict.data, 'connInfo')
     let bufnr = a:bufnr
-    call s:ch_close(a:ch)
+    call s:myChClose(a:ch)
 
     let status = s:getStatus(port, connInfo)
     let opt = get(a:dict.data, 'opt', {})
@@ -3155,11 +3109,7 @@ function s:lenR(list)
     " map(list[:], ((_, x) => ...)) の変換
     " s:f2.Foldl が存在することを前提とする
     " 再帰呼び出しは s:lenR に変更
-    return s:f2.Foldl(
-                \ 'v:val + v:key', " v:key は map() の結果の要素
-                \ 0,
-                \ map(copy(a:list), 'type(v:val) == v:t_list && type(get(v:val, 1, \'\')) == v:t_string && get(v:val, 1, \'\') =~? "^SUBS" ? s:lenR(get(v:val, 2, [])) : 1')
-                \ )
+    return s:f2.Foldl({x, y -> x + y}, 0, map(list[:], {_, x -> type(x) == v:t_list && type(get(x, 1, '')) == v:t_string && get(x, 1, '') =~? '^SUBS' ? s:lenR(get(x, 2, [])) : 1}))
 endfunction
 
 " --- s:parseSqlLogicR の変換 ---
@@ -4459,13 +4409,13 @@ endfunction
 function s:zonbie()
     for file in split(glob(s:Filepath.join(s:getRootPath(), '*.lock')), "\n")
         let port = fnamemodify(file, ':p:t:r')
-        let channel = ch_open('localhost:' .. port)
+        let channel = s:chOpen(port)
         if s:ch_statusOk(channel)
             :sandbox let s:params[port] = eval(join(readfile(file)))
         else
             call delete(file)
         endif
-        call s:ch_close(channel)
+        call s:myChClose(channel)
     endfor
 endfunction
 
@@ -4479,52 +4429,18 @@ endfunction
 
 " s:ch_statusOk 関数の変換
 function s:ch_statusOk(channel)
-    let l:stat = ch_status(a:channel)
+    let l:stat = s:chStatus(a:channel)
     let l:starttime = localtime()
     while l:stat ==# 'buffered' && (localtime() - l:starttime) < 30
-        let l:stat = ch_status(a:channel)
+        let l:stat = s:chStatus(a:channel)
     endwhile
     if l:stat ==# 'buffered'
         " エラーメッセージの文字列結合は . を使用
-        throw 'error ch_status:buffered'
+        throw 'error s:chStatus:buffered'
     endif
     return s:ch_statusStrOk(l:stat)
 endfunction
 
-" s:ch_close 関数の変換
-function s:ch_close(channel)
-    let l:errorFlg = 0
-    " type() と v:t_channel は VimL でも同様に機能
-    if type(a:channel) ==# v:t_channel
-        let l:stat = ch_status(a:channel)
-        " for と range() は VimL でも同様に機能
-        for l:i in range(5)
-            let l:errorFlg = 0
-            let l:stat = ch_status(a:channel)
-            try
-                " !=# は VimL でも同様に機能
-                if l:stat !=# 'closed'
-                    " s:ch_statusOk の呼び出し
-                    if s:ch_statusOk(a:channel)
-                        call ch_close(a:channel)
-                    endif
-                endif
-                " break は VimL でも同様に機能
-                break
-            catch /./
-                let l:errorFlg = 1
-                " echoerr の文字列結合は . を使用
-                " echoerr 'error ch_close() ch_status:' . l:stat
-                " sleep は VimL でも同様に機能
-                sleep 100m
-            endtry
-        endfor
-        if l:errorFlg == 1
-            " エラーメッセージの文字列結合は . を使用
-            throw 'error ch_close() ch_status:' . l:stat
-        endif
-    endif
-endfunction
 
 function s:input(prompt, ...) abort
     let default = get(a:, 1, '')
@@ -4558,9 +4474,9 @@ function s:ch_open2status(port) abort
     if len(filter(s:sendexprList[:], {_, x -> x[0] ==# a:port})) > 0
         let ret = 'open'
     else
-        let ch = ch_open('localhost:' .. a:port)
-        let ret = ch_status(ch)
-        call s:ch_close(ch)
+        let ch = s:chOpen(a:port)
+        let ret = s:chStatus(ch)
+        call s:myChClose(ch)
     endif
     return ret
 endfunction
@@ -4635,6 +4551,110 @@ function s:bufCopy()
         call s:sethl(bufnr)
         call s:addbufferlist(port, bufnr)
         norm gg
+    endif
+endfunction
+
+function s:chEvalexpr(handle, expr, opt) abort
+    if has('nvim')
+        let result = ch_evalexpr(a:handle, a:expr, a:opt)
+    else
+        let result = ch_evalexpr(a:handle, a:expr, a:opt)
+    endif
+    return result
+endfunction
+
+function s:chSendexpr(handle, expr, opt, bufnr) abort
+    if has('nvim')
+        let result = chansend(a:handle, a:expr, a:opt)
+    else
+        let result = ch_sendexpr(a:handle, a:expr, a:opt)
+    endif
+    call add(s:sendexprList, [a:expr.connInfo.port, a:handle, a:bufnr])
+    if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
+        call s:joblist(0)
+    endif
+    return result
+endfunction
+
+function s:chStatus(channel) abort
+    if has('nvim')
+        return ch_status(a:channel)
+    else
+        return ch_status(a:channel)
+    endif
+endfunction
+
+function s:chOpen(port) abort
+    if has('nvim')
+        return ch_open('localhost:' .. a:port)
+    else
+        return ch_open('localhost:' .. a:port)
+    endif
+endfunction
+
+function s:chClose(handler) abort
+    if has('nvim')
+        return chanclose(a:handler)
+    else
+        return ch_close(a:handler)
+    endif
+endfunction
+
+function s:myChClose(channel)
+    let l:errorFlg = 0
+    " type() と v:t_channel は VimL でも同様に機能
+    if type(a:channel) ==# v:t_channel
+        let l:stat = s:chStatus(a:channel)
+        " for と range() は VimL でも同様に機能
+        for l:i in range(5)
+            let l:errorFlg = 0
+            let l:stat = s:chStatus(a:channel)
+            try
+                " !=# は VimL でも同様に機能
+                if l:stat !=# 'closed'
+                    " s:ch_statusOk の呼び出し
+                    if s:ch_statusOk(a:channel)
+                        call s:chClose(a:channel)
+                    endif
+                endif
+                " break は VimL でも同様に機能
+                break
+            catch /./
+                let l:errorFlg = 1
+                " echoerr の文字列結合は . を使用
+                " echoerr 'error ch_close() s:chStatus:' . l:stat
+                " sleep は VimL でも同様に機能
+                sleep 100m
+            endtry
+        endfor
+        if l:errorFlg == 1
+            " エラーメッセージの文字列結合は . を使用
+            throw 'error ch_close() s:chStatus:' . l:stat
+        endif
+    endif
+endfunction
+
+function s:jobInfo(job) abort
+    if has('nvim')
+        return job_info(a:job)
+    else
+        return job_info(a:job)
+    endif
+endfunction
+
+function s:jobStop(job, signal) abort
+    if has('nvim') && exists('*jobstop')
+        return jobstop(a:job, a:signal)
+    else
+        return job_stop(a:job, a:signal)
+    endif
+endfunction
+
+function s:jobStart(cmdlist, opt) abort
+    if has('nvim') && exists('*jobstart')
+        return jobstart(a:cmdlist, a:opt)
+    else
+        return job_start(a:cmdlist, a:opt)
     endif
 endfunction
 
