@@ -1545,14 +1545,14 @@ function s:splitSql(sqllist, doFlg)
 
     " filter(sqllist[:], (_, x) => trim(x) ==# g:dbiclient_sql_delimiter2)
     " -> VimLのfilterは文字列形式の式を受け取る
-    if len(filter(copy(a:sqllist), 'trim(v:val) ==# g:dbiclient_sql_delimiter2')) > 0
+    if len(filter(copy(a:sqllist), {_, x -> trim(x) ==# g:dbiclient_sql_delimiter2})) > 0
         let l:delim = g:dbiclient_sql_delimiter2
     endif
 
     " var list = sqllist[:] -> VimLではlet
     let l:list = copy(a:sqllist) " リストのコピー
     " list = filter(list, (_, x) => !empty(trim(x))) -> VimLのfilter
-    let l:list = filter(l:list, '!empty(trim(v:val))')
+    let l:list = filter(l:list, {_, x -> !empty(trim(x))})
 
     " var sql = join(list, "\n") -> VimLではlet
     let l:sql = join(l:list, "\n")
@@ -1571,22 +1571,18 @@ function s:splitSql(sqllist, doFlg)
             " msp[2] は matchstrpos が見つからなかった場合に -1 を返す
             if l:msp[2] > -1
                 " substitute(trim(msp[0]), '\v\' .. delim .. '\s*%$', '', '')
-                call add(l:ret1, substitute(trim(l:msp[0]), '\v\\' .. l:delim .. '\s*%$', '', ''))
+                call add(l:ret1, substitute(trim(l:msp[0]), '\v\' .. l:delim .. '\s*%$', '', ''))
             else
                 " substitute(trim(sql[start : ]), '\v\' .. delim .. '\s*%$', '', '')
                 " VimLでは文字列のスライスは sql[start:] のように書く
-                call add(l:ret1, substitute(trim(l:sql[l:start : ]), '\v\\' .. l:delim .. '\s*%$', '', ''))
+                call add(l:ret1, substitute(trim(l:sql[l:start : ]), '\v\' .. l:delim .. '\s*%$', '', ''))
             endif
             let l:start = l:msp[2]
         endwhile
-        " return filter(ret1, (_, x) => !empty(trim(x))) -> VimLのfilter
-        return filter(l:ret1, '!empty(trim(v:val))')
+        return filter(l:ret1, {_, x -> !empty(trim(x))})
     else
         if l:sql =~? '\v^\\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
-            " return s:split(sql, '\v' .. delim .. '\s*(\n|$)')->filter(((_, x) => !empty(trim(x))))
-            " ->filter は Vim9 script の機能。VimLではmap()やfilter()をネストする。
-            let l:temp_list = s:split(l:sql, '\v' .. l:delim .. '\s*(\n|$)')
-            return filter(l:temp_list, '!empty(trim(v:val))')
+            return s:split(l:sql, '\v' .. l:delim .. '\s*(\n|$)')->filter(({_, x -> !empty(trim(x))}))
         else
             " var parsedata = s:parseSQL2(sql) -> VimLではlet
             let l:parsedata = s:parseSQL2(l:sql)
