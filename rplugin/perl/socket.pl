@@ -522,12 +522,14 @@ sub rutine{
             } elsif($data->{table_info} == 1){
                 my $ltableNm=!defined($data->{table_name}) ? undef : $data->{table_name};
                 my $ltabletype=!defined($data->{tabletype}) ? undef : $data->{tabletype};
+                my $ltableschem=$g_postgresflg ? 'public' : $user;
                 $ltableNm=!defined($ltableNm) || $ltableNm =~ /^\s*$/ ? undef : $ltableNm;
                 $ltabletype=!defined($ltabletype) || $ltabletype =~ /^\s*$/ ? undef : $ltabletype;
-                $g_sth=$g_dbh->table_info( undef, $user, $ltableNm, $ltabletype );
+                $ltableschem=!defined($ltableschem) || $ltableschem =~ /^\s*$/ ? undef : $ltableschem;
+                $g_sth=$g_dbh->table_info( undef, $ltableschem, $ltableNm, $ltabletype );
                 if ($g_sth->rows == 0) {
-                    my $upper_user = uc2 $user;
-                    $g_sth=$g_dbh->table_info( undef, $upper_user, $ltableNm, $ltabletype );
+                    my $upper_ltableschem = uc2 $ltableschem;
+                    $g_sth=$g_dbh->table_info( undef, $upper_ltableschem, $ltableNm, $ltabletype );
                 }
                 outputlog("SQL: TABLE_INFO", $g_port);
                 eval {
