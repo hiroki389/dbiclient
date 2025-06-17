@@ -36,6 +36,7 @@ let s:msg = {
             \'IO19': 'Start the socket.pl.',
             \'IO20': 'SQL running on server.',
             \'IO22': 'SQL running on server.',
+            \'EO23': '1000 lines.',
             \}
 
 let s:tab_placefolder = '\V<<#TAB#>>'
@@ -341,7 +342,7 @@ function dbiclient#createInsert(keys, vallist, tableNm) abort
 endfunction
 
 function dbiclient#createDeleteInsertSql(...) range abort
-    let limitrows = get(a:, 1, s:getLimitrows())
+    let limitrows = get(a:, 1, s:getLimitrows() + 1)
     let sqls = join(getline(a:firstline, a:lastline),"\n")->split('\v;\s*($|\n)')
     let bufname = "ScratchDeleteInsert"
     let bufnr = s:aboveNewBuffer(bufname)
@@ -355,7 +356,11 @@ function dbiclient#createDeleteInsertSql(...) range abort
                     throw 'empty'
                 else
                     let tmp = readfile(res.data.tempfile)->join(g:dbiclient_prelinesep)
-                    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+                    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+                    if len(list) == 1001
+                        call s:echoMsg('EO23', s:getCurrentPort())
+                        return 0
+                    endif
                     let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(get(res, 'cols', []), s:split(x, g:dbiclient_col_delimiter))}, []).value()
                     let row = s:createDelete(param, param, res.data.tableNm, s:getCurrentPort())
                     call s:appendbufline(bufnr, '$', row)
@@ -377,13 +382,19 @@ function dbiclient#cancel() abort
     call s:cancel(s:getCurrentPort())
 endfunction
 
-function dbiclient#clearCache() abort
+function dbiclient#clearCache(bang, tableNm) abort
     let port = s:getCurrentPort()
     let connInfo = get(s:params, port, {})
     let schema = s:getuser(connInfo)
-    for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/' .. schema .. '_*')), "\n")
-        call delete(file)
-    endfor
+    if a:bang ==# '!'
+        for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/*' .. schema .. '_*')), "\n")
+            call delete(file)
+        endfor
+    else
+        for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/*' .. schema .. '_' .. a:tableNm .. '_*')), "\n")
+            call delete(file)
+        endfor
+    endif
 endfunction
 
 function dbiclient#openbuf() abort
@@ -750,12 +761,12 @@ function s:doDeleteInsert() abort
     let lastline = line('$')
     let list = getline(firstline, lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[firstline - offset + remarkrow : lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     if get(dbiclient_bufmap, 'hasnext', 1) ==# 1
         return
@@ -812,12 +823,12 @@ function s:createInsertRange() range abort
     let bufname = "ScratchInsert"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -903,12 +914,12 @@ function s:createUpdateRange() range abort
     let bufname = "ScratchUpdate"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -968,12 +979,12 @@ function s:createDeleteRange() range abort
     let bufname = "ScratchDelete"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v"(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -1627,18 +1638,19 @@ function s:getQuery(sql, limitrows2, opt2, port2)
                 \ "tableJoinNm": l:tableJoinNm,
                 \ "tableJoinNmWithAs": l:tableJoinNmWithAs,
                 \ "cols": [],
-                \ 'connInfo': s:params[a:port2],
                 \ "limitrows": a:limitrows2,
                 \ 'linesep': get(a:opt2, 'linesep', g:dbiclient_linesep),
                 \ 'surround': get(a:opt2, 'surround', g:dbiclient_surround),
                 \ 'null': get(a:opt2, 'null', g:dbiclient_null),
+                \ 'prelinesep': '',
                 \ 'table_info': get(a:opt2, 'table_info', 0),
                 \ 'column_info': get(a:opt2, 'column_info', 0),
                 \ 'column_info_data': get(a:opt2, 'column_info_data', 0),
                 \ 'single_table': get(a:opt2, 'single_table', ''),
                 \ 'reloadBufname': get(a:opt2, 'reloadBufname', ''),
                 \ 'reloadBufnr': get(a:opt2, 'reloadBufnr', -1),
-                \ 'tempfile': s:tempname()
+                \ 'tempfile': s:tempname(),
+                \ 'connInfo': s:params[a:port2]
                 \ }
 
     let l:result = s:chEvalexpr(l:channel, l:param, {"timeout": 30000})
