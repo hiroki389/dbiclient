@@ -356,7 +356,7 @@ function dbiclient#createDeleteInsertSql(...) range abort
                     throw 'empty'
                 else
                     let tmp = readfile(res.data.tempfile)->join(g:dbiclient_prelinesep)
-                    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+                    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
                     if len(list) == 1001
                         call s:echoMsg('EO23', s:getCurrentPort())
                         return 0
@@ -761,12 +761,12 @@ function s:doDeleteInsert() abort
     let lastline = line('$')
     let list = getline(firstline, lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[firstline - offset + remarkrow : lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
     if get(dbiclient_bufmap, 'hasnext', 1) ==# 1
         return
@@ -823,12 +823,12 @@ function s:createInsertRange() range abort
     let bufname = "ScratchInsert"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), '\V' .. g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' .. g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -914,12 +914,12 @@ function s:createUpdateRange() range abort
     let bufname = "ScratchUpdate"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -979,12 +979,12 @@ function s:createDeleteRange() range abort
     let bufname = "ScratchDelete"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
-    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let offset = getbufvar(s:bufnr('%'), 'dbiclient_col_line', 0)
     let remarkrow = getbufvar(s:bufnr('%'), 'dbiclient_remarks_flg', 0)
     let beforeList = getbufvar(s:bufnr('%'), 'dbiclient_lines', {})[a:firstline - offset + remarkrow : a:lastline - offset + remarkrow]
     let tmp2 = map(deepcopy(beforeList, 1), {_, line -> substitute(line, g:dbiclient_prelinesep, '', 'g')})->join(g:dbiclient_prelinesep)
-    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<="(.|' ..  g:dbiclient_prelinesep .. '){-}"', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
+    let beforeList = tmp2->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
     let dbiclient_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
     if dbiclient_bufmap.alignFlg
         let list = map(list, {_, line -> join(map(split(line, g:dbiclient_col_delimiter_align), {_, x -> trim(x)}), g:dbiclient_col_delimiter)})
@@ -1577,7 +1577,7 @@ function s:splitSql(sqllist, doFlg)
         while l:start > -1
             " var msp = matchstrpos(sql, '\v^.{-}\n\s*\' .. delim .. '\s*(\n|$)', start) -> VimLではlet
             " 正規表現内のバックスラッシュはさらにエスケープが必要な場合がある
-            let l:msp = matchstrpos(l:sql, '\v^.{-}\n\s*\\' .. l:delim .. '\s*(\n|$)', l:start)
+            let l:msp = matchstrpos(l:sql, '\v^.{-}\n\s*\' .. l:delim .. '\s*(\n|$)', l:start)
             
             " msp[2] は matchstrpos が見つからなかった場合に -1 を返す
             if l:msp[2] > -1
@@ -2733,21 +2733,21 @@ endfunction
 function s:alignLinesCRsetpos(bufnr1, curpos)
     let l:ret1 = []
     " getbufline(...)->map(((_, x) => split(x, "\t", 1))) の変換
-    for l:colval in map(getbufline(a:bufnr1, a:curpos, '$'), 'split(v:val, "\\t", 1)')
+    for l:colval in map(getbufline(a:bufnr1, a:curpos, '$'), {_, x -> split(x, "\t", 1)})
         let l:lines = []
         " map(colval[:], ((_, x) => '')) の変換
-        let l:emptyline = map(copy(l:colval), "''") " copy() で安全にコピー
+        let l:emptyline = map(copy(l:colval), {_, x -> ''}) " copy() で安全にコピー
         call add(l:lines, copy(l:colval)) " copy() で安全にコピー
         " map(colval[:], ((_, x) => split(x, '<<CRLF>>'))) の変換
-        let l:colval2 = map(copy(l:colval), 'split(v:val, "<<CRLF>>")')
+        let l:colval2 = map(copy(l:colval), {_, x -> split(x, '<<CRLF>>')})
         " filter(map(colval2[:], ((i, x) => [i, len(x)])), ((_, x) => x[1] > 1)) の変換
-        let l:index = filter(map(copy(l:colval2), '[v:key, len(v:val)]'), 'v:val[1] > 1')
+        let l:index = filter(map(copy(l:colval2), {i, x -> [i, len(x)]}), {_, x -> x[1] > 1})
         " max(map(index[:], ((_, x) => x[1]))) の変換
-        let l:max = max(map(copy(l:index), 'v:val[1]'))
+        let l:max = max(map(copy(l:index), {_, x -> x[1]}))
 
         if l:max > 1
             " extend(lines, map(range(max - 1), ((_, x) => emptyline[:]))) の変換
-            call extend(l:lines, map(range(l:max - 1), 'copy(l:emptyline)'))
+            call extend(l:lines, map(range(l:max - 1), {_, x -> emptyline[:]}))
             for l:id in l:index
                 for l:i in range(l:id[1])
                     let l:lines[l:i][l:id[0]] = l:colval2[l:id[0]][l:i]
@@ -2799,14 +2799,14 @@ function s:getalignlist2(lines0, maxCols)
 
     let l:lines3 = []
     " mapnew(lines, ((_, x) => mapnew(split(x, ..., 1), ((_, xx) => substitute(...))))) の変換
-    let l:lines3 = map(l:lines, 'map(split(v:val, g:dbiclient_col_delimiter, 1), "substitute(v:val, s:tab_placefolder, \"\\t\", ''g'')")')
+    let lines3 = mapnew(lines, {_, x -> mapnew(split(x, g:dbiclient_col_delimiter, 1), {_, xx -> substitute(xx, s:tab_placefolder, "\t", 'g')})})
     
     call s:debugLog('align:copy')
     call s:debugLog('align:maxCols' . string(a:maxCols)) " 文字列連結は .
 
     let l:lines4 = []
     " mapnew(lines3, ((_, cols) => colsize ==# len(cols) ? join(mapnew(cols, (...))), ...) の変換
-    let l:lines4 = map(l:lines3, ' (l:colsize ==# len(v:val) ? join(map(v:val, "v:val . repeat('' '', a:maxCols[v:key] + 1 - strdisplaywidth(v:val))"), g:dbiclient_col_delimiter_align . '' '') : join(v:val, g:dbiclient_col_delimiter)) ')
+    let lines4 = mapnew(lines3, {_, cols -> colsize ==# len(cols) ? join(mapnew(cols, {i, col -> col .. repeat(' ', a:maxCols[i] + 1 - strdisplaywidth(col))}), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter)})
     
     call s:debugLog('align:end')
     return l:lines4
@@ -3006,7 +3006,7 @@ function s:lex(sql)
         let l:i += 1
     endfor
     " filter(tokenList, ((_, x) => x !~ '^$')) の変換
-    return filter(l:tokenList, 'v:val !~# "^$"')
+    return filter(l:tokenList, {_, x -> x !~ '^$'})
 endfunction
 
 function s:resolveToken(token)
@@ -3041,7 +3041,7 @@ function s:resolveToken(token)
                 \     ['PARENTHESES',  '^\V)']]
 
     " filter(patternList, (_, x) => token =~? x[1]) の変換
-    let l:pattern = filter(l:patternList, 'a:token =~? v:val[1]')
+    let l:pattern = filter(l:patternList, {_, x -> a:token =~? x[1]})
     " get(get(pattern, 0, []), 0, 'TOKEN') は VimL でも同様に機能
     return get(get(l:pattern, 0, []), 0, 'TOKEN')
 endfunction
@@ -3049,33 +3049,31 @@ endfunction
 
 function s:GetNotMaintype(data2, mtype)
     " filter(data2[:], ((_, x) => x[0] !~? mtype)) の変換
-    return filter(copy(a:data2), 'v:val[0] !~? a:mtype')
+    return filter(copy(a:data2), {_, x -> x[0] !~? a:mtype})
 endfunction
 
 function s:GetMaintype(data2, mtype)
     " filter(data2[:], ((_, x) => x[0] =~? mtype)) の変換
-    return filter(copy(a:data2), 'v:val[0] =~? a:mtype')
+    return filter(copy(a:data2), {_, x -> x[0] =~? a:mtype})
 endfunction
 
 function s:GetSql(data2)
     " map(data2[:], ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])) の変換
     " 再帰呼び出しは s:GetSql に変更
-    return join(map(copy(a:data2), 'type(v:val[2]) ==# v:t_list ? s:GetSql(v:val[2]) : v:val[2]'), '')
+    return join(map(copy(a:data2), {_, x -> type(x[2]) ==# v:t_list ? s:GetSql(x[2]) : x[2]}), '')
 endfunction
 
 function s:GetSqlLineDelComment2(data2)
     " filter(data2[:], ((_, x) => x[1] != 'COMMENT')) の変換
     " map(..., ((_, x) => type(x[2]) ==# v:t_list ? GetSql(x[2]) : x[2])) の変換
     " 再帰呼び出しは s:GetSql に変更
-    return join(map(filter(copy(a:data2), 'v:val[1] !=# "COMMENT"'), 'type(v:val[2]) ==# v:t_list ? s:GetSql(v:val[2]) : v:val[2]'), '')
+    return join(map(filter(copy(a:data2), {_, x -> x[1] != 'COMMENT'}), {_, x -> type(x[2]) ==# v:t_list ? s:GetSql(x[2]) : x[2]}), '')
 endfunction
 
 function s:SplitSql2(data2, delim)
     let l:type = a:delim ==# g:dbiclient_sql_delimiter1 ? 'SEMICOLON' : a:delim ==# g:dbiclient_sql_delimiter2 ? 'SLASH' : ''
-    " map(data2[:], ((i, x: list<any>) => x[1] ==# type ? i : -1)) の変換 (v:key を使用)
-    let l:data3 = map(copy(a:data2), 'v:val[1] ==# l:type ? v:key : -1')
-    " filter(data3[:], ((_, x) => x != -1)) の変換
-    let l:indexes = filter(copy(l:data3), 'v:val != -1')
+    let l:data3 = map(copy(a:data2), {i, x -> x[1] ==# l:type ? i : -1})
+    let l:indexes = filter(copy(l:data3), {_, x -> x != -1})
     call add(l:indexes, 0)
     let l:ret1 = []
     let l:start = 0
@@ -3181,7 +3179,7 @@ function s:parseSQL2(sql1)
         call s:debugLog('parse start')
         call s:debugLog('resolve start')
         " map(tokens[:], ((_, x: string) => [s:resolveToken(x), x])) の変換
-        let l:tokens2 = map(copy(l:tokens), '[s:resolveToken(v:val), v:val]')
+        let l:tokens2 = map(copy(l:tokens), {_, x -> [s:resolveToken(x), x]})
         call s:debugLog('resolve end')
         call s:debugLog('parse start') " ログが重複しているが、元のコードに合わせる
         let l:data = s:parseSqlLogicR(l:tokens2, 0, 0)
