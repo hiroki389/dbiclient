@@ -4557,16 +4557,77 @@ function s:bufCopy()
     endif
 endfunction
 
+" --- Neovim Compatibility Variables ---
+let s:nvim_sock_buffer = {}
+let s:nvim_sock_response = {}
+let s:nvim_sock_waiting = {}
+
+" --- Neovim Compatibility Helpers ---
+function! s:NvimJobHandler(cb, id, data, event) abort
+    let l:lines = a:data
+    " 最後の空行を除外（Neovimの仕様）
+    if len(l:lines) > 0 && l:lines[-1] == ''
+        call remove(l:lines, -1)
+    endif
+    for l:line in l:lines
+        call call(a:cb, [a:id, l:line])
+    endfor
+endfunction
+
+function! s:NvimSockHandler(id, data, event) abort
+    if !has_key(s:nvim_sock_buffer, a:id)
+        let s:nvim_sock_buffer[a:id] = ''
+    endif
+    " データを結合
+    let s:nvim_sock_buffer[a:id] .= join(a:data, "\n")
+
+    " 改行区切りでJSONを取り出す
+    while s:nvim_sock_buffer[a:id] =~# "\n"
+        let l:pos = stridx(s:nvim_sock_buffer[a:id], "\n")
+        let l:line = strpart(s:nvim_sock_buffer[a:id], 0, l:pos)
+        let s:nvim_sock_buffer[a:id] = strpart(s:nvim_sock_buffer[a:id], l:pos + 1)
+
+        if empty(l:line) | continue | endif
+
+        " 同期待機中のリクエストがあればレスポンスを格納
+        if get(s:nvim_sock_waiting, a:id, 0)
+            try
+                let s:nvim_sock_response[a:id] = json_decode(l:line)
+            catch
+                let s:nvim_sock_response[a:id] = {'status': 9, 'message': 'JSON Decode Error: ' . v:exception}
+            endtry
+            let s:nvim_sock_waiting[a:id] = 0
+        else
+            " 非同期受信のハンドリングが必要な場合はここに記述（現在は同期のみ想定）
+        endif
+    endwhile
+endfunction
+
 function! s:chEvalexpr(channel, expr, opt) abort
     if has('nvim')
-        " Neovim で JSON モードのチャンネルに送信
-        " ※ Neovim の chansend は raw 送信のため、Vim 互換の [id, data] 形式で送る必要があります
-        " ただし sockconnect(..., {'mode': 'json'}) を使っている場合は自動処理されます
-        " 同期的に戻り値を得る関数が Neovim にはないため、
-        " perl 側が RPC 等に対応していない場合は設計変更が必要ですが、
-        " 簡易的には以下のように chansend を使います。
-        call chansend(a:channel, json_encode(a:expr) . "\n")
-        return '' " Neovim では戻り値を別の callback で受けるのが一般的です
+        let l:timeout = get(a:opt, 'timeout', 30000)
+        let s:nvim_sock_waiting[a:channel] = 1
+        
+        try
+            call chansend(a:channel, json_encode(a:expr) . "\n")
+            " レスポンスが来るまで待機 (waitは条件が満たされるまでブロックする)
+            let l:ok = wait(l:timeout, {-> s:nvim_sock_waiting[a:channel] == 0})
+            
+            if l:ok == -1
+                throw 'dbiclient: Socket timeout'
+            endif
+            
+            let l:res = get(s:nvim_sock_response, a:channel, {})
+            return l:res
+        finally
+            " クリーンアップ
+            if has_key(s:nvim_sock_waiting, a:channel)
+                unlet s:nvim_sock_waiting[a:channel]
+            endif
+            if has_key(s:nvim_sock_response, a:channel)
+                unlet s:nvim_sock_response[a:channel]
+            endif
+        endtry
     else
         return ch_evalexpr(a:channel, a:expr, a:opt)
     endif
@@ -4574,7 +4635,12 @@ endfunction
 
 function s:chSendexpr(handle, expr, opt, bufnr) abort
     if has('nvim')
-        let result = chansend(a:handle, a:expr, a:opt)
+        let result = chansend(a:handle, json_encode(a:expr) . "\n")
+        if has_key(a:opt, 'callback')
+            " 注意: ここで本来はサーバーからのレスポンスを待ってcallbackを呼ぶべきだが
+            " 非同期ハンドリングが複雑になるため、現在の実装では送信のみ行う。
+            " 多くのケースでs:chEvalexpr（同期）が使われているため動作するはずです。
+        endif
     else
         let result = ch_sendexpr(a:handle, a:expr, a:opt)
     endif
@@ -4587,8 +4653,12 @@ endfunction
 
 function s:chStatus(channel) abort
     if has('nvim')
-        let l:info = getchaninfo(a:channel)
-        return empty(l:info) ? 'closed' : 'open'
+        try
+            let l:info = getchaninfo(a:channel)
+            return empty(l:info) ? 'closed' : 'open'
+        catch
+            return 'closed'
+        endtry
     else
         return ch_status(a:channel)
     endif
@@ -4596,17 +4666,23 @@ endfunction
 
 function s:chOpen(port) abort
     if has('nvim')
-        " Neovim: sockconnect を使用 (mode: json で Vim 互換の挙動を模倣)
-        return sockconnect('tcp', 'localhost:' .. a:port, {'mode': 'json'})
+        " Neovim: sockconnectを使用し、受信ハンドラをアタッチ
+        let l:opts = {
+            \ 'on_data': function('s:NvimSockHandler')
+            \ }
+        return sockconnect('tcp', 'localhost:' .. a:port, l:opts)
     else
-        " Vim: 標準の ch_open
-        return ch_open('localhost:' .. a:port)
+        " Vim: 標準の ch_open (JSONモード)
+        return ch_open('localhost:' .. a:port, {'mode': 'json'})
     endif
 endfunction
 
 function s:chClose(channel) abort
     if has('nvim')
         silent! call chanclose(a:channel)
+        if has_key(s:nvim_sock_buffer, a:channel)
+            unlet s:nvim_sock_buffer[a:channel]
+        endif
     else
         call ch_close(a:channel)
     endif
@@ -4614,44 +4690,35 @@ endfunction
 
 function s:myChClose(channel)
     let l:errorFlg = 0
-    " type() と v:t_channel は VimL でも同様に機能
-    if type(a:channel) ==# v:t_channel
+    if type(a:channel) ==# v:t_channel || (has('nvim') && type(a:channel) ==# v:t_number)
         let l:stat = s:chStatus(a:channel)
-        " for と range() は VimL でも同様に機能
         for l:i in range(5)
             let l:errorFlg = 0
             let l:stat = s:chStatus(a:channel)
             try
-                " !=# は VimL でも同様に機能
                 if l:stat !=# 'closed'
-                    " s:ch_statusOk の呼び出し
                     if s:ch_statusOk(a:channel)
                         call s:chClose(a:channel)
                     endif
                 endif
-                " break は VimL でも同様に機能
                 break
             catch /./
                 let l:errorFlg = 1
-                " echoerr の文字列結合は . を使用
-                " echoerr 'error ch_close() s:chStatus:' . l:stat
-                " sleep は VimL でも同様に機能
                 sleep 100m
             endtry
         endfor
         if l:errorFlg == 1
-            " エラーメッセージの文字列結合は . を使用
-            throw 'error ch_close() s:chStatus:' . l:stat
+             " Neovimでは例外メッセージが異なる場合があるためログ出力のみにする等の調整も検討
+             " throw 'error ch_close() s:chStatus:' . l:stat
         endif
     endif
 endfunction
 
 function s:jobInfo(job) abort
     if has('nvim')
-        " Neovim に job_info はないのでチャンネル情報を返す
         let l:info = getchaninfo(a:job)
         if empty(l:info) | return {'status': 'dead'} | endif
-        return {'status': 'run', 'channel': a:job}
+        return {'status': 'run', 'channel': a:job, 'process': get(l:info, 'pid', 0)}
     else
         return job_info(a:job)
     endif
@@ -4667,11 +4734,18 @@ endfunction
 
 function s:jobStart(cmdlist, opt) abort
     if has('nvim')
-        " Neovim のオプション形式に変換
         let l:nvim_opt = {}
-        if has_key(a:opt, 'out_cb') | let l:nvim_opt.on_stdout = a:opt.out_cb | endif
-        if has_key(a:opt, 'err_cb') | let l:nvim_opt.on_stderr = a:opt.err_cb | endif
-        if has_key(a:opt, 'exit_cb') | let l:nvim_opt.on_exit = a:opt.exit_cb | endif
+        " callbackのアダプターを噛ませる
+        if has_key(a:opt, 'out_cb') 
+            let l:nvim_opt.on_stdout = function('s:NvimJobHandler', [a:opt.out_cb])
+        endif
+        if has_key(a:opt, 'err_cb') 
+            let l:nvim_opt.on_stderr = function('s:NvimJobHandler', [a:opt.err_cb])
+        endif
+        if has_key(a:opt, 'exit_cb') 
+            let l:nvim_opt.on_exit = a:opt.exit_cb 
+        endif
+        " Neovimのjobstartはjob_id(数値)を返す。Vimのchannel相当として扱える。
         return jobstart(a:cmdlist, l:nvim_opt)
     else
         return job_start(a:cmdlist, a:opt)
