@@ -4557,13 +4557,19 @@ function s:bufCopy()
     endif
 endfunction
 
-function s:chEvalexpr(handle, expr, opt) abort
+function! s:chEvalexpr(channel, expr, opt) abort
     if has('nvim')
-        let result = ch_evalexpr(a:handle, a:expr, a:opt)
+        " Neovim で JSON モードのチャンネルに送信
+        " ※ Neovim の chansend は raw 送信のため、Vim 互換の [id, data] 形式で送る必要があります
+        " ただし sockconnect(..., {'mode': 'json'}) を使っている場合は自動処理されます
+        " 同期的に戻り値を得る関数が Neovim にはないため、
+        " perl 側が RPC 等に対応していない場合は設計変更が必要ですが、
+        " 簡易的には以下のように chansend を使います。
+        call chansend(a:channel, json_encode(a:expr) . "\n")
+        return '' " Neovim では戻り値を別の callback で受けるのが一般的です
     else
-        let result = ch_evalexpr(a:handle, a:expr, a:opt)
+        return ch_evalexpr(a:channel, a:expr, a:opt)
     endif
-    return result
 endfunction
 
 function s:chSendexpr(handle, expr, opt, bufnr) abort
@@ -4581,7 +4587,8 @@ endfunction
 
 function s:chStatus(channel) abort
     if has('nvim')
-        return ch_status(a:channel)
+        let l:info = getchaninfo(a:channel)
+        return empty(l:info) ? 'closed' : 'open'
     else
         return ch_status(a:channel)
     endif
@@ -4589,17 +4596,19 @@ endfunction
 
 function s:chOpen(port) abort
     if has('nvim')
-        return ch_open('localhost:' .. a:port)
+        " Neovim: sockconnect を使用 (mode: json で Vim 互換の挙動を模倣)
+        return sockconnect('tcp', 'localhost:' .. a:port, {'mode': 'json'})
     else
+        " Vim: 標準の ch_open
         return ch_open('localhost:' .. a:port)
     endif
 endfunction
 
-function s:chClose(handler) abort
+function s:chClose(channel) abort
     if has('nvim')
-        return chanclose(a:handler)
+        silent! call chanclose(a:channel)
     else
-        return ch_close(a:handler)
+        call ch_close(a:channel)
     endif
 endfunction
 
@@ -4639,23 +4648,31 @@ endfunction
 
 function s:jobInfo(job) abort
     if has('nvim')
-        return job_info(a:job)
+        " Neovim に job_info はないのでチャンネル情報を返す
+        let l:info = getchaninfo(a:job)
+        if empty(l:info) | return {'status': 'dead'} | endif
+        return {'status': 'run', 'channel': a:job}
     else
         return job_info(a:job)
     endif
 endfunction
 
 function s:jobStop(job, signal) abort
-    if has('nvim') && exists('*jobstop')
-        return jobstop(a:job, a:signal)
+    if has('nvim')
+        return jobstop(a:job)
     else
         return job_stop(a:job, a:signal)
     endif
 endfunction
 
 function s:jobStart(cmdlist, opt) abort
-    if has('nvim') && exists('*jobstart')
-        return jobstart(a:cmdlist, a:opt)
+    if has('nvim')
+        " Neovim のオプション形式に変換
+        let l:nvim_opt = {}
+        if has_key(a:opt, 'out_cb') | let l:nvim_opt.on_stdout = a:opt.out_cb | endif
+        if has_key(a:opt, 'err_cb') | let l:nvim_opt.on_stderr = a:opt.err_cb | endif
+        if has_key(a:opt, 'exit_cb') | let l:nvim_opt.on_exit = a:opt.exit_cb | endif
+        return jobstart(a:cmdlist, l:nvim_opt)
     else
         return job_start(a:cmdlist, a:opt)
     endif
