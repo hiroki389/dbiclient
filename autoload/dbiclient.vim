@@ -1177,10 +1177,10 @@ function s:getUnusedPort() abort
 endfunction
 
 function s:connect_secure(port, dsn, user, passwordName, opt) abort
-    let pass = '' 
+    let pass = ''
     let opt = a:opt
     let shadowpath = s:Filepath.join(s:getRootPath(), 'SECPASS_') .. a:passwordName
-    if filereadable(shadowpath) 
+    if filereadable(shadowpath)
         silent! keepjumps exe 'bo new ' .. shadowpath
         let pass = matchstr(getline(1), '^shadow:\zs.*')
         keepjumps bwipeout!
@@ -1578,7 +1578,7 @@ function s:splitSql(sqllist, doFlg)
             " var msp = matchstrpos(sql, '\v^.{-}\n\s*\' .. delim .. '\s*(\n|$)', start) -> VimLではlet
             " 正規表現内のバックスラッシュはさらにエスケープが必要な場合がある
             let l:msp = matchstrpos(l:sql, '\v^.{-}\n\s*\' .. l:delim .. '\s*(\n|$)', l:start)
-            
+
             " msp[2] は matchstrpos が見つからなかった場合に -1 を返す
             if l:msp[2] > -1
                 " substitute(trim(msp[0]), '\v\' .. delim .. '\s*%$', '', '')
@@ -1926,7 +1926,7 @@ function s:dBCommandAsync(command, callback, port) abort
     let command.tempfile = s:tempname()
     let command.connInfo = s:params[port]
     let bufnr = -1
-    if get(command, "nodisplay", 0) !=# 1 
+    if get(command, "nodisplay", 0) !=# 1
         let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
         let bufname='Result_' .. s:getuser(s:params[a:port]) .. '_' .. port .. '_' .. ymdhmss
         let bufnr = s:bufnr(bufname)
@@ -2650,7 +2650,12 @@ function s:align(alignFlg, bufnr, preCr) abort
             let border = join(map(split(headstr, g:dbiclient_col_delimiter_align), {_, x -> repeat('-', strdisplaywidth(x))}), '+')
         endif
         if g:dbiclient_disp_headerline
-            let lines[1 + remarkrow] = border 
+            call s:debugLog('border:' .. border)
+            call s:debugLog('len(lines):' .. len(lines))
+            let l:idx = 1 + remarkrow
+            call remove(lines, l:idx)
+            call insert(lines, border, l:idx)
+            call s:debugLog('border:end')
         endif
     else
         let surr='\V'
@@ -2800,14 +2805,14 @@ function s:getalignlist2(lines0, maxCols)
     let l:lines3 = []
     " mapnew(lines, ((_, x) => mapnew(split(x, ..., 1), ((_, xx) => substitute(...))))) の変換
     let lines3 = mapnew(lines, {_, x -> mapnew(split(x, g:dbiclient_col_delimiter, 1), {_, xx -> substitute(xx, s:tab_placefolder, "\t", 'g')})})
-    
+
     call s:debugLog('align:copy')
     call s:debugLog('align:maxCols' . string(a:maxCols)) " 文字列連結は .
 
     let l:lines4 = []
     " mapnew(lines3, ((_, cols) => colsize ==# len(cols) ? join(mapnew(cols, (...))), ...) の変換
     let lines4 = mapnew(lines3, {_, cols -> colsize ==# len(cols) ? join(mapnew(cols, {i, col -> col .. repeat(' ', a:maxCols[i] + 1 - strdisplaywidth(col))}), g:dbiclient_col_delimiter_align .. ' ') : join(cols, g:dbiclient_col_delimiter)})
-    
+
     call s:debugLog('align:end')
     return l:lines4
 endfunction
@@ -3016,7 +3021,7 @@ function s:resolveToken(token)
                 \     ['DOUBLE-QUOTE', '\v^"'],
                 \     ['BACK-QUOTE',    '\v^\`'],
                 \     ['COMMENT',      '\v^(--|#|\/\*)'],
-                \     ['SEMICOLON',    '^\V' . g:dbiclient_sql_delimiter1], 
+                \     ['SEMICOLON',    '^\V' . g:dbiclient_sql_delimiter1],
                 \     ['SLASH',        '^\V' . g:dbiclient_sql_delimiter2],
                 \     ['CR',           '\v^\n'],
                 \     ['LO',           '\v^<and>|<or>|<in>|<between>|<is>|<not>'],
@@ -3660,7 +3665,7 @@ function s:dbhistoryRestore(str) abort
         call s:f.delbuf(s:bufnr(dbiclient_bufmap.data.reloadBufname))
     endif
     if has_key(dbiclient_bufmap.data, 'sql')
-        let callbackstr = get(dbiclient_bufmap.data, 'callbackstr', 's:cb_outputResultEasyAlign') 
+        let callbackstr = get(dbiclient_bufmap.data, 'callbackstr', 's:cb_outputResultEasyAlign')
         if has_key(dbiclient_bufmap, 'opt')
             call remove(dbiclient_bufmap, 'opt')
         endif
@@ -3760,7 +3765,7 @@ function s:reloadMain(bufnr, sql, alignFlg, limitrows, delbufnr) abort
     let sql = a:sql
     let opt = {}
     let alignFlg = a:alignFlg
-    if get(dbiclient_bufmap, 'reload', 0) == 1 
+    if get(dbiclient_bufmap, 'reload', 0) == 1
         let opt.reloadBufname = dbiclient_bufmap.data.reloadBufname
         let opt.reloadBufnr = bufnr
     endif
@@ -3881,12 +3886,49 @@ function s:getColumnsPopupInfo(data) abort
     return itemmap
 endfunction
 
-function s:PopupColInfo() abort
+function! s:PopupColInfo() abort
     let col = matchstr(expand('<cWORD>'), '\v(\w|[$#.])+')
     if exists('b:dbiclient_bufmap.data.columnsPopupInfo')
         let info = get(b:dbiclient_bufmap.data.columnsPopupInfo, col, '')
+
+        " 元々の条件：情報が空でなく、かつ特定の行（ヘッダー行など）にいる場合
         if !empty(info) && line('.') == get(b:, 'dbiclient_col_line', -1)
-            call popup_atcursor(info, #{moved:'any', line: 'cursor-1', col: 'cursor'})
+
+            if has('nvim')
+                " --- Neovim対応：Floating Window ---
+
+                " 既存のポップアップがあれば閉じる
+                if exists('s:dbiclient_popup_winid') && nvim_win_is_valid(s:dbiclient_popup_winid)
+                    call nvim_win_close(s:dbiclient_popup_winid, v:true)
+                endif
+
+                let l:lines = split(info, "\n")
+                let l:buf = nvim_create_buf(v:false, v:true)
+                call nvim_buf_set_lines(l:buf, 0, -1, v:false, l:lines)
+
+                " 表示位置の設定 (Vimの line: 'cursor-1' に合わせるため row: -1)
+                let l:opts = {
+                    \ 'relative': 'cursor',
+                    \ 'row': -1,
+                    \ 'col': 0,
+                    \ 'width': max(map(copy(l:lines), 'strdisplaywidth(v:val)')),
+                    \ 'height': len(l:lines),
+                    \ 'style': 'minimal',
+                    \ 'border': 'single',
+                    \ 'focusable': v:false
+                    \ }
+
+                let s:dbiclient_popup_winid = nvim_open_win(l:buf, v:false, l:opts)
+
+                " カーソルが動いたら自動で閉じるための設定
+                augroup DBIClientPopupClose
+                    autocmd!
+                    autocmd CursorMoved <buffer> ++once if exists('s:dbiclient_popup_winid') | call nvim_win_close(s:dbiclient_popup_winid, v:true) | unlet s:dbiclient_popup_winid | endif
+                augroup END
+            else
+                " --- Vim用 (元のコード) ---
+                call popup_atcursor(info, #{moved:'any', line: 'cursor-1', col: 'cursor'})
+            endif
         endif
     endif
 endfunction
@@ -4563,9 +4605,9 @@ let s:nvim_sock_response = {}
 let s:nvim_sock_waiting = {}
 
 " --- Neovim Compatibility Helpers ---
+
 function! s:NvimJobHandler(cb, id, data, event) abort
     let l:lines = a:data
-    " 最後の空行を除外（Neovimの仕様）
     if len(l:lines) > 0 && l:lines[-1] == ''
         call remove(l:lines, -1)
     endif
@@ -4578,55 +4620,149 @@ function! s:NvimSockHandler(id, data, event) abort
     if !has_key(s:nvim_sock_buffer, a:id)
         let s:nvim_sock_buffer[a:id] = ''
     endif
-    " データを結合
     let s:nvim_sock_buffer[a:id] .= join(a:data, "\n")
 
-    " 改行区切りでJSONを取り出す
     while s:nvim_sock_buffer[a:id] =~# "\n"
         let l:pos = stridx(s:nvim_sock_buffer[a:id], "\n")
         let l:line = strpart(s:nvim_sock_buffer[a:id], 0, l:pos)
         let s:nvim_sock_buffer[a:id] = strpart(s:nvim_sock_buffer[a:id], l:pos + 1)
-
         if empty(l:line) | continue | endif
 
-        " 同期待機中のリクエストがあればレスポンスを格納
-        if get(s:nvim_sock_waiting, a:id, 0)
-            try
-                let s:nvim_sock_response[a:id] = json_decode(l:line)
-            catch
-                let s:nvim_sock_response[a:id] = {'status': 9, 'message': 'JSON Decode Error: ' . v:exception}
-            endtry
-            let s:nvim_sock_waiting[a:id] = 0
-        else
-            " 非同期受信のハンドリングが必要な場合はここに記述（現在は同期のみ想定）
-        endif
+        try
+            let l:decoded = json_decode(l:line)
+            let l:res = (type(l:decoded) == v:t_list && len(l:decoded) >= 2) ? l:decoded[1] : l:decoded
+
+            if get(s:nvim_sock_waiting, a:id, 0)
+                let s:nvim_sock_response[a:id] = l:res
+                let s:nvim_sock_waiting[a:id] = 0
+            endif
+
+            let l:cb_name = ''
+            if type(l:res) == v:t_dict && has_key(l:res, 'data') && type(l:res.data) == v:t_dict && has_key(l:res.data, 'callbackstr')
+                let l:cb_name = l:res.data.callbackstr
+            elseif type(l:res) == v:t_dict && has_key(l:res, 'callbackstr')
+                let l:cb_name = l:res.callbackstr
+            endif
+
+            if !empty(l:cb_name)
+                " データを一時変数に待避
+                let g:DBIClient_TmpRes = l:res
+                let g:DBIClient_TmpId = a:id
+                let g:DBIClient_TmpCbName = l:cb_name " ここを追加
+
+                let l:snr = matchstr(expand('<sfile>'), '<SNR>\d\+_')
+                let g:DBIClient_TmpFunc = l:snr . 'ExecuteCallbackFinal'
+
+                " ユーザー操作として `:call` を実行させ、すべてのロックを解除する
+                call nvim_feedkeys(nvim_replace_termcodes(":call " . g:DBIClient_TmpFunc . "()\<CR>", v:true, v:false, v:true), 'n', v:false)
+            endif
+        catch
+            call s:debugLog('NvimSockHandler Error: ' .. v:exception)
+        endtry
     endwhile
 endfunction
+
+" 制限を回避するためのダミー実行関数
+function! s:NvimRemoteExec() abort
+    if exists('g:__dbiclient_cb_tmp')
+        " nvim_exec_lua を使わず、ダイレクトに feedkeys で SID 指定の関数を叩く
+        " expand('<sfile>') から現在のスクリプト ID (<SNR>XX_) を取得する
+        let l:snr = matchstr(expand('<sfile>'), '<SNR>\d\+_')
+        let l:cmd = printf(":\<C-u>call %sExecuteCallbackFinal()\<CR>", l:snr)
+        call feedkeys(l:cmd, 'n')
+    endif
+endfunction
+
+" 最終的に実行される関数
+function! s:ExecuteCallbackFinal() abort
+    if !exists('g:DBIClient_TmpRes') | return | endif
+    let l:res = g:DBIClient_TmpRes
+    let l:id  = g:DBIClient_TmpId  " これが chansend に使ったチャンネルIDそのもの
+    let l:cb_name = g:DBIClient_TmpCbName
+
+    unlet g:DBIClient_TmpRes
+    unlet g:DBIClient_TmpId
+    unlet g:DBIClient_TmpCbName
+    unlet g:DBIClient_TmpFunc
+
+    " --- 修正：s:sendexprList から今回の チャンネルID を探して削除 ---
+    " 2番目の要素 [1] がチャンネルIDなので、それと比較します
+    try
+        let l:found_idx = -1
+        for l:i in range(len(s:sendexprList))
+            if type(s:sendexprList[l:i]) == v:t_list && len(s:sendexprList[l:i]) > 1
+                " リスト内の ID と、今のコールバック ID が一致するか
+                if s:sendexprList[l:i][1] == l:id
+                    let l:found_idx = l:i
+                    break
+                endif
+            endif
+        endfor
+
+        if l:found_idx >= 0
+            call remove(s:sendexprList, l:found_idx)
+        endif
+    catch
+        call s:debugLog('List Cleanup Error: ' .. v:exception)
+    endtry
+
+    " --- 描画処理 ---
+    try
+        let l:target_buf = get(get(l:res, 'data', {}), 'reloadBufnr', -1)
+        if l:target_buf != -1 && bufexists(l:target_buf)
+            let l:target_win = bufwinid(l:target_buf)
+            if l:target_win != -1 | call win_gotoid(l:target_win) | endif
+            " let b: ではなく setbufvar を使う
+            call setbufvar(l:target_buf, 'dbiclient_bufmap', get(l:res, 'data', {}))
+        endif
+
+        let l:Cb = function(l:cb_name)
+        call l:Cb(l:id, l:res)
+    catch
+        " ロック(E11等)で callback が失敗した場合の Neovim API 強制描画
+        if has('nvim') && has_key(l:res, 'tempfile')
+            call s:NvimSafeDraw(l:target_buf, l:res)
+        endif
+    finally
+        echo ""
+        redraw
+    endtry
+endfunction
+
+" Neovim専用: setline() がロックされた時用のバックアップ描画関数
+function! s:NvimSafeDraw(buf, res) abort
+    if !has_key(a:res, 'tempfile') | return | endif
+    " ファイルから結果を読み取って API で強制書き込み
+    if filereadable(a:res.tempfile)
+        let l:lines = readfile(a:res.tempfile)
+        " nvim_buf_set_lines は VimL のロックをバイパスして書き換え可能です
+        call nvim_buf_set_lines(a:buf, 0, -1, v:false, l:lines)
+    endif
+endfunction
+
+" --- Modified Communication Functions ---
 
 function! s:chEvalexpr(channel, expr, opt) abort
     if has('nvim')
         let l:timeout = get(a:opt, 'timeout', 30000)
         let s:nvim_sock_waiting[a:channel] = 1
-        
+        let s:nvim_sock_response[a:channel] = v:null
+
         try
-            call chansend(a:channel, json_encode(a:expr) . "\n")
-            " レスポンスが来るまで待機 (waitは条件が満たされるまでブロックする)
-            let l:ok = wait(l:timeout, {-> s:nvim_sock_waiting[a:channel] == 0})
-            
-            if l:ok == -1
-                throw 'dbiclient: Socket timeout'
-            endif
-            
-            let l:res = get(s:nvim_sock_response, a:channel, {})
-            return l:res
+            let l:packet = [0, a:expr]
+            call chansend(a:channel, json_encode(l:packet) . "\n")
+
+            let l:start = reltime()
+            while s:nvim_sock_waiting[a:channel]
+                call feedkeys(" ", "n")
+                execute "sleep 20m"
+                if reltimefloat(reltime(l:start)) * 1000 > l:timeout
+                    throw 'dbiclient: Socket timeout'
+                endif
+            endwhile
+            return get(s:nvim_sock_response, a:channel, {})
         finally
-            " クリーンアップ
-            if has_key(s:nvim_sock_waiting, a:channel)
-                unlet s:nvim_sock_waiting[a:channel]
-            endif
-            if has_key(s:nvim_sock_response, a:channel)
-                unlet s:nvim_sock_response[a:channel]
-            endif
+            let s:nvim_sock_waiting[a:channel] = 0
         endtry
     else
         return ch_evalexpr(a:channel, a:expr, a:opt)
@@ -4635,15 +4771,14 @@ endfunction
 
 function s:chSendexpr(handle, expr, opt, bufnr) abort
     if has('nvim')
-        let result = chansend(a:handle, json_encode(a:expr) . "\n")
-        if has_key(a:opt, 'callback')
-            " 注意: ここで本来はサーバーからのレスポンスを待ってcallbackを呼ぶべきだが
-            " 非同期ハンドリングが複雑になるため、現在の実装では送信のみ行う。
-            " 多くのケースでs:chEvalexpr（同期）が使われているため動作するはずです。
-        endif
+        " Sendexprの場合、Neovimではchansendするだけ。
+        " サーバーからの返信に含まれるcallbackstrを見てNvimSockHandlerがコールバックを叩く
+        let l:packet = [0, a:expr]
+        let result = chansend(a:handle, json_encode(l:packet) . "\n")
     else
         let result = ch_sendexpr(a:handle, a:expr, a:opt)
     endif
+
     call add(s:sendexprList, [a:expr.connInfo.port, a:handle, a:bufnr])
     if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
         call s:joblist(0)
@@ -4653,12 +4788,30 @@ endfunction
 
 function s:chStatus(channel) abort
     if has('nvim')
-        try
-            let l:info = getchaninfo(a:channel)
-            return empty(l:info) ? 'closed' : 'open'
-        catch
+        " エラー (-1) の場合は closed とする
+        if type(a:channel) != v:t_number || a:channel < 0
             return 'closed'
-        endtry
+        endif
+
+        if exists('*getchaninfo')
+            try
+                let l:info = getchaninfo(a:channel)
+                return empty(l:info) ? 'closed' : 'open'
+            catch
+                return 'closed'
+            endtry
+        else
+            " getchaninfoがない場合の簡易チェック (jobwaitなどはJob ID用なのでSocketには使えない)
+            " sockconnectが成功していればとりあえず open とみなすしかないが、
+            " channelが無効であればエラーになる可能性があるため try で囲む
+            try
+                " 実際にデータを送らずに確認する方法が限られるため、簡易的に open を返す
+                " (切断検知は送信時のエラーで行う想定)
+                return 'open'
+            catch
+                return 'closed'
+            endtry
+        endif
     else
         return ch_status(a:channel)
     endif
@@ -4666,15 +4819,18 @@ endfunction
 
 function s:chOpen(port) abort
     if has('nvim')
-        " Neovim: sockconnectを使用し、受信ハンドラをアタッチ
-        let l:opts = {
-            \ 'on_data': function('s:NvimSockHandler')
-            \ }
-        return sockconnect('tcp', 'localhost:' .. a:port, l:opts)
+        try
+            let l:opts = {'on_data': function('s:NvimSockHandler')}
+            let ret = sockconnect('tcp', 'localhost:' .. a:port, l:opts)
+        catch
+            " 接続失敗時(connection refused)は例外をキャッチして -1 (無効なチャンネル) を返す
+            let ret = -1
+        endtry
     else
-        " Vim: 標準の ch_open (JSONモード)
-        return ch_open('localhost:' .. a:port, {'mode': 'json'})
+        let ret = ch_open('localhost:' .. a:port, {'mode': 'json'})
     endif
+    call s:debugLog('s:chOpen:' .. string(ret))
+    return ret
 endfunction
 
 function s:chClose(channel) abort
@@ -4690,7 +4846,20 @@ endfunction
 
 function s:myChClose(channel)
     let l:errorFlg = 0
-    if type(a:channel) ==# v:t_channel || (has('nvim') && type(a:channel) ==# v:t_number)
+    let l:is_valid_channel = 0
+
+    " チャンネル型チェック: Neovimは数値、Vimはv:t_channel(存在する場合)
+    if has('nvim')
+        if type(a:channel) ==# v:t_number
+            let l:is_valid_channel = 1
+        endif
+    elseif exists('v:t_channel')
+        if type(a:channel) ==# v:t_channel
+            let l:is_valid_channel = 1
+        endif
+    endif
+
+    if l:is_valid_channel
         let l:stat = s:chStatus(a:channel)
         for l:i in range(5)
             let l:errorFlg = 0
@@ -4707,18 +4876,28 @@ function s:myChClose(channel)
                 sleep 100m
             endtry
         endfor
-        if l:errorFlg == 1
-             " Neovimでは例外メッセージが異なる場合があるためログ出力のみにする等の調整も検討
-             " throw 'error ch_close() s:chStatus:' . l:stat
-        endif
     endif
 endfunction
 
 function s:jobInfo(job) abort
     if has('nvim')
-        let l:info = getchaninfo(a:job)
-        if empty(l:info) | return {'status': 'dead'} | endif
-        return {'status': 'run', 'channel': a:job, 'process': get(l:info, 'pid', 0)}
+        if exists('*getchaninfo')
+            let l:info = getchaninfo(a:job)
+            if empty(l:info)
+                return {'status': 'dead', 'process': 0}
+            endif
+            return {'status': 'run', 'channel': a:job, 'process': get(l:info, 'pid', 0)}
+        else
+            " getchaninfo がない環境向けのフォールバック
+            try
+                let l:pid = jobpid(a:job)
+                " jobwait([id], 0) は実行中なら -1 を返す
+                let l:running = jobwait([a:job], 0)[0] == -1
+                return {'status': (l:running ? 'run' : 'dead'), 'channel': a:job, 'process': l:pid}
+            catch
+                return {'status': 'dead', 'process': 0}
+            endtry
+        endif
     else
         return job_info(a:job)
     endif
@@ -4735,23 +4914,21 @@ endfunction
 function s:jobStart(cmdlist, opt) abort
     if has('nvim')
         let l:nvim_opt = {}
-        " callbackのアダプターを噛ませる
-        if has_key(a:opt, 'out_cb') 
+        if has_key(a:opt, 'out_cb')
             let l:nvim_opt.on_stdout = function('s:NvimJobHandler', [a:opt.out_cb])
         endif
-        if has_key(a:opt, 'err_cb') 
+        if has_key(a:opt, 'err_cb')
             let l:nvim_opt.on_stderr = function('s:NvimJobHandler', [a:opt.err_cb])
         endif
-        if has_key(a:opt, 'exit_cb') 
-            let l:nvim_opt.on_exit = a:opt.exit_cb 
+        if has_key(a:opt, 'exit_cb')
+            let l:nvim_opt.on_exit = a:opt.exit_cb
         endif
-        " Neovimのjobstartはjob_id(数値)を返す。Vimのchannel相当として扱える。
+        call s:debugLog('jobstart:' .. string(l:nvim_opt))
         return jobstart(a:cmdlist, l:nvim_opt)
     else
         return job_start(a:cmdlist, a:opt)
     endif
 endfunction
-
 augroup dbiclient
     au!
     autocmd WinNew,BufEnter * :call dbiclient#sethl(bufnr('%'))
