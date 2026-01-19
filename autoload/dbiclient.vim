@@ -783,7 +783,7 @@ function s:doDeleteInsert() abort
     let createInsert = s:createInsert(cols, param, param2, dbiclient_bufmap.alignFlg, tableNm)
     let list2 = extend(['DELETE FROM ' .. tableNm .. ' ' .. as .. ' ' .. where .. g:dbiclient_sql_delimiter1], createInsert)
     let sqllist = s:splitSql(list2[:], 1)
-    call s:dBCommandAsync({"doText":list2[:], "do":sqllist}, 's:cb_do', port)
+    call s:dBCommandAsync({"doText":list2[:], "do":sqllist, 'callbackstr': 's:cb_do'}, 's:cb_do', port)
 endfunction
 
 function s:createInsert(keys, vallist, beforevallist, alignFlg, tableNm) abort
@@ -1547,7 +1547,7 @@ function s:dBExecRangeSQLDo(bang, splitFlg) range abort
         let sqllist = [join(sqllist, "\n")]
     endif
     let sqllist = map(sqllist, {_, x -> substitute(x, '\v\c\&\&(%(' .. defineKeys .. ')>\.?)' , {m -> get(defineDict, matchstr(m[1], '\v^.{-}\ze\.?$'), m[0])}, 'g')})
-    call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0)}, 's:cb_do', port)
+    call s:dBCommandAsync({"doText":list[:], "do":sqllist, "continue":(a:bang ==# '!' ? 1 : 0), 'callbackstr': 's:cb_do'}, 's:cb_do', port)
 endfunction
 
 function s:splitSql(sqllist, doFlg)
@@ -1810,12 +1810,12 @@ endfunction
 
 function s:commit() abort
     let port = s:getCurrentPort()
-    call s:dBCommandAsync({"commit":"1", "nodisplay":1}, 's:cb_do', port)
+    call s:dBCommandAsync({"commit":"1", "nodisplay":1, 'callbackstr': 's:cb_do'}, 's:cb_do', port)
 endfunction
 
 function s:rollback() abort
     let port = s:getCurrentPort()
-    call s:dBCommandAsync({"rollback":"1", "nodisplay":1}, 's:cb_do', port)
+    call s:dBCommandAsync({"rollback":"1", "nodisplay":1, 'callbackstr': 's:cb_do'}, 's:cb_do', port)
 endfunction
 
 function s:set(key, value) abort
@@ -4607,6 +4607,7 @@ let s:nvim_sock_waiting = {}
 " --- Neovim Compatibility Helpers ---
 
 function! s:NvimJobHandler(cb, id, data, event) abort
+    call s:debugLog('s:NvimJobHandler')
     let l:lines = a:data
     if len(l:lines) > 0 && l:lines[-1] == ''
         call remove(l:lines, -1)
@@ -4617,6 +4618,7 @@ function! s:NvimJobHandler(cb, id, data, event) abort
 endfunction
 
 function! s:NvimSockHandler(id, data, event) abort
+    call s:debugLog('s:NvimSockHandler')
     if !has_key(s:nvim_sock_buffer, a:id)
         let s:nvim_sock_buffer[a:id] = ''
     endif
@@ -4629,6 +4631,7 @@ function! s:NvimSockHandler(id, data, event) abort
         if empty(l:line) | continue | endif
 
         try
+            call s:debugLog('Received JSON: ' .. l:line)
             let l:decoded = json_decode(l:line)
             let l:res = (type(l:decoded) == v:t_list && len(l:decoded) >= 2) ? l:decoded[1] : l:decoded
 
@@ -4664,6 +4667,7 @@ endfunction
 
 " 制限を回避するためのダミー実行関数
 function! s:NvimRemoteExec() abort
+    call s:debugLog('s:NvimRemoteExec')
     if exists('g:__dbiclient_cb_tmp')
         " nvim_exec_lua を使わず、ダイレクトに feedkeys で SID 指定の関数を叩く
         " expand('<sfile>') から現在のスクリプト ID (<SNR>XX_) を取得する
@@ -4675,6 +4679,7 @@ endfunction
 
 " 最終的に実行される関数
 function! s:ExecuteCallbackFinal() abort
+    call s:debugLog('s:ExecuteCallbackFinal')
     if !exists('g:DBIClient_TmpRes') | return | endif
     let l:res = g:DBIClient_TmpRes
     let l:id  = g:DBIClient_TmpId  " これが chansend に使ったチャンネルIDそのもの
@@ -4731,6 +4736,7 @@ endfunction
 
 " Neovim専用: setline() がロックされた時用のバックアップ描画関数
 function! s:NvimSafeDraw(buf, res) abort
+    call s:debugLog('s:NvimSafeDraw')
     if !has_key(a:res, 'tempfile') | return | endif
     " ファイルから結果を読み取って API で強制書き込み
     if filereadable(a:res.tempfile)
@@ -4743,6 +4749,7 @@ endfunction
 " --- Modified Communication Functions ---
 
 function! s:chEvalexpr(channel, expr, opt) abort
+    call s:debugLog('s:chEvalexpr')
     if has('nvim')
         let l:timeout = get(a:opt, 'timeout', 30000)
         let s:nvim_sock_waiting[a:channel] = 1
@@ -4770,6 +4777,7 @@ function! s:chEvalexpr(channel, expr, opt) abort
 endfunction
 
 function s:chSendexpr(handle, expr, opt, bufnr) abort
+    call s:debugLog('s:chSendexpr')
     if has('nvim')
         " Sendexprの場合、Neovimではchansendするだけ。
         " サーバーからの返信に含まれるcallbackstrを見てNvimSockHandlerがコールバックを叩く
@@ -4787,6 +4795,7 @@ function s:chSendexpr(handle, expr, opt, bufnr) abort
 endfunction
 
 function s:chStatus(channel) abort
+    call s:debugLog('s:chStatus')
     if has('nvim')
         " エラー (-1) の場合は closed とする
         if type(a:channel) != v:t_number || a:channel < 0
@@ -4834,6 +4843,7 @@ function s:chOpen(port) abort
 endfunction
 
 function s:chClose(channel) abort
+    call s:debugLog('s:chClose')
     if has('nvim')
         silent! call chanclose(a:channel)
         if has_key(s:nvim_sock_buffer, a:channel)
