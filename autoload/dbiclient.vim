@@ -4622,12 +4622,20 @@ function! s:NvimSockHandler(id, data, event) abort
     if !has_key(s:nvim_sock_buffer, a:id)
         let s:nvim_sock_buffer[a:id] = ''
     endif
+
+    " 1. 受信データをバッファに追加
     let s:nvim_sock_buffer[a:id] .= join(a:data, "\n")
 
-    while s:nvim_sock_buffer[a:id] =~# "\n"
-        let l:pos = stridx(s:nvim_sock_buffer[a:id], "\n")
-        let l:line = strpart(s:nvim_sock_buffer[a:id], 0, l:pos)
-        let s:nvim_sock_buffer[a:id] = strpart(s:nvim_sock_buffer[a:id], l:pos + 1)
+    " 2. 改行で分割し、処理対象(lines)と未完成の末尾(buffer)に分ける
+    " splitの第3引数 1 は空要素を保持するため。
+    let l:lines = split(s:nvim_sock_buffer[a:id], "\n", 1)
+    
+    " 最後の要素（改行より後ろの文字列）を次のパケットのためにバッファに戻す
+    let s:nvim_sock_buffer[a:id] = l:lines[-1]
+    
+    " 3. 確定した行（最後以外の要素）をループで回す
+    " これにより、ループ中にバッファが書き換わっても処理対象のリストは影響を受けない
+    for l:line in l:lines[:-2]
         if empty(l:line) | continue | endif
 
         try
@@ -4648,21 +4656,13 @@ function! s:NvimSockHandler(id, data, event) abort
             endif
 
             if !empty(l:cb_name)
-                " データを一時変数に待避
-                let g:DBIClient_TmpRes = l:res
-                let g:DBIClient_TmpId = a:id
-                let g:DBIClient_TmpCbName = l:cb_name " ここを追加
-
-                let l:snr = matchstr(expand('<sfile>'), '<SNR>\d\+_')
-                let g:DBIClient_TmpFunc = l:snr . 'ExecuteCallbackFinal'
-
-                " ユーザー操作として `:call` を実行させ、すべてのロックを解除する
-                call nvim_feedkeys(nvim_replace_termcodes(":call " . g:DBIClient_TmpFunc . "()\<CR>", v:true, v:false, v:true), 'n', v:false)
+                " ここでバッファが操作されても、l:lines のループには影響しない
+                call s:ExecuteCallbackFinal(l:res, a:id, l:cb_name)
             endif
         catch
             call s:debugLog('NvimSockHandler Error: ' .. v:exception)
         endtry
-    endwhile
+    endfor
 endfunction
 
 " 制限を回避するためのダミー実行関数
@@ -4678,17 +4678,11 @@ function! s:NvimRemoteExec() abort
 endfunction
 
 " 最終的に実行される関数
-function! s:ExecuteCallbackFinal() abort
+function! s:ExecuteCallbackFinal(res, id, cbName) abort
     call s:debugLog('s:ExecuteCallbackFinal')
-    if !exists('g:DBIClient_TmpRes') | return | endif
-    let l:res = g:DBIClient_TmpRes
-    let l:id  = g:DBIClient_TmpId  " これが chansend に使ったチャンネルIDそのもの
-    let l:cb_name = g:DBIClient_TmpCbName
-
-    unlet g:DBIClient_TmpRes
-    unlet g:DBIClient_TmpId
-    unlet g:DBIClient_TmpCbName
-    unlet g:DBIClient_TmpFunc
+    let l:res = a:res 
+    let l:id  = a:id
+    let l:cb_name = a:cbName
 
     " --- 修正：s:sendexprList から今回の チャンネルID を探して削除 ---
     " 2番目の要素 [1] がチャンネルIDなので、それと比較します
