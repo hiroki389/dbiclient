@@ -99,16 +99,14 @@ let s:nmap_ijoin_SQ = '<CR>'
 let s:nmap_group_SQ = '<CR>'
 let s:nmap_order_SQ = '<CR>'
 
-function dbiclient#setSecurePassword(name) abort
-    return s:setSecurePassword(a:name)
-endfunction
+function dbiclient#connect(name, ...) abort
+    " 環境変数が設定されていればそちらを優先、なければ引数を使用
+    let l:env_port = exists('$' .. a:name .. '_DB_PORT') ? getenv(a:name .. '_DB_PORT') : v:null
+    let l:env_dsn  = exists('$' .. a:name .. '_DB_DSN')  ? getenv(a:name .. '_DB_DSN')  : input('DSN: ')
+    let l:env_user = exists('$' .. a:name .. '_DB_USER') ? getenv(a:name .. '_DB_USER') : input('User: ')
+    let l:env_pass = exists('$' .. a:name .. '_DB_PASS') ? getenv(a:name .. '_DB_PASS') : inputsecret('Pass: ')
 
-function dbiclient#connect_secure(port, dsn, user, passwordName, ...) abort
-    return s:connect_secure(a:port, a:dsn, a:user, a:passwordName, get(a:, 1, {}))
-endfunction
-
-function dbiclient#connect(port, dsn, user, pass, ...) abort
-    return s:connect(a:port, a:dsn, a:user, a:pass, get(a:, 1, {}))
+    return s:connect(l:env_port, l:env_dsn, l:env_user, l:env_pass, get(a:, 1, {}))
 endfunction
 
 function dbiclient#sqllog() abort
@@ -1141,31 +1139,6 @@ function s:jobNext() abort
     endif
 endfunction
 
-function s:setSecurePassword(name) abort
-    let shadowpath = s:Filepath.join(s:getRootPath(), 'SECPASS_') .. a:name
-    if filereadable(shadowpath)
-        if toupper(s:input('Confirm deletion of file<' .. shadowpath .. '> [(y)es, (n)o] ', '')) ==# 'Y'
-            call delete(shadowpath)
-        else
-            return
-        endif
-    endif
-    keepjumps silent! exe 'bwipeout! ' .. shadowpath
-    redraw
-    redrawstatus
-    keepjumps silent! exe 'e ' .. shadowpath
-    keepjumps X
-    keepjumps silent! exe 'b#'
-    redrawstatus
-    keepjumps let pass = inputsecret('Enter DB password:')
-    keepjumps silent! exe 'b#'
-    keepjumps call setline(1, 'shadow:' .. pass)
-    keepjumps silent! write
-    let bufnr = bufnr('%')
-    keepjumps silent! exe 'b#'
-    keepjumps silent! exe "bwipeout! " .. bufnr
-endfunction
-
 function s:getUnusedPort() abort
     let port = -1
     for p in range(49152, 65535)
@@ -1174,25 +1147,6 @@ function s:getUnusedPort() abort
         endif
     endfor
     throw "oops"
-endfunction
-
-function s:connect_secure(port, dsn, user, passwordName, opt) abort
-    let pass = ''
-    let opt = a:opt
-    let shadowpath = s:Filepath.join(s:getRootPath(), 'SECPASS_') .. a:passwordName
-    if filereadable(shadowpath)
-        silent! keepjumps exe 'bo new ' .. shadowpath
-        let pass = matchstr(getline(1), '^shadow:\zs.*')
-        keepjumps bwipeout!
-        if empty(pass)
-            redraw
-            echohl WarningMsg
-            echo 'Invalid password.'
-            echohl None
-            return
-        endif
-        call s:connect(a:port, a:dsn, a:user, pass, opt)
-    endif
 endfunction
 
 " Cb_jobout2 は s:connect_base, s:loadQueryHistoryCmd の呼び出しに必要な情報を
@@ -3906,24 +3860,32 @@ function! s:PopupColInfo() abort
                 let l:buf = nvim_create_buf(v:false, v:true)
                 call nvim_buf_set_lines(l:buf, 0, -1, v:false, l:lines)
 
-                " 表示位置の設定 (Vimの line: 'cursor-1' に合わせるため row: -1)
+                " width に 2セル程度の余裕を持たせる（日本語対応）
+                let l:display_width = max(map(copy(l:lines), 'strdisplaywidth(v:val)')) + 2
+                
                 let l:opts = {
                     \ 'relative': 'cursor',
-                    \ 'row': -1,
+                    \ 'row': (line('w0') == line('.')) ? 1 : -1,
                     \ 'col': 0,
-                    \ 'width': max(map(copy(l:lines), 'strdisplaywidth(v:val)')),
+                    \ 'width': l:display_width,
                     \ 'height': len(l:lines),
                     \ 'style': 'minimal',
                     \ 'border': 'single',
-                    \ 'focusable': v:false
+                    \ 'focusable': v:false,
+                    \ 'noautocmd': v:true
                     \ }
 
                 let s:dbiclient_popup_winid = nvim_open_win(l:buf, v:false, l:opts)
 
-                " カーソルが動いたら自動で閉じるための設定
                 augroup DBIClientPopupClose
                     autocmd!
-                    autocmd CursorMoved <buffer> ++once if exists('s:dbiclient_popup_winid') | call nvim_win_close(s:dbiclient_popup_winid, v:true) | unlet s:dbiclient_popup_winid | endif
+                    " 重要：nvim_win_close の後に redraw! を実行して画面を強制クリーンアップ
+                    autocmd CursorMoved <buffer> ++once 
+                        \ if exists('s:dbiclient_popup_winid') | 
+                        \   call nvim_win_close(s:dbiclient_popup_winid, v:true) | 
+                        \   unlet s:dbiclient_popup_winid | 
+                        \   redraw! | 
+                        \ endif
                 augroup END
             else
                 " --- Vim用 (元のコード) ---

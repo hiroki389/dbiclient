@@ -1,57 +1,75 @@
-dbiclient.vim
-====
+# dbiclient.vim
 
-vimからSQLを実行するためのクライアントツール
+Vimから非同期でSQLを実行するための、Perl DBIベースのデータベースクライアントツールです。
 
-# 説明
-vimのソケット通信を利用し、perlのDBIライブラリを呼び出します。  
-ソケット通信を利用することで、非同期にSQLを実行します。
+## 🚀 特徴
 
-# 必須アプリ
-vim8.2以上  
-perl
+* **非同期実行**: Vim 8.2+ のソケット通信を利用し、重いクエリを実行中もVimの操作を妨げません。
+* **Perl DBI連携**: 強力なPerlのDBIライブラリを使用して、多種多様なDBMSに接続可能です。
+* **環境変数による管理**: 接続設定を環境変数で管理するため、プロジェクトごとの切り替えが容易です。
 
-# perlライブラリのインストール方法
-cpan または ppm
+## 📋 必須要件
+
+* **Vim 8.2 以上**
+* **Perl** (実行環境にインストールされていること)
+
+### 依存ライブラリのインストール
+
+接続するDBに合わせて、以下のPerlモジュールをインストールしてください。
+
 ```shell
-cpan> install JSON
-cpan> install DBI
-cpan> install DBD::ODBC
-cpan> install DBD::Oracle
-cpan> install DBD::Pg
-cpan> install DBD::SQLite
+# CPANを使用したインストール例
+cpan install JSON DBI
+
+# 接続するDBに合わせてインストール
+cpan install DBD::ODBC
+cpan install DBD::Oracle
+cpan install DBD::Pg
+cpan install DBD::SQLite
+
 ```
 
-# DB接続方法
-DB接続するには、connect関数とconnect_secure関数を利用する方法があります。  
-引数 ポート番号、データソース、ユーザー名、パスワード、オプション  
-dbiclient#connect({port}, {dsn}, {user}, {password} [, {opt}])   
+## 🔌 DB接続方法
 
-connect_secure関数を利用する場合は、予めパスワードファイルを作成しておきます。  
-引数 ポート番号、データソース、ユーザー名、パスワードID、オプション  
-dbiclient#connect_secure({port}, {dsn}, {user}, {passfileName} [, {opt}])  
+本プラグインは環境変数を参照して接続を行います。`dbiclient#connect({prefix} [, {options}])` を呼び出す際、`{prefix}` に指定した文字列に対応する環境変数が参照されます。
 
-ODBCの例
+### 接続の例
+
+#### ODBC接続
+
 ```vim
-:call dbiclient#connect(9001,'ODBC:RIVUS','RIVUS','password')
+call setenv('MYODBC_DNS', 'ODBC:RIVUS')
+call setenv('MYODBC_USER', 'RIVUS')
+call setenv('MYODBC_PASS', 'password')
+call dbiclient#connect('MYODBC')
+
 ```
-ODBCの例(connect_secure)
+
+#### Oracle接続 (環境変数の動的設定を含む)
+
 ```vim
-:DBISetSecurePassword PASSFILE
-:call dbiclient#connect_secure(9001,'ODBC:RIVUS','RIVUS','PASSFILE')
+call setenv('MYORA_DNS', 'Oracle:sid=XE')
+call setenv('MYORA_USER', 'RIVUS')
+call setenv('MYORA_PASS', 'password')
+
+let l:opt = {}  
+let l:opt.connect_opt_envdict = {'NLS_LANG': 'Japanese_Japan.AL32UTF8'}
+call dbiclient#connect('MYORA', l:opt)
+
 ```
-oracleでNLS_LANGをUTF8に設定して接続する例
+
+#### PostgreSQL接続
+
 ```vim
-let opt={}  
-let opt.connect_opt_envdict          = {'NLS_LANG':'Japanese_Japan.AL32UTF8'}
-:call dbiclient#connect(9001,'Oracle:sid=XE','RIVUS','password',opt)
+call setenv('MYPG_DNS', 'Pg:dbname=postgres')
+call setenv('MYPG_USER', 'postgres')
+call setenv('MYPG_PASS', 'password')
+call dbiclient#connect('MYPG')
+
 ```
-postgreの例
-```vim
-:call dbiclient#connect(9001,'Pg:dbname=postgres','postgres','password')
-```
-# DB接続オプション
-| key                           | Default                                      | Description                                                  |
+
+### 接続オプション（`connect` 関数の第2引数）
+| キー | デフォルト値 | 説明 |
 | :---------------------------- | :----------                                  | :----------------------------------------------------------- |
 | connect_opt_limitrows         | g:dbiclient_connect_opt_limitrows = 1000     | 最大フェッチ件数                                             |
 | connect_opt_encoding          | g:dbiclient_connect_opt_encoding = 'utf8'    | 文字エンコーディング                                         |
@@ -63,8 +81,8 @@ postgreの例
 | connect_opt_history_data_flg  | g:dbiclient_connect_opt_history_data_flg = 0 | SQL結果の履歴保持フラグ、一時領域の逼迫及びセキュリティの観点からデフォルトではOFFになっている                                      |
 | connect_opt_columninfoflg     | g:dbiclient_connect_opt_columninfoflg = 0    | カラム名の表示設定                                      |
 
-# exコマンド
-| excommand                      | Description                                                                        |
+## 🛠 コマンドリファレンス
+| コマンド | 内容 |
 | :----------------------        | :-----------------------------------------------------------------------           |
 | :DBIJobList                    | 接続中のDB情報一覧を表示する                                                       |
 | :DBIClose [port]               | DBを切断する ※vim終了時は自動的にすべてのコネクションを切断する                                                                       |
@@ -78,10 +96,10 @@ postgreの例
 | :DBIRollback                   | ロールバックする                                                                   |
 | :DBICancel                     | 実行中のSQLをキャンセルする                                                                   |
 | :DBIHistory                    | SQL履歴を表示する                                                                  |
-| :DBISetSecurePassword [name]   | パスワードファイルを作成する                                                       |
 
-# 各種設定方法
-|  global variable                  |  Default                         |  Description                                                  |
+
+### グローバル設定（`.vimrc` 用）
+| 変数名 | デフォルト | 説明 |
 |  :----------------------------    |  :----------                     |  :----------------------------------------------------------- |
 |  g:dbiclient_col_delimiter        |  "\t"                            |  未整列状態のカラム区切り文字                                 |
 |  g:dbiclient_col_delimiter_align  |  "&#124;"                        |  整列状態のカラム区切り文字                                   |
@@ -98,10 +116,17 @@ postgreの例
 |  g:dbiclient_prelinesep           |  '&lt;&lt;CRR&gt;&gt;'           |  改行コードの一時変換文字                                     |
 |  g:Dbiclient_call_after_connected |  {-> dbiclient#userTablesMain()} |  DB接続後に実行する関数                                       |
 
-# ライセンス
-Copyright (c) 2019 Hiroki Kitamura  
-Released under the MIT license  
-[MIT](https://opensource.org/licenses/mit-license.php)
+---
 
-# 著者
+## 📄 ライセンス
+
+Copyright (c) 2019 Hiroki Kitamura
+
+Released under the [MIT license](https://opensource.org/licenses/mit-license.php).
+
+## 👤 著者
+
 [hiroki389](https://github.com/hiroki389)
+
+---
+
