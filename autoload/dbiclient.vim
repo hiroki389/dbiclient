@@ -792,8 +792,8 @@ function s:createInsert(keys, vallist, beforevallist, alignFlg, tableNm) abort
     let cols = join(a:keys, ", ")
     let i=0
     for items in a:vallist
-        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
-        let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
+        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:x[1]}}, {}).value()
+        let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:x[1]}}, {}).value()
         if a:alignFlg
             let collist = dbiclient#funclib#List(items)
                         \.fmap({item -> trim(get(dict, item[0], '')) !=# trim(get(beforedict, item[0], '')) || !has_key(beforedict, item[0]) ? get(dict, item[0], '') : get(beforedict, item[0], '')})
@@ -807,7 +807,7 @@ function s:createInsert(keys, vallist, beforevallist, alignFlg, tableNm) abort
         let res ..= cols
         let res ..= ")VALUES("
         let collist = map(collist, {_, x -> s:trim_surround(x)})
-        call add(result, res .. join(map(collist, {_, xs -> "'" .. substitute(xs, "'", "''", 'g') .. "'"})->map({_, xs -> xs == "''" ? "NULL" : xs}), ", ")->substitute('\V' .. g:dbiclient_prelinesep2, "' || " .. g:dbiclient_dblinesep .. " || '",'g') .. ");")
+        call add(result, res .. join(map(collist, {_, xs -> s:quote_sql_literal(xs)}), ", ")->substitute('\V' .. g:dbiclient_prelinesep2, "' || " .. g:dbiclient_dblinesep .. " || '",'g') .. ");")
         let i += 1
     endfor
     return result
@@ -862,6 +862,15 @@ function s:trim_surround_CRLF(val) abort
     endif
 endfunction
 
+function s:escape_sql_literal(val) abort
+    return substitute(a:val, "'", "''", 'g')
+endfunction
+
+function s:quote_sql_literal(val) abort
+    let l:val = s:trim_surround(a:val)
+    return l:val ==# '' ? 'NULL' : ("'" .. s:escape_sql_literal(l:val) .. "'")
+endfunction
+
 function s:createUpdate(vallist, beforevallist, tableNm, alignFlg, port) abort
     call s:debugLog('createUpdate start')
     call s:debugLog('getPrimaryKeys start')
@@ -873,12 +882,12 @@ function s:createUpdate(vallist, beforevallist, tableNm, alignFlg, port) abort
     let result=[]
     let i=0
     for items in a:vallist
-        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
-        let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
+        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:x[1]}}, {}).value()
+        let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:x[1]}}, {}).value()
         let res  = "UPDATE " .. a:tableNm .. " SET "
         let collist = dbiclient#funclib#List(items)
                     \.filter({item -> a:alignFlg ? trim(get(dict, item[0], '')) !=# trim(get(beforedict, item[0], '')) : get(dict, item[0], '') !=# get(beforedict, item[0], '')})
-                    \.foldl({item -> item[0] .. ' = ' .. (s:trim_surround(item[1]) == "" ? "NULL" : ("'" .. s:trim_surround(item[1]) .. "'"))}, []).value()
+                    \.foldl({item -> item[0] .. ' = ' .. s:quote_sql_literal(item[1])}, []).value()
         if len(collist) > 0
             let res  ..= join(collist, ', ')->s:trim_surround_CRLF()->substitute('\V' .. g:dbiclient_prelinesep2, "' || " .. g:dbiclient_dblinesep .. " || '", 'g')
         else
@@ -889,8 +898,8 @@ function s:createUpdate(vallist, beforevallist, tableNm, alignFlg, port) abort
             if diffList->len() > 0
                 let res  = '/* Change primary key */ ' .. res
             endif
-            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}(keys[0])
-            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(beforedict, key, '<*>')) .. "'"}, []).value())
+            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. s:quote_sql_literal(get(beforedict, key, '<*>'))}(keys[0])
+            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. s:quote_sql_literal(get(beforedict, key, '<*>'))}, []).value())
         else
             let res ..= ' WHERE <*>'
         endif
@@ -947,7 +956,7 @@ function s:createDelete(vallist, beforevallist, tableNm, port) abort
     let result=[]
     let i=0
     for items in a:vallist
-        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:substitute(x[1], "'" , "''", 'g')}}, {}).value()
+        let beforedict = dbiclient#funclib#List(get(a:beforevallist, i, [])).foldl({x -> {x[0]:x[1]}}, {}).value()
         let dict = dbiclient#funclib#List(items).foldl({x -> {x[0]:x[1]}}, {}).value()
         let res  = "DELETE FROM " .. a:tableNm
         if(len(keys) > 0)
@@ -955,8 +964,8 @@ function s:createDelete(vallist, beforevallist, tableNm, port) abort
             if diffList->len() > 0
                 let res  = '/* Change primary key */ ' .. res
             endif
-            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}(keys[0])
-            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. "'" .. s:trim_surround(get(dict, key, '<*>')) .. "'"}, []).value())
+            let res ..= {key -> ' WHERE ' .. key .. ' = ' .. s:quote_sql_literal(get(dict, key, '<*>'))}(keys[0])
+            let res ..= join(dbiclient#funclib#List(keys[1:]).foldl({key -> ' AND ' .. key .. ' = ' .. s:quote_sql_literal(get(dict, key, '<*>'))}, []).value())
         else
             let res ..= ' WHERE <*>'
         endif
