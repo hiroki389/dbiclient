@@ -85,8 +85,6 @@ On success the table list opens automatically (float window in Neovim, split in 
 
 ### Step 4 — Explore
 
-![table list demo](assets/tables.gif)
-
 | Action | How |
 |---|---|
 | SELECT a table | Press `<CR>` in the table list |
@@ -211,7 +209,7 @@ In Neovim, results, condition editing, and SQL generation all use floating windo
 |---|---|
 | `<Tab>` | Cycle forward through float windows (passes through as normal `<Tab>` when no floats are open) |
 | `<S-Tab>` | Cycle backward through float windows (passes through as normal `<S-Tab>` when no floats are open) |
-| `q` / `<Esc>` | Close the current float (focus moves to another open float if one exists) |
+| `q` | Close the current float (focus moves to another open float if one exists) |
 | Move to a non-float window | All float windows are closed automatically |
 
 ---
@@ -250,8 +248,6 @@ In Neovim, results, condition editing, and SQL generation all use floating windo
 
 ### Query result
 
-![query result demo](assets/query.gif)
-
 | Key (default) | Action |
 |---|---|
 | `mw`  | Edit WHERE clause (opens condition panel) |
@@ -271,8 +267,6 @@ In Neovim, results, condition editing, and SQL generation all use floating windo
 ### SQL generation (ScratchSQL float)
 
 In a result buffer, the following keys generate DML and **append** it to the ScratchSQL float.
-
-![sql generation demo](assets/sqlgen.gif)
 
 | Key (default) | Action |
 |---|---|
@@ -320,4 +314,3 @@ Released under the [MIT license](https://opensource.org/licenses/mit-license.php
 ## 👤 Author
 
 [hiroki389](https://github.com/hiroki389)
-

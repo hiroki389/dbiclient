@@ -2055,20 +2055,25 @@ endfunction
 
 function s:cb_do(ch, dict) abort
     let starttime = localtime()
-    let port = get(a:dict.data.connInfo, 'port')
-    let connInfo = get(a:dict.data, 'connInfo')
+    let data = get(a:dict, 'data', {})
+    let port = get(get(data, 'connInfo', {}), 'port')
+    let connInfo = get(data, 'connInfo', {})
+    let is_commit = has_key(a:dict, 'commit') || has_key(data, 'commit')
+    let is_rollback = has_key(a:dict, 'rollback') || has_key(data, 'rollback')
     call s:myChClose(a:ch)
-    let bufnr = s:bufnr(get(get(a:dict, 'data', {}), 'reloadBufnr', -1))
+    let bufnr = s:bufnr(get(data, 'reloadBufnr', -1))
     let ro = getbufvar(bufnr, '&readonly', 0)
     let matchadds=[]
-    if has_key(a:dict, 'commit')
+    if is_commit
         if get(a:dict, "status", 9) ==# 1
             call s:echoMsg('IO13')
         endif
-    elseif has_key(a:dict, 'rollback')
+        return
+    elseif is_rollback
         if get(a:dict, "status", 9) ==# 1
             call s:echoMsg('IO14')
         endif
+        return
     else
         let ymdhms = strftime("%Y%m%d%H%M%S", localtime())
         let bufname = get(a:dict.data, 'reloadBufname', '')
@@ -4578,7 +4583,6 @@ function s:openVsFloat(bufname) abort
         \ '<Cmd>call <SID>restoreResultFloat(%d, %d, %d, %d, %d)<CR>',
         \ orig_col, orig_width, orig_height, orig_row, s:resultFloatWinid)
     exe 'nnoremap <buffer> <silent> <nowait> q ' . restore_cmd
-    exe 'nnoremap <buffer> <silent> <nowait> <Esc> ' . restore_cmd
 
     return bnr
 endfunction
@@ -4662,7 +4666,6 @@ function s:openFloatWindow(bufname, ...) abort
     setlocal buftype=nofile nobuflisted noswapfile nowrap
     setlocal filetype=dbiclient
     nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
-    nnoremap <buffer> <silent> <nowait> <Esc> <Cmd>close<CR>
     call setwinvar(winid, 'dbiclient_float', 1)
 
     if !focus
@@ -4697,7 +4700,6 @@ function s:openResultFloat(bufname) abort
     call setbufvar(bnr, '&wrap',      0)
     call setbufvar(bnr, '&filetype',  'dbiclient')
     call nvim_buf_set_keymap(bnr, 'n', 'q',     '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
-    call nvim_buf_set_keymap(bnr, 'n', '<Esc>', '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
 
     " 既存の結果フロートが有効ならバッファを切り替えるだけ
     if s:resultFloatWinid != -1
