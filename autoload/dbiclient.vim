@@ -419,16 +419,7 @@ endfunction
 
 function dbiclient#openbuf() abort
     if bufexists(s:currentBuf)
-        if g:dbiclient_previewwindow
-            let cwid = s:getwidCurrentTab(s:currentBuf)
-            silent! wincmd P
-            if !getbufvar(s:bufnr('%'), '&previewwindow')
-                bo new
-                silent! setlocal previewwindow
-            endif
-        else
-            bo new
-        endif
+        bo new
         exe 'b ' .. s:currentBuf
         call s:sethl(bufnr('%'))
     endif
@@ -1130,11 +1121,6 @@ function s:joblist(moveFlg)
         call s:deletebufline(l:bufnrNm, 1, '$')
     endif
 
-    if getbufvar(l:bufnrNm, '&previewwindow')
-        call setbufvar(l:bufnrNm, '&previewwindow', 0)
-    endif
-
-    " s:setnmap は s:joblist の外で定義されている前提
     call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_CH', s:nmap_job_CH), ':<C-u>call <SID>chgjob(matchstr(getline("."), ''\v^\*?\zs\d+''), 1)<CR>')
     call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':<C-u>call <SID>jobStopNext(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
     call s:setnmap(l:bufnrNm, get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':<C-u>call <SID>userTablesMain(matchstr(getline("."), ''\v^\*?\zs\d+''))<CR>')
@@ -1502,9 +1488,7 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
     if s:error1(port)
         return {}
     endif
-    let save_dbiclient_previewwindow = g:dbiclient_previewwindow
     if len(sqllist) > 1
-        let g:dbiclient_previewwindow = 0
         let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
         let opt = {}
         let bufname='ResultRows_' .. s:getuser(s:params[port]) .. '_' .. port .. '_' .. ymdhmss
@@ -1544,7 +1528,6 @@ function s:selectRangeSQL(alignFlg, limitrows) range abort
             let channel = s:getQueryAsync(trim(sqllist[0]), s:callbackstr(a:alignFlg), limitrows, {}, port)
         endif
     endif
-    let g:dbiclient_previewwindow = save_dbiclient_previewwindow
 endfunction
 
 function s:cb_outputResultMany(ch, dict) abort
@@ -1870,9 +1853,6 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     if ro
         call s:f.readonly(bufnr)
     endif
-    if !g:dbiclient_previewwindow
-        call s:gotoWin(bufnr)
-    endif
     let param = {
                 \"opt"            : a:opt
                 \, "sql"           : sql
@@ -2046,9 +2026,6 @@ function s:dBCommandAsync(command, callback, port) abort
         "exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call s:cancel(' .. a:port .. ',' .. bufnr .. ')'
         if ro
             call s:f.readonly(bufnr)
-        endif
-        if !g:dbiclient_previewwindow
-            call s:gotoWin(bufnr)
         endif
         let command.reloadBufname = bufname
         let command.reloadBufnr = bufnr
@@ -3011,9 +2988,6 @@ function s:selectHistory(port) abort
         call s:deletebufline(bufnr, 1, '$')
         call setbufvar(bufnr, 'dbiclient_bufmap', {})
     endif
-    if getbufvar(bufnr, '&previewwindow')
-        call setbufvar(bufnr, '&previewwindow', 0)
-    endif
     call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
     "call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
     call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':call <SID>dbhistoryCmd(<SID>getPort())<CR>')
@@ -3774,9 +3748,6 @@ function s:dbhistoryRestore(str) abort
     else
         call s:cb_do({}, dbiclient_bufmap)
     endif
-    if !g:dbiclient_previewwindow
-        call s:gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
-    endif
 endfunction
 
 function s:getSqlHistory(str) abort
@@ -3819,22 +3790,6 @@ function s:reloadLimit(bufnr, sql, limitrows) abort
     if s:bufnr(bufnr) !=# s:bufnr('%') && winid ==# -1
         let bufnr = s:bufnr('%')
         let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
-        if g:dbiclient_previewwindow
-            let cwid = s:getwidCurrentTab(bufnr)
-            silent! wincmd P
-            silent! setlocal nopreviewwindow
-            call s:debugLog('reloadLimit')
-            if cwid != -1
-                call win_gotoid(cwid)
-                call s:debugLog('win_gotoid:[' .. s:bufnr('%') .. ',' .. cwid .. ']')
-            else
-                call s:gotoWin(bufnr)
-            endif
-            silent! setlocal previewwindow
-            enew
-            setlocal bufhidden=wipe
-            let delbufnr = bufnr
-        endif
     elseif s:bufnr(bufnr) !=# s:bufnr('%')
         let cbufnr = s:bufnr('%')
         quit
@@ -3940,9 +3895,6 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
         call setbufvar(bufnr, 'dbiclient_matches', [])
         call setbufvar(bufnr, 'dbiclient_nmap', [])
         call setbufvar(bufnr, 'dbiclient_vmap', [])
-    endif
-    if getbufvar(bufnr, '&previewwindow')
-        call setbufvar(bufnr, '&previewwindow', 0)
     endif
 
     let opt = {
@@ -4401,7 +4353,6 @@ function s:enewBuffer(bufname, ...) abort
             return bnr
         endif
     endif
-    setlocal nopreviewwindow
     let bufnr = s:f.enew(a:bufname, g:dbiclient_buffer_encoding, 1)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
     return bufnr
@@ -4856,26 +4807,8 @@ function s:belowPeditBuffer(bufname, ...) abort
             return [bnr, cbnr]
         endif
     endif
-    " フォールバック: 従来の split / preview ウィンドウ
-    if g:dbiclient_previewwindow
-        let pflg = 0
-        let tabnr = tabpagenr()
-        for wid in map(range(tabpagewinnr(tabnr,'$')),{_,x->win_getid(x+1,tabnr)})
-            if getwinvar(wid, '&previewwindow')
-                let pflg = 1
-                break
-            endif
-        endfor
-        if pflg
-            let hight = ''
-        else
-            let hight = winheight(s:getwid(s:bufnr(a:bufname)))
-            let hight = hight == -1 && !&previewwindow  ? g:dbiclient_new_window_hight : ''
-        endif
-        let [bufnr, cbufnr] = s:f.newBuffer('bo pedit', hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
-    else
-        let [bufnr, cbufnr] = s:f.newBuffer('below new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, g:dbiclient_previewwindow)
-    endif
+    " フォールバック: split ウィンドウ
+    let [bufnr, cbufnr] = s:f.newBuffer('below new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
     return [bufnr, cbufnr]
 endfunction
