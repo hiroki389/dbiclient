@@ -4380,6 +4380,14 @@ function s:getLimitrowsaBuffer() abort
 endfunction
 
 function s:enewBuffer(bufname, ...) abort
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
+        if winid != -1
+            call s:f.noreadonly(bnr)
+            call setbufvar(bnr, '&filetype', 'dbiclient')
+            return bnr
+        endif
+    endif
     setlocal nopreviewwindow
     let bufnr = s:f.enew(a:bufname, g:dbiclient_buffer_encoding, 1)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
@@ -4387,18 +4395,42 @@ function s:enewBuffer(bufname, ...) abort
 endfunction
 
 function s:belowNewBuffer(bufname, ...) abort
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
+        if winid != -1
+            call s:f.noreadonly(bnr)
+            call setbufvar(bnr, '&filetype', 'dbiclient')
+            return bnr
+        endif
+    endif
     let [bufnr, cbufnr] = s:f.newBuffer('below new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
     return bufnr
 endfunction
 
 function s:aboveNewBuffer(bufname, ...) abort
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
+        if winid != -1
+            call s:f.noreadonly(bnr)
+            call setbufvar(bnr, '&filetype', 'dbiclient')
+            return bnr
+        endif
+    endif
     let [bufnr, cbufnr] = s:f.newBuffer('above new', g:dbiclient_new_window_hight, a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
     return bufnr
 endfunction
 
 function s:vsNewBuffer(bufname, ...) abort
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
+        if winid != -1
+            call s:f.noreadonly(bnr)
+            call setbufvar(bnr, '&filetype', 'dbiclient')
+            return bnr
+        endif
+    endif
     let [bufnr, cbufnr] = s:f.newBuffer('vertical new', '', a:bufname, g:dbiclient_buffer_encoding, 0)
     call setbufvar(bufnr, '&filetype', 'dbiclient')
     let cwid = s:f.getwidCurrentTab(cbufnr)
@@ -4407,11 +4439,13 @@ function s:vsNewBuffer(bufname, ...) abort
 endfunction
 
 " フローティングウィンドウでバッファを開く (Neovim 専用)
+" 引数: bufname, focus=0 (0=元ウィンドウへ戻る, 1=フロートにフォーカスを残す)
 " 戻り値: [bufnr, cbufnr, winid]  winid=-1 なら非フロート
-function s:openFloatWindow(bufname) abort
+function s:openFloatWindow(bufname, ...) abort
     if !has('nvim') || !exists('*nvim_open_win')
         return [-1, -1, -1]
     endif
+    let focus  = get(a:000, 0, 0)
     let cbufnr = bufnr('%')
 
     " 既存バッファを再利用 or 新規作成
@@ -4423,7 +4457,9 @@ function s:openFloatWindow(bufname) abort
         " 既にフロートで開いていれば既存 winid を返す
         for wid in range(1, winnr('$'))
             if winbufnr(wid) == bnr && nvim_win_get_config(win_getid(wid)).relative !=# ''
-                call win_gotoid(win_getid(wid))
+                if focus
+                    call win_gotoid(win_getid(wid))
+                endif
                 return [bnr, cbufnr, win_getid(wid)]
             endif
         endfor
@@ -4457,19 +4493,22 @@ function s:openFloatWindow(bufname) abort
     " フロートウィンドウを識別するためのウィンドウ変数
     call setwinvar(winid, 'dbiclient_float', 1)
 
-    " バッファへの書き込みは bufnr 経由で行われるため、
-    " フロートを開いた直後に元のウィンドウへフォーカスを戻す
-    let cwid = win_getid()
-    call win_gotoid(cwid)
-    noautocmd call win_gotoid(s:f.getwidCurrentTab(cbufnr))
+    " focus=0: バッファへの書き込みは bufnr 経由で行われるため元ウィンドウへ戻す
+    " focus=1: ユーザーがすぐ操作できるようフロートにフォーカスを残す
+    if !focus
+        let orig_wid = s:f.getwidCurrentTab(cbufnr)
+        if orig_wid != -1
+            noautocmd call win_gotoid(orig_wid)
+        endif
+    endif
 
     return [bnr, cbufnr, winid]
 endfunction
 
 function s:belowPeditBuffer(bufname, ...) abort
-    " フローティングウィンドウが有効かつ Neovim なら float で開く
+    " フローティングウィンドウが有効かつ Neovim なら float で開く (focus=0)
     if get(g:, 'dbiclient_float_window', 1) && has('nvim')
-        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname)
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 0)
         if winid != -1
             call setbufvar(bnr, '&filetype', 'dbiclient')
             return [bnr, cbnr]
@@ -4615,6 +4654,11 @@ function s:init() abort
         if !isdirectory(logpath)
             call mkdir(logpath)
         endif
+        " フロートウィンドウ内でバッファを切り替えても nowrap を維持する
+        augroup dbiclient_float_nowrap
+            autocmd!
+            autocmd WinEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
+        augroup END
         call s:zonbie()
     endif
     let s:loaded = 1
