@@ -3716,9 +3716,19 @@ function s:dbhistoryCmd(port) abort
     if !has_key(s:params, port)
         return
     endif
+    let caller_winid = win_getid()
     let save_cursor = getcurpos()
     call s:selectHistory(port)
     call setpos('.', save_cursor)
+    " joblist フロートから呼ばれた場合は閉じる
+    if has('nvim')
+        try
+            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+                call nvim_win_close(caller_winid, 1)
+            endif
+        catch
+        endtry
+    endif
     return
 endfunction
 
@@ -3872,9 +3882,19 @@ function s:userTablesMain(port) abort
     if s:error1(port)
         return
     endif
+    let caller_winid = win_getid()
     let tableNm = s:params[port].table_name
     let tabletype = s:params[port].tabletype
     call s:userTables(1, tableNm, tabletype, port)
+    " joblist フロートから呼ばれた場合は閉じる
+    if has('nvim')
+        try
+            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+                call nvim_win_close(caller_winid, 1)
+            endif
+        catch
+        endtry
+    endif
 endfunction
 
 function s:getParams() abort
