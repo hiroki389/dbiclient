@@ -160,16 +160,34 @@ pub fn table_info_via_sql(
             conn.query(&sql, -1)
         }
         DbType::Oracle => {
+            let mut obj_conditions = vec!["1=1".to_string()];
             if let Some(s) = schema {
-                conditions.push(format!("OWNER = '{}'", s.to_uppercase().replace('\'', "''")));
+                obj_conditions.push(format!("OWNER = '{}'", s.to_uppercase().replace('\'', "''")));
             }
             if let Some(t) = table {
-                conditions.push(format!("TABLE_NAME LIKE '{}'", t.to_uppercase().replace('\'', "''")));
+                obj_conditions.push(format!("OBJECT_NAME LIKE '{}'", t.to_uppercase().replace('\'', "''")));
             }
+            // table_type フィルタ: TABLE/VIEW/SYNONYM/MATERIALIZED VIEW に対応
+            let type_filter = match table_type {
+                Some(tt) if !tt.is_empty() => {
+                    let upper = tt.to_uppercase();
+                    match upper.as_str() {
+                        "TABLE" => " AND OBJECT_TYPE IN ('TABLE','MATERIALIZED VIEW')",
+                        "VIEW" => " AND OBJECT_TYPE = 'VIEW'",
+                        "SYNONYM" => " AND OBJECT_TYPE = 'SYNONYM'",
+                        _ => "",
+                    }
+                }
+                _ => "",
+            };
             let sql = format!(
-                "SELECT NULL AS TABLE_CAT, OWNER AS TABLE_SCHEM, TABLE_NAME, \
-                 'TABLE' AS TABLE_TYPE, NULL AS REMARKS FROM ALL_TABLES WHERE {} ORDER BY TABLE_NAME",
-                conditions.join(" AND ")
+                "SELECT NULL AS TABLE_CAT, OWNER AS TABLE_SCHEM, OBJECT_NAME AS TABLE_NAME, \
+                 OBJECT_TYPE AS TABLE_TYPE, NULL AS REMARKS \
+                 FROM ALL_OBJECTS \
+                 WHERE OBJECT_TYPE IN ('TABLE','VIEW','SYNONYM','MATERIALIZED VIEW') \
+                 AND {} {} ORDER BY OBJECT_NAME",
+                obj_conditions.join(" AND "),
+                type_filter
             );
             conn.query(&sql, -1)
         }

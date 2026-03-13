@@ -14,6 +14,7 @@ if empty($XDG_CACHE_HOME)
 endif
 " default 
 let g:dbiclient_debugflg               = get(g:,'dbiclient_debugflg', 0)
+let g:dbiclient_debuglog               = get(g:,'dbiclient_debuglog', 1)
 let g:dbiclient_rootPath               = get(g:,'dbiclient_rootPath', $XDG_CACHE_HOME . '/dbiclient')
 let g:dbiclient_perlmPath              = get(g:,'dbiclient_perlmPath', fnamemodify(expand('<sfile>:h') . '/../rplugin/perl/socket.pl',':p'))
 let g:dbiclient_rustPath               = get(g:,'dbiclient_rustPath', fnamemodify(expand('<sfile>:h') . '/../rplugin/rust/socket/target/release/socket',':p'))
