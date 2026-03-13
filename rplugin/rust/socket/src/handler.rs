@@ -411,9 +411,19 @@ fn run_main(
         result["table_info"] = json!([]);
         result["column_info"] = json!([]);
 
-        for schem2 in &schema_list.clone() {
+        // Oracle: シノニムを解決して実際のスキーマ・テーブルに絞り込む
+        let user_schema_opt = if user_str.is_empty() { None } else { Some(user_str.as_str()) };
+        let (effective_table, effective_schema_list) = if let Some((actual_owner, actual_name)) =
+            resolve_oracle_synonym(db, &table, user_schema_opt, port)
+        {
+            (actual_name, vec![actual_owner])
+        } else {
+            (table.clone(), schema_list.clone())
+        };
+
+        for schem2 in &effective_schema_list {
             let schem2_opt = opt_schema(schem2.as_str());
-            fetch_full_metadata(db, basedir, &table, schem_str.as_deref(), schem2_opt, true, true, result, port);
+            fetch_full_metadata(db, basedir, &effective_table, schem_str.as_deref(), schem2_opt, true, true, result, port);
             if !result["table_info"].as_array().map(|a| a.is_empty()).unwrap_or(true) {
                 break;
             }
@@ -435,26 +445,36 @@ fn run_main(
 
         result["primary_key"] = json!([]);
 
-        for schem2 in &schema_list.clone() {
+        // Oracle: シノニムを解決して実際のスキーマ・テーブルに絞り込む
+        let user_schema_opt = if user_str.is_empty() { None } else { Some(user_str.as_str()) };
+        let (effective_table, effective_schema_list) = if let Some((actual_owner, actual_name)) =
+            resolve_oracle_synonym(db, &table, user_schema_opt, port)
+        {
+            (actual_name, vec![actual_owner])
+        } else {
+            (table.clone(), schema_list.clone())
+        };
+
+        for schem2 in &effective_schema_list {
             let schem2_opt = opt_schema(schem2.as_str());
 
             // テーブル存在確認
-            let tinfo = fetch_table_info_cached(db, basedir, &table, schem_str.as_deref(), schem2_opt, port);
+            let tinfo = fetch_table_info_cached(db, basedir, &effective_table, schem_str.as_deref(), schem2_opt, port);
             if tinfo.is_empty() {
                 continue;
             }
 
             // PK 取得
-            let pk = fetch_pk_cached(db, basedir, &table, schem_str.as_deref(), schem2_opt, port);
+            let pk = fetch_pk_cached(db, basedir, &effective_table, schem_str.as_deref(), schem2_opt, port);
             if !pk.is_empty() {
                 result["primary_key"] = json!(pk);
             }
 
             // column_info カーソル → exec_sql
-            outputlog(&format!("SQL: COLUMN_INFO({})", table), Some(port));
+            outputlog(&format!("SQL: COLUMN_INFO({})", effective_table), Some(port));
             let conn = db.conn.as_mut().unwrap();
             let sql_start = Instant::now();
-            let mut cursor = match conn.column_info_cursor(schem2_opt, &table) {
+            let mut cursor = match conn.column_info_cursor(schem2_opt, &effective_table) {
                 Ok(c) => c,
                 Err(e) => {
                     outputlog(&format!("column_info error: {}", e), Some(port));
@@ -561,11 +581,27 @@ fn fetch_table_metadata(
         schema_list.to_vec()
     };
 
-    for schem2 in &schemas {
-        let user_schem_str = db.user.clone();
-        let user_schem = opt_schema(&user_schem_str);
+    // Oracle: シノニムを解決して実際のスキーマ・テーブル名に置換
+    let user_schem_str = db.user.clone();
+    let user_schem_opt = opt_schema(&user_schem_str);
+    let (resolved_table, resolved_schemas): (String, Vec<String>) =
+        if forced_schema.is_none() {
+            if let Some((actual_owner, actual_name)) =
+                resolve_oracle_synonym(db, table_name, user_schem_opt, port)
+            {
+                (actual_name, vec![actual_owner])
+            } else {
+                (table_name.to_string(), schemas.clone())
+            }
+        } else {
+            (table_name.to_string(), schemas.clone())
+        };
+
+    for schem2 in &resolved_schemas {
+        let user_schem_str2 = db.user.clone();
+        let user_schem = opt_schema(&user_schem_str2);
         let schem2_opt = opt_schema(schem2.as_str());
-        let tinfo = fetch_table_info_cached(db, basedir, table_name, user_schem, schem2_opt, port);
+        let tinfo = fetch_table_info_cached(db, basedir, &resolved_table, user_schem, schem2_opt, port);
         if tinfo.is_empty() {
             continue;
         }
@@ -578,7 +614,7 @@ fn fetch_table_metadata(
 
         // PK 取得
         if db.primary_key_flg {
-            let pk = fetch_pk_cached(db, basedir, table_name, user_schem, schem2_opt, port);
+            let pk = fetch_pk_cached(db, basedir, &resolved_table, user_schem, schem2_opt, port);
             if let Value::Array(arr) = &mut result["primary_key"] {
                 for k in &pk {
                     arr.push(json!(k));
@@ -588,7 +624,7 @@ fn fetch_table_metadata(
 
         // カラム情報取得
         if fetch_column_info && db.column_info_flg {
-            let cinfo = fetch_column_info_cached(db, basedir, table_name, user_schem, schem2_opt, port);
+            let cinfo = fetch_column_info_cached(db, basedir, &resolved_table, user_schem, schem2_opt, port);
             if let Value::Array(arr) = &mut result["column_info"] {
                 for row in &cinfo {
                     arr.push(json!(row));
@@ -678,13 +714,76 @@ fn try_table_info(
     table: &str,
     port: u16,
 ) -> Vec<serde_json::Map<String, Value>> {
-    match conn.table_info_cursor(schema, Some(table), Some("TABLE")) {
+    // table_type=None で TABLE/VIEW/MATERIALIZED VIEW 全てを対象にする
+    // (シノニム解決後の実体が VIEW の場合もある)
+    match conn.table_info_cursor(schema, Some(table), None) {
         Ok(mut cursor) => cursor_to_map_rows(&mut cursor),
         Err(e) => {
             outputlog(&format!("table_info error: {}", e), Some(port));
             vec![]
         }
     }
+}
+
+/// Oracle の ALL_SYNONYMS からシノニムの実体 (TABLE_OWNER, TABLE_NAME) を解決する。
+/// まずユーザーのプライベートシノニムを検索し、次に PUBLIC シノニムを検索する。
+fn resolve_oracle_synonym(
+    db: &mut DbState,
+    synonym_name: &str,
+    user_schem: Option<&str>,
+    port: u16,
+) -> Option<(String, String)> {
+    if !db.is_oracle() {
+        return None;
+    }
+    let upper_name = synonym_name.to_uppercase().replace('\'', "''");
+
+    // 1. ユーザーのプライベートシノニム
+    if let Some(owner) = user_schem {
+        if !owner.is_empty() {
+            let sql = format!(
+                "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS \
+                 WHERE OWNER='{}' AND SYNONYM_NAME='{}' AND DB_LINK IS NULL",
+                owner.to_uppercase().replace('\'', "''"),
+                upper_name
+            );
+            let result = db.conn.as_mut().and_then(|conn| {
+                conn.query(&sql, 1).ok().map(|mut c| cursor_to_map_rows(&mut c))
+            });
+            if let Some(rows) = result {
+                if let Some(row) = rows.first() {
+                    let towner = row.get("TABLE_OWNER").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let tname = row.get("TABLE_NAME").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if !towner.is_empty() {
+                        outputlog(&format!("SYNONYM RESOLVED(private): {} -> {}.{}", synonym_name, towner, tname), Some(port));
+                        return Some((towner, tname));
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. PUBLIC シノニム
+    let sql = format!(
+        "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS \
+         WHERE OWNER='PUBLIC' AND SYNONYM_NAME='{}' AND DB_LINK IS NULL",
+        upper_name
+    );
+    let result = db.conn.as_mut().and_then(|conn| {
+        conn.query(&sql, 1).ok().map(|mut c| cursor_to_map_rows(&mut c))
+    });
+    if let Some(rows) = result {
+        if let Some(row) = rows.first() {
+            let towner = row.get("TABLE_OWNER").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let tname = row.get("TABLE_NAME").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if !towner.is_empty() {
+                outputlog(&format!("SYNONYM RESOLVED(public): {} -> {}.{}", synonym_name, towner, tname), Some(port));
+                return Some((towner, tname));
+            }
+        }
+    }
+
+    None
 }
 
 fn fetch_pk_cached(
