@@ -9,15 +9,25 @@ Set PlaybackSpeed 0.8
 Type "nvim -u /tmp/dbiclient_demo_vimrc.vim"
 Enter
 Sleep 3s
-
 Type ":DBIConnDemo"
 Enter
 Sleep 4s
 
-# Browse table list
-Sleep 1s
+# Navigate down to first data row
+Type "j"
+Sleep 0.3s
 Type "j"
 Sleep 0.4s
+Type "j"
+Sleep 0.3s
+Type "j"
+Sleep 0.4s
+
+# Count rows
+Type "mc"
+Sleep 2s
+
+# Move to next table
 Type "j"
 Sleep 0.4s
 
@@ -28,21 +38,15 @@ Type "pro"
 Enter
 Sleep 2s
 
-# Reset
-Type "mw"
-Sleep 0.4s
-Enter
-Sleep 1.5s
+# Move to project row
+Type "j"
+Sleep 0.3s
+Type "j"
+Sleep 0.3s
 
-# Filter by type
-Type "mt"
-Sleep 0.6s
+# SELECT projects
 Enter
-Sleep 1.5s
-
-# Count rows on employees
-Type "mc"
-Sleep 2s
+Sleep 3s
 
 Sleep 1s
 Type ":qa!"

@@ -13,25 +13,31 @@ Type ":DBIConnDemo"
 Enter
 Sleep 4s
 
-# Select employees table
+# Navigate to employees row (header + separator = 2 lines)
+Type "j"
+Sleep 0.3s
+Type "j"
+Sleep 0.3s
+
+# SELECT employees
 Enter
 Sleep 3s
 
-# WHERE filter
+# WHERE: Engineering only
 Type "mw"
 Sleep 0.8s
 Type "dept = 'Engineering'"
 Enter
 Sleep 2.5s
 
-# ORDER BY
+# ORDER BY salary DESC
 Type "mo"
 Sleep 0.8s
 Type "salary DESC"
 Enter
 Sleep 2.5s
 
-# Change LIMIT
+# Change LIMIT to 3
 Type "mll"
 Sleep 0.8s
 Type "3"

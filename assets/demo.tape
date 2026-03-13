@@ -14,31 +14,37 @@ Type ":DBIConnDemo"
 Enter
 Sleep 4s
 
-# Table list is open - filter by emp
+# Table list opened - cursor on header, move to first data row
+Type "j"
+Sleep 0.3s
+Type "j"
+Sleep 0.3s
+
+# Filter to employees only
 Type "mw"
-Sleep 0.8s
+Sleep 0.6s
 Type "emp"
 Enter
 Sleep 2s
 
-# Reset filter
-Type "mw"
-Sleep 0.4s
-Enter
-Sleep 1.5s
+# Now cursor is on header again - move to employees row
+Type "j"
+Sleep 0.3s
+Type "j"
+Sleep 0.3s
 
-# Press CR to SELECT employees
+# SELECT employees
 Enter
 Sleep 3s
 
-# WHERE edit - filter high earners
+# Result float: WHERE filter
 Type "mw"
 Sleep 0.8s
 Type "salary > 80000"
 Enter
 Sleep 2.5s
 
-# ORDER BY salary
+# ORDER BY salary DESC
 Type "mo"
 Sleep 0.8s
 Type "salary DESC"

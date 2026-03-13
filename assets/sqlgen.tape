@@ -13,23 +13,31 @@ Type ":DBIConnDemo"
 Enter
 Sleep 4s
 
-# Select projects table (navigate down)
+# Navigate to employees row
 Type "j"
 Sleep 0.3s
 Type "j"
 Sleep 0.3s
+
+# SELECT employees
 Enter
 Sleep 3s
+
+# Move cursor to a data row (below header + separator)
+Type "j"
+Sleep 0.3s
+Type "j"
+Sleep 0.4s
 
 # Generate INSERT
 Type "mi"
 Sleep 2s
 
-# Switch to ScratchSQL float with Tab
+# Tab to ScratchSQL float
 Type ""
 Sleep 1s
 
-# Back to result float
+# Tab back to result float
 Type ""
 Sleep 1s
 
