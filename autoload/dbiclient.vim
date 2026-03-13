@@ -5009,11 +5009,31 @@ function s:init() abort
 endfunction
 
 function s:onFloatWinClosed(winid) abort
+    " WinClosed は close 前に発火するため、フォーカス移動は timer で遅延させる
+    call timer_start(0, {-> s:onFloatWinClosedPost(a:winid)})
+endfunction
+
+function s:onFloatWinClosedPost(winid) abort
+    " 閉じたウィンドウに対応するキャッシュをクリアし、
+    " 優先順位に従って別フロートへフォーカスを移動する
+    "
+    " 優先順位:
+    "   vsFloat 閉   → resultFloat → scratchFloat → 変更なし
+    "   scratch 閉   → resultFloat → 変更なし
+    "   result 閉    → scratchFloat → 変更なし
+    "   その他フロート閉 → resultFloat → scratchFloat → 変更なし
+
+    let closed_result  = 0
+    let closed_scratch = 0
+    let closed_vs      = 0
+
     if a:winid == s:resultFloatWinid
         let s:resultFloatWinid = -1
+        let closed_result = 1
     endif
     if a:winid == s:scratchFloatWinid
         let s:scratchFloatWinid = -1
+        let closed_scratch = 1
         " ScratchSQL が閉じられたら結果フロートを元の高さに戻す
         if s:resultFloatOrigHeight != -1 && s:resultFloatWinidForRestore != -1
             try
@@ -5030,6 +5050,7 @@ function s:onFloatWinClosed(winid) abort
     endif
     if a:winid == s:vsFloatWinid
         let s:vsFloatWinid = -1
+        let closed_vs = 1
         " vsFloat が閉じられたら結果フロートを元の geometry に戻す
         if !empty(s:vsFloatRestoreData)
             let rd = s:vsFloatRestoreData
@@ -5049,6 +5070,37 @@ function s:onFloatWinClosed(winid) abort
             endtry
         endif
     endif
+
+    " ── フォーカス移動 ──────────────────────────────────────────────────────
+    " 優先候補リストを組み立てて最初に valid なものへ移動
+    let candidates = []
+    if closed_vs
+        " vsFloat 閉 → 結果 → ScratchSQL
+        call add(candidates, s:resultFloatWinid)
+        call add(candidates, s:scratchFloatWinid)
+    elseif closed_scratch
+        " ScratchSQL 閉 → 結果
+        call add(candidates, s:resultFloatWinid)
+    elseif closed_result
+        " 結果 閉 → ScratchSQL
+        call add(candidates, s:scratchFloatWinid)
+    else
+        " その他フロート閉 → 結果 → ScratchSQL
+        call add(candidates, s:resultFloatWinid)
+        call add(candidates, s:scratchFloatWinid)
+    endif
+
+    for wid in candidates
+        if wid != -1
+            try
+                if nvim_win_is_valid(wid)
+                    call win_gotoid(wid)
+                    return
+                endif
+            catch
+            endtry
+        endif
+    endfor
 endfunction
 
 function s:zonbie()
