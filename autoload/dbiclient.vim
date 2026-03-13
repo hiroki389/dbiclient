@@ -5122,12 +5122,12 @@ function s:getAllFloatWinids() abort
 endfunction
 
 " Tab: フロートウィンドウ間をサイクル
-function s:cycleFloatWindows() abort
+function s:cycleFloatWindows(dir) abort
     if !has('nvim') | return | endif
     let floats = s:getAllFloatWinids()
     if empty(floats)
-        " フロートがなければ通常の <Tab> として動作
-        call feedkeys("\<Tab>", 'n')
+        " フロートがなければ通常の <Tab>/<S-Tab> として動作
+        call feedkeys(a:dir > 0 ? "\<Tab>" : "\<S-Tab>", 'n')
         return
     endif
     " フロートが1つしかない場合は何もしない（背後ウィンドウへ移動しない）
@@ -5136,8 +5136,13 @@ function s:cycleFloatWindows() abort
         return
     endif
     let cur = win_getid()
+    let n   = len(floats)
     let idx = index(floats, cur)
-    let next = floats[(idx == -1 ? 0 : (idx + 1) % len(floats))]
+    if a:dir > 0
+        let next = floats[(idx == -1 ? 0 : (idx + 1) % n)]
+    else
+        let next = floats[(idx == -1 ? n - 1 : (idx - 1 + n) % n)]
+    endif
     " 次が自分自身なら移動しない
     if next == cur | return | endif
     let s:closing_floats = 1
@@ -5146,7 +5151,10 @@ function s:cycleFloatWindows() abort
 endfunction
 " 公開 API
 function dbiclient#cycleFloatWindows() abort
-    call s:cycleFloatWindows()
+    call s:cycleFloatWindows(1)
+endfunction
+function dbiclient#cycleFloatWindowsRev() abort
+    call s:cycleFloatWindows(-1)
 endfunction
 
 " 全フロートを閉じる

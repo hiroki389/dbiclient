@@ -80,8 +80,9 @@ command! -bang -range DBIExecuteNoSplit :<line1>,<line2>call dbiclient#dBExecRan
 
 command! -range -nargs=? DBICreateDeleteInsertSql :<line1>,<line2>call dbiclient#createDeleteInsertSql(<f-args>)
 
-" Tab キーでフロートウィンドウをサイクル（フロートが1つ以上あるときだけ）
-nnoremap <silent> <Tab> :call dbiclient#cycleFloatWindows()<CR>
+" Tab / Shift-Tab キーでフロートウィンドウをサイクル（フロートが1つ以上あるときだけ）
+nnoremap <silent> <Tab>   :call dbiclient#cycleFloatWindows()<CR>
+nnoremap <silent> <S-Tab> :call dbiclient#cycleFloatWindowsRev()<CR>
 
 let &cpo = s:cpo_save
 unlet s:cpo_save
