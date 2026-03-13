@@ -24,6 +24,9 @@ let s:params = {}
 let s:hardparseDict = {}
 let s:lastparse = {}
 let s:shadowpass = ''
+" 共有フロートウィンドウ ID (-1 = 未開またはクローズ済み)
+let s:resultFloatWinid  = -1   " SELECT/UPDATE 等の結果を表示する共有フロート
+let s:scratchFloatWinid = -1   " ScratchSQL フロート
 let s:msg = {
             \'EO01': 'Buffer not found.',
             \'EO02': 'File not found: ($1).',
@@ -246,12 +249,7 @@ function dbiclient#createTestdata(...) abort
     let res ..= ")VALUES("
     let res ..= join(map(cols[:], {i, x -> has_key(constDataMap, x) ? "'" .. constDataMap[x] .. "'" : s:testValue(colsType[i], colsSize[i], colsSizeDigits[i], (setdata == -1 ? i : setdata))}), ', ')
     let res ..= ");"
-    let bufname = "ScratchTestData"
-    let bufnr = s:bufnr(bufname)
-    if s:gotoWinCurrentTab(bufnr) ==# -1
-        let bufnr = s:aboveNewBuffer(bufname)
-    endif
-    call s:appendbufline(bufnr, '$', res)
+    call s:appendToScratch(res)
 endfunction
 
 function dbiclient#createTestdataNotNullNull1(...) abort
@@ -278,10 +276,16 @@ function dbiclient#createTestdataNotNullNull1(...) abort
     let targetFlg = -1
 
     if len(flgList) > 0
-        let bufname = "ScratchTestData"
-        let bufnr = s:bufnr(bufname)
-        if s:gotoWinCurrentTab(bufnr) ==# -1
-            let bufnr = s:aboveNewBuffer(bufname)
+        let scratchBnr = s:openScratchBuffer()
+        " フロート無効の場合のフォールバック
+        if scratchBnr == -1
+            let bufname = 'ScratchSQL'
+            let scratchBnr = s:bufnr(bufname)
+            if s:gotoWinCurrentTab(scratchBnr) ==# -1
+                let [_b, _c] = s:f.newBuffer('above new', g:dbiclient_new_window_hight, bufname, g:dbiclient_buffer_encoding, 0)
+                let scratchBnr = _b
+            endif
+            call setbufvar(scratchBnr, '&filetype', 'sql')
         endif
         for col in sortData[:]
             if flgList[targetFlg] == 1
@@ -304,7 +308,11 @@ function dbiclient#createTestdataNotNullNull1(...) abort
             let res ..= ")VALUES("
             let res ..= join(map(cols[:], {i, x -> (has_key(constDataMap, x) ? "'" .. constDataMap[x] .. "'" : (flgList[i] != 0 ? s:testValue(colsType[i], colsSize[i], colsSizeDigits[i], (setdata == -1 ? i : setdata)) : "''"))}), ', ')
             let res ..= ");"
-            call s:appendbufline(bufnr, '$', res)
+            let existing = getbufline(scratchBnr, 1, '$')
+            if existing !=# [''] && !empty(existing)
+                call s:appendbufline(scratchBnr, '$', [''])
+            endif
+            call s:appendbufline(scratchBnr, '$', res)
         endfor
     endif
 endfunction
@@ -343,8 +351,15 @@ endfunction
 function dbiclient#createDeleteInsertSql(...) range abort
     let limitrows = get(a:, 1, s:getLimitrows() + 1)
     let sqls = join(getline(a:firstline, a:lastline),"\n")->split('\v;\s*($|\n)')
-    let bufname = "ScratchDeleteInsert"
-    let bufnr = s:aboveNewBuffer(bufname)
+    let bufnr = s:openScratchBuffer()
+    if bufnr == -1
+        let bufnr_f = s:bufnr('ScratchSQL')
+        if s:gotoWinCurrentTab(bufnr_f) ==# -1
+            let [bufnr_f, _] = s:f.newBuffer('above new', g:dbiclient_new_window_hight, 'ScratchSQL', g:dbiclient_buffer_encoding, 0)
+        endif
+        let bufnr = bufnr_f
+        call setbufvar(bufnr, '&filetype', 'sql')
+    endif
     for sql in sqls
         if trim(sql) != ''
             let res = dbiclient#getQuery(sql ,limitrows,{})
@@ -928,14 +943,9 @@ function s:createInsertRange() range abort
     endif
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
-    let bufnr = s:bufnr(bufname)
-    if s:gotoWinCurrentTab(bufnr) ==# -1
-        let bufnr = s:aboveNewBuffer(bufname)
-    endif
-    call s:deletebufline(bufnr, 1, '$')
     let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
     let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
-    call s:appendbufline(bufnr, '$', s:createInsert(cols, param, param2, dbiclient_bufmap.alignFlg, tableNm))
+    call s:appendToScratch(s:createInsert(cols, param, param2, dbiclient_bufmap.alignFlg, tableNm))
 endfunction
 
 function s:trim_surround(val) abort
@@ -1010,7 +1020,6 @@ function s:createUpdateRange() range abort
     if s:error1CurrentPort() || s:error3()
         return
     endif
-    let bufname = "ScratchUpdate"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
     let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
@@ -1028,14 +1037,9 @@ function s:createUpdateRange() range abort
     endif
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
-    let bufnr = s:bufnr(bufname)
-    if s:gotoWinCurrentTab(bufnr) ==# -1
-        let bufnr = s:aboveNewBuffer(bufname)
-    endif
-    call s:deletebufline(bufnr, 1, '$')
     let param  = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
     let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
-    call s:appendbufline(bufnr, '$', s:createUpdate(param, param2, tableNm, dbiclient_bufmap.alignFlg, port))
+    call s:appendToScratch(s:createUpdate(param, param2, tableNm, dbiclient_bufmap.alignFlg, port))
 endfunction
 
 function s:createDelete(vallist, beforevallist, tableNm, port) abort
@@ -1075,7 +1079,6 @@ function s:createDeleteRange() range abort
     if s:error1CurrentPort() || s:error3()
         return
     endif
-    let bufname = "ScratchDelete"
     let list = getline(a:firstline, a:lastline)
     let tmp = list->join(g:dbiclient_prelinesep)
     let list = tmp->substitute('\v(^|' .. g:dbiclient_col_delimiter .. ')@<=".{-}"' .. '($|' .. g:dbiclient_col_delimiter .. ')@=', {m -> s:trim_surround(substitute(s:trim_surround_CRLF(m[0]), g:dbiclient_prelinesep, g:dbiclient_prelinesep2,'g'))}, 'g')->split(g:dbiclient_prelinesep)
@@ -1093,14 +1096,9 @@ function s:createDeleteRange() range abort
     endif
     let cols = dbiclient_bufmap.cols
     let tableNm = dbiclient_bufmap.data.tableNm
-    let bufnr = s:bufnr(bufname)
-    if s:gotoWinCurrentTab(bufnr) ==# -1
-        let bufnr = s:aboveNewBuffer(bufname)
-    endif
-    call s:deletebufline(bufnr, 1, '$')
     let param = dbiclient#funclib#List(list).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
     let param2 = dbiclient#funclib#List(beforeList).foldl({x -> s:f.zip(cols, s:split(x, g:dbiclient_col_delimiter))}, []).value()
-    call s:appendbufline(bufnr, '$', s:createDelete(param, param2, tableNm, port))
+    call s:appendToScratch(s:createDelete(param, param2, tableNm, port))
 endfunction
 
 function s:joblist(moveFlg)
@@ -3917,7 +3915,7 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
     let bufnr = s:bufnr(bufname)
 
     if s:f.getwidCurrentTab(bufnr) ==# -1
-        let bufnr = s:enewBuffer(bufname)
+        let bufnr = s:enewBuffer(bufname, {'width_ratio': g:dbiclient_float_tables_width, 'height_ratio': g:dbiclient_float_tables_height})
         call s:f.noreadonly(bufnr)
         call add(s:bufferList, bufnr)
     else
@@ -4380,8 +4378,10 @@ function s:getLimitrowsaBuffer() abort
 endfunction
 
 function s:enewBuffer(bufname, ...) abort
+    " オプションの第1引数: size_opts = {'width_ratio': ..., 'height_ratio': ...}
+    let size_opts = get(a:000, 0, {})
     if get(g:, 'dbiclient_float_window', 1) && has('nvim')
-        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1, size_opts)
         if winid != -1
             call s:f.noreadonly(bnr)
             call setbufvar(bnr, '&filetype', 'dbiclient')
@@ -4438,15 +4438,31 @@ function s:vsNewBuffer(bufname, ...) abort
     return bufnr
 endfunction
 
+" ─── フロートウィンドウ共通ユーティリティ ─────────────────────────────────────
+
 " フローティングウィンドウでバッファを開く (Neovim 専用)
-" 引数: bufname, focus=0 (0=元ウィンドウへ戻る, 1=フロートにフォーカスを残す)
+" 引数: bufname
+"       focus      = 0: 開いた後に元のウィンドウへ戻る (非同期結果用)
+"                    1: フロートにフォーカスを残す (インタラクティブ操作用)
+"       size_opts  = {'width_ratio': 0.9, 'height_ratio': 0.6, 'row': n, 'col': n}
+"                    (省略時は g:dbiclient_float_window_width/height を使用)
 " 戻り値: [bufnr, cbufnr, winid]  winid=-1 なら非フロート
 function s:openFloatWindow(bufname, ...) abort
     if !has('nvim') || !exists('*nvim_open_win')
         return [-1, -1, -1]
     endif
-    let focus  = get(a:000, 0, 0)
-    let cbufnr = bufnr('%')
+    let focus      = get(a:000, 0, 0)
+    let size_opts  = get(a:000, 1, {})
+    let cbufnr     = bufnr('%')
+
+    let tw = &columns
+    let th = &lines
+    let wr = get(size_opts, 'width_ratio',  g:dbiclient_float_window_width)
+    let hr = get(size_opts, 'height_ratio', g:dbiclient_float_window_height)
+    let fw = float2nr(tw * wr)
+    let fh = float2nr(th * hr)
+    let row = get(size_opts, 'row', float2nr((th - fh) / 2))
+    let col = get(size_opts, 'col', float2nr((tw - fw) / 2))
 
     " 既存バッファを再利用 or 新規作成
     let bnr = bufnr(a:bufname)
@@ -4465,13 +4481,6 @@ function s:openFloatWindow(bufname, ...) abort
         endfor
     endif
 
-    let tw = &columns
-    let th = &lines
-    let fw = float2nr(tw * g:dbiclient_float_window_width)
-    let fh = float2nr(th * g:dbiclient_float_window_height)
-    let row = float2nr((th - fh) / 2)
-    let col = float2nr((tw - fw) / 2)
-
     let opts = {
         \ 'relative': 'editor',
         \ 'width': fw,
@@ -4487,14 +4496,10 @@ function s:openFloatWindow(bufname, ...) abort
 
     setlocal buftype=nofile nobuflisted noswapfile nowrap
     setlocal filetype=dbiclient
-    " q / <Esc> でフロートウィンドウを閉じる
     nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
     nnoremap <buffer> <silent> <nowait> <Esc> <Cmd>close<CR>
-    " フロートウィンドウを識別するためのウィンドウ変数
     call setwinvar(winid, 'dbiclient_float', 1)
 
-    " focus=0: バッファへの書き込みは bufnr 経由で行われるため元ウィンドウへ戻す
-    " focus=1: ユーザーがすぐ操作できるようフロートにフォーカスを残す
     if !focus
         let orig_wid = s:f.getwidCurrentTab(cbufnr)
         if orig_wid != -1
@@ -4505,12 +4510,179 @@ function s:openFloatWindow(bufname, ...) abort
     return [bnr, cbufnr, winid]
 endfunction
 
+" ─── 共有結果フロートウィンドウ ──────────────────────────────────────────────
+" SELECT/UPDATE 等の結果バッファはすべてこの1つのフロートウィンドウに表示する。
+" ウィンドウが既に開いている場合はバッファを切り替えるだけ。
+" 戻り値: [bufnr, cbufnr]  (-1 なら非フロート)
+function s:openResultFloat(bufname) abort
+    if !has('nvim') || !exists('*nvim_open_win')
+        return [-1, -1]
+    endif
+    let cbufnr = bufnr('%')
+
+    " バッファ準備
+    let bnr = bufnr(a:bufname)
+    if bnr == -1
+        let bnr = nvim_create_buf(0, 1)
+        call nvim_buf_set_name(bnr, a:bufname)
+    endif
+    call setbufvar(bnr, '&buftype',   'nofile')
+    call setbufvar(bnr, '&buflisted', 0)
+    call setbufvar(bnr, '&swapfile',  0)
+    call setbufvar(bnr, '&wrap',      0)
+    call setbufvar(bnr, '&filetype',  'dbiclient')
+    call nvim_buf_set_keymap(bnr, 'n', 'q',     '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+    call nvim_buf_set_keymap(bnr, 'n', '<Esc>', '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+
+    " 既存の結果フロートが有効ならバッファを切り替えるだけ
+    if s:resultFloatWinid != -1
+        try
+            if nvim_win_is_valid(s:resultFloatWinid)
+                call nvim_win_set_buf(s:resultFloatWinid, bnr)
+                " タイトルを更新
+                let cfg = nvim_win_get_config(s:resultFloatWinid)
+                let cfg.title = ' ' . fnamemodify(a:bufname, ':t') . ' '
+                call nvim_win_set_config(s:resultFloatWinid, cfg)
+                call setwinvar(s:resultFloatWinid, 'dbiclient_float', 1)
+                let orig_wid = s:f.getwidCurrentTab(cbufnr)
+                if orig_wid != -1
+                    noautocmd call win_gotoid(orig_wid)
+                endif
+                return [bnr, cbufnr]
+            endif
+        catch
+        endtry
+        let s:resultFloatWinid = -1
+    endif
+
+    " 新規フロートを作成
+    let [bnr2, cbnr, winid] = s:openFloatWindow(a:bufname, 0)
+    if winid != -1
+        let s:resultFloatWinid = winid
+        return [bnr2, cbnr]
+    endif
+    return [-1, -1]
+endfunction
+
+" ─── ScratchSQL フロートウィンドウ ───────────────────────────────────────────
+" INSERT/UPDATE/DELETE 文生成はすべてこの1バッファ + 1フロートに集約する。
+" 結果フロートの下に表示する。
+" 戻り値: bufnr (フロートにフォーカス移動済み)  -1 なら非フロート
+function s:openScratchBuffer() abort
+    if !has('nvim') || !exists('*nvim_open_win')
+        return -1
+    endif
+    let bufname = 'ScratchSQL'
+    let bnr = bufnr(bufname)
+    if bnr == -1
+        let bnr = nvim_create_buf(0, 1)
+        call nvim_buf_set_name(bnr, bufname)
+    endif
+    call setbufvar(bnr, '&buftype',   'nofile')
+    call setbufvar(bnr, '&buflisted', 0)
+    call setbufvar(bnr, '&swapfile',  0)
+    call setbufvar(bnr, '&wrap',      0)
+    call setbufvar(bnr, '&filetype',  'sql')
+    call nvim_buf_set_keymap(bnr, 'n', 'q', '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+
+    " 既存 ScratchSQL フロートが有効ならフォーカス移動のみ
+    if s:scratchFloatWinid != -1
+        try
+            if nvim_win_is_valid(s:scratchFloatWinid)
+                call nvim_win_set_buf(s:scratchFloatWinid, bnr)
+                call win_gotoid(s:scratchFloatWinid)
+                return bnr
+            endif
+        catch
+        endtry
+        let s:scratchFloatWinid = -1
+    endif
+
+    " 配置計算: 結果フロートの下に置く
+    let tw = &columns
+    let th = &lines
+    let fw = float2nr(tw * g:dbiclient_float_window_width)
+    let col = float2nr((tw - fw) / 2)
+    let fh_scratch = max([float2nr(th * 0.25), 5])
+
+    if s:resultFloatWinid != -1
+        try
+            if nvim_win_is_valid(s:resultFloatWinid)
+                let cfg = nvim_win_get_config(s:resultFloatWinid)
+                let result_row = cfg.row
+                let result_h   = cfg.height
+                let row = result_row + result_h + 2
+                let avail = th - row - 2
+                if avail < 5
+                    let row = th - fh_scratch - 2
+                else
+                    let fh_scratch = min([fh_scratch, avail])
+                endif
+                let fw = cfg.width
+                let col_scratch = cfg.col
+            else
+                let row = th - fh_scratch - 2
+                let col_scratch = col
+            endif
+        catch
+            let row = th - fh_scratch - 2
+            let col_scratch = col
+        endtry
+    else
+        let row = th - fh_scratch - 2
+        let col_scratch = col
+    endif
+
+    let opts = {
+        \ 'relative': 'editor',
+        \ 'width': fw,
+        \ 'height': fh_scratch,
+        \ 'row': row,
+        \ 'col': col_scratch,
+        \ 'style': 'minimal',
+        \ 'border': 'rounded',
+        \ 'title': ' ScratchSQL ',
+        \ 'title_pos': 'center',
+        \ }
+    let winid = nvim_open_win(bnr, 1, opts)
+    setlocal buftype=nofile nobuflisted noswapfile nowrap filetype=sql
+    nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
+    call setwinvar(winid, 'dbiclient_float', 1)
+    let s:scratchFloatWinid = winid
+    return bnr
+endfunction
+
+" ScratchSQL バッファに内容を追記するヘルパー
+" バッファに既に内容があれば区切り行を挟む
+function s:appendToScratch(lines) abort
+    let bnr = s:openScratchBuffer()
+    if bnr == -1
+        " フロート無効: フォールバック (aboveNewBuffer ロジック)
+        let bufname = 'ScratchSQL'
+        let bnr = s:bufnr(bufname)
+        if s:gotoWinCurrentTab(bnr) ==# -1
+            let [_bnr, _cbnr] = s:f.newBuffer('above new', g:dbiclient_new_window_hight, bufname, g:dbiclient_buffer_encoding, 0)
+            let bnr = _bnr
+        endif
+        call setbufvar(bnr, '&filetype', 'sql')
+    endif
+    " 既存内容があれば区切り行を追加
+    let existing = getbufline(bnr, 1, '$')
+    if existing !=# [''] && !empty(existing)
+        call s:appendbufline(bnr, '$', [''])
+    endif
+    call s:appendbufline(bnr, '$', a:lines)
+    " 末尾へカーソル移動
+    if nvim_win_is_valid(get(s:, 'scratchFloatWinid', -1))
+        call nvim_win_set_cursor(s:scratchFloatWinid, [len(getbufline(bnr, 1, '$')), 0])
+    endif
+endfunction
+
 function s:belowPeditBuffer(bufname, ...) abort
-    " フローティングウィンドウが有効かつ Neovim なら float で開く (focus=0)
+    " フローティングウィンドウが有効かつ Neovim なら共有結果フロートを使用
     if get(g:, 'dbiclient_float_window', 1) && has('nvim')
-        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 0)
-        if winid != -1
-            call setbufvar(bnr, '&filetype', 'dbiclient')
+        let [bnr, cbnr] = s:openResultFloat(a:bufname)
+        if bnr != -1
             return [bnr, cbnr]
         endif
     endif
