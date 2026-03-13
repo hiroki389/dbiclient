@@ -320,6 +320,8 @@ pub fn column_info_via_sql(
         }
         DbType::Oracle => {
             let s = schema.unwrap_or("");
+            let owner = s.to_uppercase().replace('\'', "''");
+            let tbl   = table.to_uppercase().replace('\'', "''");
             format!(
                 "SELECT NULL AS TABLE_CAT, c.OWNER AS TABLE_SCHEM, c.TABLE_NAME, \
                  c.COLUMN_NAME, c.DATA_TYPE AS TYPE_NAME, c.DATA_LENGTH AS COLUMN_SIZE, \
@@ -327,12 +329,12 @@ pub fn column_info_via_sql(
                  c.DATA_DEFAULT AS COLUMN_DEF, c.COLUMN_ID AS ORDINAL_POSITION, \
                  cc.COMMENTS AS REMARKS \
                  FROM ALL_TAB_COLUMNS c \
-                 LEFT JOIN ALL_COL_COMMENTS cc \
-                   ON cc.OWNER=c.OWNER AND cc.TABLE_NAME=c.TABLE_NAME AND cc.COLUMN_NAME=c.COLUMN_NAME \
+                 LEFT JOIN (SELECT COLUMN_NAME, COMMENTS FROM ALL_COL_COMMENTS \
+                            WHERE OWNER='{}' AND TABLE_NAME='{}') cc \
+                   ON cc.COLUMN_NAME = c.COLUMN_NAME \
                  WHERE c.OWNER='{}' AND c.TABLE_NAME='{}' \
                  ORDER BY c.COLUMN_ID",
-                s.to_uppercase().replace('\'', "''"),
-                table.to_uppercase().replace('\'', "''")
+                owner, tbl, owner, tbl
             )
         }
         DbType::Odbc => {
