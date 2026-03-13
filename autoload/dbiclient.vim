@@ -4406,7 +4406,76 @@ function s:vsNewBuffer(bufname, ...) abort
     return bufnr
 endfunction
 
+" フローティングウィンドウでバッファを開く (Neovim 専用)
+" 戻り値: [bufnr, cbufnr, winid]  winid=-1 なら非フロート
+function s:openFloatWindow(bufname) abort
+    if !has('nvim') || !exists('*nvim_open_win')
+        return [-1, -1, -1]
+    endif
+    let cbufnr = bufnr('%')
+
+    " 既存バッファを再利用 or 新規作成
+    let bnr = bufnr(a:bufname)
+    if bnr == -1
+        let bnr = nvim_create_buf(0, 1)
+        call nvim_buf_set_name(bnr, a:bufname)
+    else
+        " 既にフロートで開いていれば既存 winid を返す
+        for wid in range(1, winnr('$'))
+            if winbufnr(wid) == bnr && nvim_win_get_config(win_getid(wid)).relative !=# ''
+                call win_gotoid(win_getid(wid))
+                return [bnr, cbufnr, win_getid(wid)]
+            endif
+        endfor
+    endif
+
+    let tw = &columns
+    let th = &lines
+    let fw = float2nr(tw * g:dbiclient_float_window_width)
+    let fh = float2nr(th * g:dbiclient_float_window_height)
+    let row = float2nr((th - fh) / 2)
+    let col = float2nr((tw - fw) / 2)
+
+    let opts = {
+        \ 'relative': 'editor',
+        \ 'width': fw,
+        \ 'height': fh,
+        \ 'row': row,
+        \ 'col': col,
+        \ 'style': 'minimal',
+        \ 'border': 'rounded',
+        \ 'title': ' ' . fnamemodify(a:bufname, ':t') . ' ',
+        \ 'title_pos': 'center',
+        \ }
+    let winid = nvim_open_win(bnr, 1, opts)
+
+    setlocal buftype=nofile nobuflisted noswapfile nowrap
+    setlocal filetype=dbiclient
+    " q / <Esc> でフロートウィンドウを閉じる
+    nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
+    nnoremap <buffer> <silent> <nowait> <Esc> <Cmd>close<CR>
+    " フロートウィンドウを識別するためのウィンドウ変数
+    call setwinvar(winid, 'dbiclient_float', 1)
+
+    " バッファへの書き込みは bufnr 経由で行われるため、
+    " フロートを開いた直後に元のウィンドウへフォーカスを戻す
+    let cwid = win_getid()
+    call win_gotoid(cwid)
+    noautocmd call win_gotoid(s:f.getwidCurrentTab(cbufnr))
+
+    return [bnr, cbufnr, winid]
+endfunction
+
 function s:belowPeditBuffer(bufname, ...) abort
+    " フローティングウィンドウが有効かつ Neovim なら float で開く
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname)
+        if winid != -1
+            call setbufvar(bnr, '&filetype', 'dbiclient')
+            return [bnr, cbnr]
+        endif
+    endif
+    " フォールバック: 従来の split / preview ウィンドウ
     if g:dbiclient_previewwindow
         let pflg = 0
         let tabnr = tabpagenr()
