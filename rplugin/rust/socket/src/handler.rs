@@ -22,6 +22,8 @@ pub struct DbState {
     pub column_info_flg: bool,
     pub schema_list: Vec<String>,
     pub sha256sum: String,
+    /// Oracle シノニム解決キャッシュ: synonym_name -> (TABLE_OWNER, TABLE_NAME) or None
+    pub synonym_cache: HashMap<String, Option<(String, String)>>,
 }
 
 impl DbState {
@@ -37,6 +39,7 @@ impl DbState {
             column_info_flg: false,
             schema_list: vec![],
             sha256sum: String::new(),
+            synonym_cache: HashMap::new(),
         }
     }
 
@@ -725,38 +728,44 @@ fn try_table_info(
     }
 }
 
-/// Oracle の ALL_SYNONYMS からシノニムの実体 (TABLE_OWNER, TABLE_NAME) を解決する。
-/// まずユーザーのプライベートシノニムを検索し、次に PUBLIC シノニムを検索する。
+/// Oracle のシノニムの実体 (TABLE_OWNER, TABLE_NAME) を解決する。
+/// USER_SYNONYMS（プライベート）→ ALL_SYNONYMS PUBLIC の順で検索し、結果をメモリキャッシュする。
 fn resolve_oracle_synonym(
     db: &mut DbState,
     synonym_name: &str,
-    user_schem: Option<&str>,
+    _user_schem: Option<&str>,
     port: u16,
 ) -> Option<(String, String)> {
     if !db.is_oracle() {
         return None;
     }
-    let upper_name = synonym_name.to_uppercase().replace('\'', "''");
+    let cache_key = synonym_name.to_uppercase();
 
-    // 1. ユーザーのプライベートシノニム
-    if let Some(owner) = user_schem {
-        if !owner.is_empty() {
-            let sql = format!(
-                "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS \
-                 WHERE OWNER='{}' AND SYNONYM_NAME='{}' AND DB_LINK IS NULL",
-                owner.to_uppercase().replace('\'', "''"),
-                upper_name
-            );
-            let result = db.conn.as_mut().and_then(|conn| {
-                conn.query(&sql, 1).ok().map(|mut c| cursor_to_map_rows(&mut c))
-            });
-            if let Some(rows) = result {
+    // キャッシュチェック
+    if let Some(cached) = db.synonym_cache.get(&cache_key) {
+        return cached.clone();
+    }
+
+    let upper_name = cache_key.replace('\'', "''");
+    let mut resolved: Option<(String, String)> = None;
+
+    // 1. USER_SYNONYMS: 現在ユーザーのプライベートシノニム
+    //    ALL_SYNONYMS に OWNER 条件を付けるより USER_SYNONYMS の方が高速
+    {
+        let sql = format!(
+            "SELECT TABLE_OWNER, TABLE_NAME FROM USER_SYNONYMS \
+             WHERE SYNONYM_NAME='{}' AND DB_LINK IS NULL",
+            upper_name
+        );
+        if let Some(conn) = db.conn.as_mut() {
+            if let Ok(mut cursor) = conn.query(&sql, 1) {
+                let rows = cursor_to_map_rows(&mut cursor);
                 if let Some(row) = rows.first() {
                     let towner = row.get("TABLE_OWNER").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let tname = row.get("TABLE_NAME").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let tname  = row.get("TABLE_NAME").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     if !towner.is_empty() {
                         outputlog(&format!("SYNONYM RESOLVED(private): {} -> {}.{}", synonym_name, towner, tname), Some(port));
-                        return Some((towner, tname));
+                        resolved = Some((towner, tname));
                     }
                 }
             }
@@ -764,26 +773,30 @@ fn resolve_oracle_synonym(
     }
 
     // 2. PUBLIC シノニム
-    let sql = format!(
-        "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS \
-         WHERE OWNER='PUBLIC' AND SYNONYM_NAME='{}' AND DB_LINK IS NULL",
-        upper_name
-    );
-    let result = db.conn.as_mut().and_then(|conn| {
-        conn.query(&sql, 1).ok().map(|mut c| cursor_to_map_rows(&mut c))
-    });
-    if let Some(rows) = result {
-        if let Some(row) = rows.first() {
-            let towner = row.get("TABLE_OWNER").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let tname = row.get("TABLE_NAME").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            if !towner.is_empty() {
-                outputlog(&format!("SYNONYM RESOLVED(public): {} -> {}.{}", synonym_name, towner, tname), Some(port));
-                return Some((towner, tname));
+    if resolved.is_none() {
+        let sql = format!(
+            "SELECT TABLE_OWNER, TABLE_NAME FROM ALL_SYNONYMS \
+             WHERE OWNER='PUBLIC' AND SYNONYM_NAME='{}' AND DB_LINK IS NULL",
+            upper_name
+        );
+        if let Some(conn) = db.conn.as_mut() {
+            if let Ok(mut cursor) = conn.query(&sql, 1) {
+                let rows = cursor_to_map_rows(&mut cursor);
+                if let Some(row) = rows.first() {
+                    let towner = row.get("TABLE_OWNER").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let tname  = row.get("TABLE_NAME").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if !towner.is_empty() {
+                        outputlog(&format!("SYNONYM RESOLVED(public): {} -> {}.{}", synonym_name, towner, tname), Some(port));
+                        resolved = Some((towner, tname));
+                    }
+                }
             }
         }
     }
 
-    None
+    // キャッシュに保存（None も保存して再クエリを防ぐ）
+    db.synonym_cache.insert(cache_key, resolved.clone());
+    resolved
 }
 
 fn fetch_pk_cached(
