@@ -2916,7 +2916,17 @@ function s:selectTableOfList(schemtable, port) abort
     if s:isDisableline() || s:error2CurrentBuffer(a:port)
         return
     endif
+    let caller_winid = win_getid()
     call s:selectTableCmn(1, a:schemtable, a:port)
+    " テーブル一覧フロートを閉じる
+    if has('nvim')
+        try
+            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+                call nvim_win_close(caller_winid, 1)
+            endif
+        catch
+        endtry
+    endif
 endfunction
 
 function s:selectTable(alignFlg, wordFlg, table) abort
@@ -3716,6 +3726,7 @@ function s:dbhistoryRestore(str) abort
     if s:isDisableline()
         return
     endif
+    let caller_winid = win_getid()
     "sandbox silent! let cmd = map(split(matchstr(a:str, '\v^.{-}\t\zs.*'), '{DELIMITER_CR}'), {_, x ->  eval(x)})
     "let dbiclient_bufmap = cmd[0]
     sandbox silent! let dbiclient_bufmap = eval(substitute(matchstr(a:str, '\v^.{-}\t\zs.*'), '{DELIMITER_CR}', '\r', 'g'))
@@ -3748,6 +3759,15 @@ function s:dbhistoryRestore(str) abort
         call funcref(callbackstr)({}, dbiclient_bufmap)
     else
         call s:cb_do({}, dbiclient_bufmap)
+    endif
+    " 履歴フロートを閉じる
+    if has('nvim')
+        try
+            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+                call nvim_win_close(caller_winid, 1)
+            endif
+        catch
+        endtry
     endif
     " 結果フロートへフォーカスを移動（previewwindow廃止後のフォールバック）
     if s:resultFloatWinid != -1
