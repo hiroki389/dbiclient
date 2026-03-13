@@ -28,6 +28,8 @@ let s:shadowpass = ''
 let s:resultFloatWinid  = -1   " SELECT/UPDATE 等の結果を表示する共有フロート
 let s:scratchFloatWinid = -1   " ScratchSQL フロート
 let s:vsFloatWinid      = -1   " 結果フロート内 vsplit パネル (WHERE/SELECT/ORDER 等)
+let s:resultFloatOrigHeight      = -1  " ScratchSQL 表示前の結果フロート高さ
+let s:resultFloatWinidForRestore = -1  " 高さ復元対象の結果フロート winid
 let s:msg = {
             \'EO01': 'Buffer not found.',
             \'EO02': 'File not found: ($1).',
@@ -4724,37 +4726,55 @@ function s:openScratchBuffer() abort
         let s:scratchFloatWinid = -1
     endif
 
-    " 配置計算: 結果フロートの下に置く
+    " 配置計算: 結果フロートと上下に並べる
     let tw = &columns
     let th = &lines
     let fw = float2nr(tw * g:dbiclient_float_window_width)
     let col = float2nr((tw - fw) / 2)
-    let fh_scratch = max([float2nr(th * 0.25), 5])
+    let gap = 1
 
+    " result float が有効なら上下分割レイアウトを計算
     if s:resultFloatWinid != -1
         try
             if nvim_win_is_valid(s:resultFloatWinid)
                 let cfg = nvim_win_get_config(s:resultFloatWinid)
-                let result_row = cfg.row
-                let result_h   = cfg.height
-                let row = result_row + result_h + 2
-                let avail = th - row - 2
-                if avail < 5
-                    let row = th - fh_scratch - 2
-                else
-                    let fh_scratch = min([fh_scratch, avail])
+                let orig_row  = float2nr(type(cfg.row)    == v:t_float ? cfg.row    : cfg.row    + 0.0)
+                let orig_h    = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
+                let orig_col  = float2nr(type(cfg.col)    == v:t_float ? cfg.col    : cfg.col    + 0.0)
+                let orig_fw   = float2nr(type(cfg.width)  == v:t_float ? cfg.width  : cfg.width  + 0.0)
+                let total     = orig_h
+                let fh_scratch = max([float2nr(total * 0.35), 5])
+                let fh_result  = total - fh_scratch - gap - 2  " 枠分2
+                if fh_result < 3
+                    let fh_result = 3
+                    let fh_scratch = total - fh_result - gap - 2
+                    if fh_scratch < 3
+                        let fh_scratch = 3
+                    endif
                 endif
-                let fw = cfg.width
-                let col_scratch = cfg.col
+                " 結果フロートを上部に縮小（高さのみ変更）
+                let new_cfg = {'relative': 'editor', 'width': orig_fw, 'height': fh_result, 'row': orig_row, 'col': orig_col}
+                call nvim_win_set_config(s:resultFloatWinid, new_cfg)
+                " Scratch は結果フロートのすぐ下
+                let row        = orig_row + fh_result + gap + 2
+                let col_scratch = orig_col
+                let fw         = orig_fw
+                " ScratchSQL を閉じたら結果フロートを元の高さに戻す autocmd
+                let s:resultFloatOrigHeight = orig_h
+                let s:resultFloatWinidForRestore = s:resultFloatWinid
             else
+                let s:resultFloatWinid = -1
                 let row = th - fh_scratch - 2
                 let col_scratch = col
+                let fh_scratch = max([float2nr(th * 0.25), 5])
             endif
         catch
             let row = th - fh_scratch - 2
             let col_scratch = col
+            let fh_scratch = max([float2nr(th * 0.25), 5])
         endtry
     else
+        let fh_scratch = max([float2nr(th * 0.25), 5])
         let row = th - fh_scratch - 2
         let col_scratch = col
     endif
@@ -4970,6 +4990,19 @@ function s:onFloatWinClosed(winid) abort
     endif
     if a:winid == s:scratchFloatWinid
         let s:scratchFloatWinid = -1
+        " ScratchSQL が閉じられたら結果フロートを元の高さに戻す
+        if s:resultFloatOrigHeight != -1 && s:resultFloatWinidForRestore != -1
+            try
+                if nvim_win_is_valid(s:resultFloatWinidForRestore)
+                    let cfg = nvim_win_get_config(s:resultFloatWinidForRestore)
+                    let cfg.height = s:resultFloatOrigHeight
+                    call nvim_win_set_config(s:resultFloatWinidForRestore, cfg)
+                endif
+            catch
+            endtry
+        endif
+        let s:resultFloatOrigHeight      = -1
+        let s:resultFloatWinidForRestore = -1
     endif
     if a:winid == s:vsFloatWinid
         let s:vsFloatWinid = -1
