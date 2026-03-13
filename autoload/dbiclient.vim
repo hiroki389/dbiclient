@@ -5007,6 +5007,11 @@ endfunction
 
 function s:onFloatWinClosed(winid) abort
     " WinClosed は close 前に発火するため、フォーカス移動は timer で遅延させる
+    " dbiclient フロートが閉じられる場合は closing_floats を立てて
+    " WinEnter による全フロート一括クローズを抑制する
+    if getwinvar(a:winid, 'dbiclient_float', 0)
+        let s:closing_floats = 1
+    endif
     call timer_start(0, {-> s:onFloatWinClosedPost(a:winid)})
 endfunction
 
@@ -5102,6 +5107,8 @@ function s:onFloatWinClosedPost(winid) abort
             endtry
         endif
     endfor
+    " 有効な移動先がなかった場合もフラグをリセットする
+    call timer_start(0, {-> execute('let s:closing_floats = 0')})
 endfunction
 
 " 現在タブの全 dbiclient フロートウィンドウ (winid リスト) を順番で返す
