@@ -3971,7 +3971,8 @@ function! s:PopupColInfo() abort
                     \ 'style': 'minimal',
                     \ 'border': 'single',
                     \ 'focusable': v:false,
-                    \ 'noautocmd': v:true
+                    \ 'noautocmd': v:true,
+                    \ 'zindex': 300,
                     \ }
 
                 let s:dbiclient_popup_winid = nvim_open_win(l:buf, v:false, l:opts)
