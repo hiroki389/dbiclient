@@ -1360,7 +1360,7 @@ function s:connect(port, dsn, user, pass, opt2)
     if s:rustBuildIfNeeded()
         return
     endif
-    let l:cmdlist = [s:getRustPath(), printf('%s', l:port2), l:logpath, g:dbiclient_perl_binmode, printf('%s', get(a:opt2, s:connect_opt_debuglog, 0))]
+    let l:cmdlist = [s:getRustPath(), printf('%s', l:port2), l:logpath, g:dbiclient_perl_binmode, printf('%s', get(a:opt2, s:connect_opt_debuglog, get(g:, 'dbiclient_debuglog', 1)))]
     call s:debugLog(join(l:cmdlist, ' '))
 
     " コールバック関数からアクセスできるように、s:params に接続情報をすべて保存

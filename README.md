@@ -280,6 +280,7 @@ SELECT 結果バッファ上で以下のキーを押すと INSERT/UPDATE/DELETE 
 |  g:dbiclient_float_tables_width      |  `0.95`                          |  テーブル一覧フロートの幅比率                                 |
 |  g:dbiclient_float_tables_height     |  `0.85`                          |  テーブル一覧フロートの高さ比率                               |
 |  g:dbiclient_rootPath                |  `$XDG_CACHE_HOME/dbiclient`     |  ログ・キャッシュ・履歴の保存先ディレクトリ                   |
+|  g:dbiclient_debuglog                |  `1`                             |  ソケットログを出力する（`0` で無効）                         |
 |  g:dbiclient_prelinesep              |  `'<<CRR>>'`                     |  改行コードの一時変換文字                                     |
 |  g:Dbiclient_call_after_connected    |  `{-> dbiclient#userTablesMain()}`| DB 接続後に実行する関数                                      |
 
