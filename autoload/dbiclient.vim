@@ -419,6 +419,22 @@ endfunction
 
 function dbiclient#openbuf() abort
     if bufexists(s:currentBuf)
+        if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+            let bufname = bufname(s:currentBuf)
+            let [bnr, cbnr] = s:openResultFloat(bufname)
+            if bnr != -1
+                if s:resultFloatWinid != -1
+                    try
+                        if nvim_win_is_valid(s:resultFloatWinid)
+                            call win_gotoid(s:resultFloatWinid)
+                        endif
+                    catch
+                    endtry
+                endif
+                call s:sethl(bnr)
+                return
+            endif
+        endif
         bo new
         exe 'b ' .. s:currentBuf
         call s:sethl(bufnr('%'))
