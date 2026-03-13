@@ -28,15 +28,16 @@ let s:msg = {
             \'EO01': 'Buffer not found.',
             \'EO02': 'File not found: ($1).',
             \'IO05': '$1',
-            \'IO07': 'Database connection required: ($1).',
-            \'EO11': 'Path missing: ($1).',
-            \'IO13': 'Commit',
-            \'IO14': 'Rollback',
-            \'IO18': 'Job port running: ($1)',
-            \'IO19': 'Start the socket.pl.',
-            \'IO20': 'SQL running on server.',
-            \'IO22': 'SQL running on server.',
-            \'EO23': '1000 lines.',
+            \'IO07': 'Not connected. Please connect first. (port: $1)',
+            \'EO11': 'Path not found: ($1).',
+            \'EO12': 'Unknown driver: ($1). Cannot determine the required Rust feature.',
+            \'IO13': 'Committed.',
+            \'IO14': 'Rolled back.',
+            \'IO18': 'Already running on port ($1).',
+            \'IO19': 'Socket server started.',
+            \'IO20': 'SQL is already running. Please wait.',
+            \'IO22': 'SQL is already running. Please wait.',
+            \'EO23': 'Display limit reached (1000 rows). Narrow the condition.',
             \}
 
 let s:tab_placefolder = '\V<<#TAB#>>'
@@ -588,6 +589,97 @@ endfunction
 
 function s:getPerlmPath() abort
     return g:dbiclient_perlmPath
+endfunction
+
+function s:getRustPath() abort
+    return g:dbiclient_rustPath
+endfunction
+
+function s:useRust() abort
+    let l:bin = s:getRustPath()
+    if l:bin ==# '' | return 0 | endif
+    " バイナリが存在しなくても Cargo.toml があればビルド可能
+    let l:dir = fnamemodify(l:bin, ':h:h:h')
+    return filereadable(l:bin) || filereadable(l:dir . '/Cargo.toml')
+endfunction
+
+" DSN のドライバ部分が Rust バイナリでサポートされているか確認する
+" 戻り値: '' = サポート済み / '<driver>/<feature>' = 未サポート
+function s:checkDriverSupported(dsn) abort
+    let l:features = get(g:, 'dbiclient_rust_features', 'pg,mysql-db,sqlite')
+    let l:driver = tolower(matchstr(a:dsn, '^\s*\zs[^:]\+'))
+    if l:driver =~# '^\(pg\|postgres\|postgresql\)$'
+        return l:features =~# '\(^\|,\)pg\(,\|$\)' ? '' : 'Pg/pg'
+    endif
+    if l:driver =~# '^\(mysql\|mariadb\)$'
+        return l:features =~# '\(^\|,\)mysql' ? '' : 'mysql/mysql-db'
+    endif
+    if l:driver =~# '^\(sqlite\|sqlite3\)$'
+        return l:features =~# '\(^\|,\)sqlite\(,\|$\)' ? '' : 'SQLite/sqlite'
+    endif
+    if l:driver =~# '^oracle$'
+        return l:features =~# '\(^\|,\)oracle' ? '' : 'Oracle/oracle-native'
+    endif
+    if l:driver =~# '^odbc$'
+        return l:features =~# '\(^\|,\)odbc\(,\|$\)' ? '' : 'ODBC/odbc'
+    endif
+    return l:driver . '/unknown'
+endfunction
+
+" Rust ソースがバイナリより新しければ自動ビルドする
+" 戻り値: 0=不要/成功, 1=ビルドエラー
+function s:rustBuildIfNeeded() abort
+    let l:binary  = s:getRustPath()
+    if l:binary ==# '' | return 0 | endif
+
+    " binary から プロジェクトルート(Cargo.toml のある dir)を解決
+    " 例: .../rplugin/rust/socket/target/release/socket
+    "       -> .../rplugin/rust/socket
+    let l:dir        = fnamemodify(l:binary, ':h:h:h')
+    let l:cargo_toml = l:dir . '/Cargo.toml'
+    if !filereadable(l:cargo_toml)
+        return 0  " Cargo.toml が見つからなければスキップ
+    endif
+
+    let l:bin_mtime = getftime(l:binary)  " バイナリ未存在時は -1
+    let l:needs_build = 0
+
+    " Cargo.toml またはいずれかの .rs ファイルがバイナリより新しいか
+    for l:f in [l:cargo_toml] + glob(l:dir . '/src/**/*.rs', 0, 1)
+        if getftime(l:f) > l:bin_mtime
+            let l:needs_build = 1
+            break
+        endif
+    endfor
+
+    if !l:needs_build | return 0 | endif
+
+    let l:features = get(g:, 'dbiclient_rust_features', 'pg,mysql-db,sqlite')
+    echohl WarningMsg
+    echo 'dbiclient: Rust ソースを検出 - ビルド中 (' . l:features . ')...'
+    echohl None
+    redraw
+
+    let l:cmd = 'cd ' . shellescape(l:dir)
+        \ . ' && cargo build --release --no-default-features --features '
+        \ . shellescape(l:features) . ' 2>&1'
+    let l:output = system(l:cmd)
+
+    if v:shell_error != 0
+        echohl ErrorMsg
+        echom 'dbiclient: Rust ビルドエラー (cargo exit=' . v:shell_error . ')'
+        for l:line in split(l:output, "\n")
+            if l:line =~# '^error'
+                echom '  ' . l:line
+            endif
+        endfor
+        echohl None
+        return 1
+    endif
+
+    echo 'dbiclient: Rust ビルド完了'
+    redraw
+    return 0
 endfunction
 
 function s:sqllog() abort
@@ -1224,8 +1316,44 @@ function s:connect(port, dsn, user, pass, opt2)
     endif
 
     let l:logpath = s:getRootPath()
-    " job_start に渡す cmdlist の要素も文字列に変換
-    let l:cmdlist = ['perl', s:getPerlmPath(), printf('%s', l:port2), l:logpath, g:dbiclient_perl_binmode, printf('%s', get(a:opt2, s:connect_opt_debuglog, 0))]
+    " ドライバサポートチェック → 未サポートなら必要フィーチャーを追加して自動ビルド
+    let l:unsupported = s:checkDriverSupported(a:dsn)
+    if l:unsupported !=# ''
+        let l:feature = matchstr(l:unsupported, '[^/]*$')
+        if l:feature ==# 'unknown'
+            call s:echoMsg('EO12', l:unsupported)
+            return
+        endif
+        let l:new_features = get(g:, 'dbiclient_rust_features', 'pg,mysql-db,sqlite') . ',' . l:feature
+        echohl WarningMsg
+        echo 'dbiclient: Adding feature "' . l:feature . '" and rebuilding (' . l:new_features . ')...'
+        echohl None
+        redraw
+        let l:dir = fnamemodify(s:getRustPath(), ':h:h:h')
+        let l:cmd = 'cd ' . shellescape(l:dir)
+            \ . ' && cargo build --release --no-default-features --features '
+            \ . shellescape(l:new_features) . ' 2>&1'
+        let l:output = system(l:cmd)
+        if v:shell_error != 0
+            echohl ErrorMsg
+            echom 'dbiclient: Build failed (cargo exit=' . v:shell_error . ')'
+            for l:line in split(l:output, "\n")
+                if l:line =~# '^error'
+                    echom '  ' . l:line
+                endif
+            endfor
+            echohl None
+            return
+        endif
+        let g:dbiclient_rust_features = l:new_features
+        echo 'dbiclient: Build succeeded. Feature "' . l:feature . '" is now available.'
+        redraw
+    endif
+    " ソースが更新されていれば自動ビルド。失敗時は接続をキャンセル
+    if s:rustBuildIfNeeded()
+        return
+    endif
+    let l:cmdlist = [s:getRustPath(), printf('%s', l:port2), l:logpath, g:dbiclient_perl_binmode, printf('%s', get(a:opt2, s:connect_opt_debuglog, 0))]
     call s:debugLog(join(l:cmdlist, ' '))
 
     " コールバック関数からアクセスできるように、s:params に接続情報をすべて保存
@@ -4409,8 +4537,9 @@ function s:init() abort
             call s:echoMsg('EO11', s:getRootPath())
             return 0
         endif
-        if s:getPerlmPath() ==# "" || !filereadable(s:getPerlmPath())
+        if !s:useRust() && (s:getPerlmPath() ==# "" || !filereadable(s:getPerlmPath()))
             call s:echoMsg('EO11', s:getPerlmPath())
+            echom 'Hint: set g:dbiclient_rustPath to use the Rust backend instead.'
             return 0
         endif
         let logpath = s:getRootPath()

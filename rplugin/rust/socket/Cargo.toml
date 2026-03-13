@@ -1,0 +1,33 @@
+[package]
+name = "socket"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "socket"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+signal-hook = "0.3"
+chrono = "0.4"
+encoding_rs = "0.8"
+
+# DB drivers (feature-gated for flexibility)
+postgres = { version = "0.19", features = ["with-chrono-0_4"], optional = true }
+mysql = { version = "25", optional = true }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+odbc-api = { version = "8", optional = true }
+oracle = { version = "0.6", optional = true }
+
+[features]
+default = ["pg", "mysql-db", "sqlite", "odbc"]
+pg            = ["dep:postgres"]
+mysql-db      = ["dep:mysql"]
+sqlite        = ["dep:rusqlite"]
+odbc          = ["dep:odbc-api"]
+oracle-native = ["dep:oracle"]

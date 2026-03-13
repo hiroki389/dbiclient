@@ -1,0 +1,14 @@
+# Rust build artifacts
+rplugin/rust/socket/target/
+rplugin/rust/socket/Cargo.lock
+
+# Runtime / cache data (stored in g:dbiclient_rootPath = $XDG_CACHE_HOME/dbiclient)
+*.log
+*.lock
+dictionary/
+
+# Editor temporaries
+*.swp
+*.swo
+*~
+.DS_Store
