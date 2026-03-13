@@ -511,22 +511,24 @@ fn compact_sql(s: &str) -> String {
 }
 
 fn build_schema_list(schem: Option<&str>, extra: &[String]) -> Vec<String> {
-    let mut list = Vec::new();
+    let mut list: Vec<String> = Vec::new();
+    // 大文字小文字を無視して重複排除
+    let already = |list: &Vec<String>, s: &str| {
+        let lower = s.to_lowercase();
+        list.iter().any(|x| x.to_lowercase() == lower)
+    };
+
     if let Some(s) = schem {
-        if !s.is_empty() {
+        if !s.is_empty() && !already(&list, s) {
             list.push(s.to_string());
-            let upper = s.to_uppercase();
-            if upper != s {
-                list.push(upper);
-            }
         }
     }
     for s in extra {
-        if !list.contains(s) {
+        if !s.is_empty() && !already(&list, s) {
             list.push(s.clone());
         }
     }
-    // Perl と同様、リストが空でも最低1回はループを回す（schema=None で全スキーマ検索）
+    // リストが空でも最低1回はループを回す（schema=None で全スキーマ検索）
     if list.is_empty() {
         list.push(String::new());
     }
@@ -649,7 +651,9 @@ fn fetch_table_info_cached(
     schem2: Option<&str>,
     port: u16,
 ) -> Vec<serde_json::Map<String, Value>> {
-    let cache = MetaCache::new(basedir, schem, &db.user, table, &db.sha256sum);
+    // キャッシュキーは実際に照会するスキーマ(schem2)を使用
+    let cache_schem = schem2.or(schem);
+    let cache = MetaCache::new(basedir, cache_schem, &db.user, table, &db.sha256sum);
     if let Some(rows) = cache.load_tkey() {
         return rows.into_iter().map(|m| m.into_iter().collect()).collect();
     }
@@ -659,10 +663,8 @@ fn fetch_table_info_cached(
         None => return vec![],
     };
 
-    let mut result_rows = try_table_info(conn, schem2, table, port);
-    if result_rows.is_empty() {
-        result_rows = try_table_info(conn, schem2, &table.to_uppercase(), port);
-    }
+    // Oracle は SQL 内で UPPER() 変換するので uppercase retry は不要
+    let result_rows = try_table_info(conn, schem2, table, port);
 
     if !result_rows.is_empty() {
         let _ = cache.save_tkey(&result_rows.iter().cloned().map(|m| m.into_iter().collect()).collect());
@@ -693,7 +695,8 @@ fn fetch_pk_cached(
     schem2: Option<&str>,
     port: u16,
 ) -> Vec<String> {
-    let cache = MetaCache::new(basedir, schem, &db.user, table, &db.sha256sum);
+    let cache_schem = schem2.or(schem);
+    let cache = MetaCache::new(basedir, cache_schem, &db.user, table, &db.sha256sum);
     if let Some(pk) = cache.load_pkey() {
         return pk;
     }
@@ -702,10 +705,7 @@ fn fetch_pk_cached(
         Some(c) => c,
         None => return vec![],
     };
-    let mut pk = try_primary_key(conn, schem2, table, port);
-    if pk.is_empty() {
-        pk = try_primary_key(conn, schem2, &table.to_uppercase(), port);
-    }
+    let pk = try_primary_key(conn, schem2, table, port);
     if !pk.is_empty() {
         let _ = cache.save_pkey(&pk);
     }
@@ -735,7 +735,8 @@ fn fetch_column_info_cached(
     schem2: Option<&str>,
     port: u16,
 ) -> Vec<serde_json::Map<String, Value>> {
-    let cache = MetaCache::new(basedir, schem, &db.user, table, &db.sha256sum);
+    let cache_schem = schem2.or(schem);
+    let cache = MetaCache::new(basedir, cache_schem, &db.user, table, &db.sha256sum);
     if let Some(rows) = cache.load_ckey() {
         return rows.into_iter().map(|m| m.into_iter().collect()).collect();
     }
@@ -744,10 +745,7 @@ fn fetch_column_info_cached(
         Some(c) => c,
         None => return vec![],
     };
-    let mut rows = try_column_info(conn, schem2, table, port);
-    if rows.is_empty() {
-        rows = try_column_info(conn, schem2, &table.to_uppercase(), port);
-    }
+    let rows = try_column_info(conn, schem2, table, port);
     if !rows.is_empty() {
         let _ = cache.save_ckey(&rows.iter().cloned().map(|m| m.into_iter().collect()).collect());
     }
