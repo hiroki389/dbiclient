@@ -416,13 +416,17 @@ fn run_main(
 
         // Oracle: シノニムを解決して実際のスキーマ・テーブルに絞り込む
         let user_schema_opt = if user_str.is_empty() { None } else { Some(user_str.as_str()) };
+        let t_syn = Instant::now();
         let (effective_table, effective_schema_list) = if let Some((actual_owner, actual_name)) =
             resolve_oracle_synonym(db, &table, user_schema_opt, port)
         {
+            outputlog(&format!("SYNONYM resolve done: {}ms", t_syn.elapsed().as_millis()), Some(port));
             (actual_name, vec![actual_owner])
         } else {
+            outputlog(&format!("SYNONYM resolve done (not a synonym): {}ms", t_syn.elapsed().as_millis()), Some(port));
             (table.clone(), schema_list.clone())
         };
+        outputlog(&format!("COLUMN_INFO_DATA: effective_table={} schemas={:?}", effective_table, effective_schema_list), Some(port));
 
         for schem2 in &effective_schema_list {
             let schem2_opt = opt_schema(schem2.as_str());
@@ -652,7 +656,9 @@ fn fetch_full_metadata(
 ) {
     let user_schem = schem;
 
+    let t0 = Instant::now();
     let tinfo = fetch_table_info_cached(db, basedir, table, user_schem, schem2, port);
+    outputlog(&format!("META table_info({}/{:?}): {}ms rows={}", table, schem2, t0.elapsed().as_millis(), tinfo.len()), Some(port));
     if tinfo.is_empty() {
         return;
     }
@@ -664,7 +670,9 @@ fn fetch_full_metadata(
     }
 
     if fetch_pk {
+        let t1 = Instant::now();
         let pk = fetch_pk_cached(db, basedir, table, user_schem, schem2, port);
+        outputlog(&format!("META pk({}/{:?}): {}ms rows={}", table, schem2, t1.elapsed().as_millis(), pk.len()), Some(port));
         if let Value::Array(arr) = &mut result["primary_key"] {
             for k in &pk {
                 arr.push(json!(k));
@@ -673,7 +681,9 @@ fn fetch_full_metadata(
     }
 
     if fetch_col {
+        let t2 = Instant::now();
         let cinfo = fetch_column_info_cached(db, basedir, table, user_schem, schem2, port);
+        outputlog(&format!("META column_info({}/{:?}): {}ms rows={}", table, schem2, t2.elapsed().as_millis(), cinfo.len()), Some(port));
         if let Value::Array(arr) = &mut result["column_info"] {
             for row in &cinfo {
                 arr.push(json!(row));
@@ -694,6 +704,7 @@ fn fetch_table_info_cached(
     let cache_schem = schem2.or(schem);
     let cache = MetaCache::new(basedir, cache_schem, &db.user, table, &db.sha256sum);
     if let Some(rows) = cache.load_tkey() {
+        outputlog(&format!("CACHE HIT table_info({}/{:?})", table, cache_schem), Some(port));
         return rows.into_iter().map(|m| m.into_iter().collect()).collect();
     }
 
@@ -702,8 +713,11 @@ fn fetch_table_info_cached(
         None => return vec![],
     };
 
+    outputlog(&format!("CACHE MISS table_info({}/{:?}) - querying DB", table, cache_schem), Some(port));
+    let t = Instant::now();
     // Oracle は SQL 内で UPPER() 変換するので uppercase retry は不要
     let result_rows = try_table_info(conn, schem2, table, port);
+    outputlog(&format!("CACHE MISS table_info({}/{:?}) - DB done {}ms rows={}", table, cache_schem, t.elapsed().as_millis(), result_rows.len()), Some(port));
 
     if !result_rows.is_empty() {
         let _ = cache.save_tkey(&result_rows.iter().cloned().map(|m| m.into_iter().collect()).collect());
@@ -810,6 +824,7 @@ fn fetch_pk_cached(
     let cache_schem = schem2.or(schem);
     let cache = MetaCache::new(basedir, cache_schem, &db.user, table, &db.sha256sum);
     if let Some(pk) = cache.load_pkey() {
+        outputlog(&format!("CACHE HIT pk({}/{:?})", table, cache_schem), Some(port));
         return pk;
     }
 
@@ -817,7 +832,10 @@ fn fetch_pk_cached(
         Some(c) => c,
         None => return vec![],
     };
+    outputlog(&format!("CACHE MISS pk({}/{:?}) - querying DB", table, cache_schem), Some(port));
+    let t = Instant::now();
     let pk = try_primary_key(conn, schem2, table, port);
+    outputlog(&format!("CACHE MISS pk({}/{:?}) - DB done {}ms rows={}", table, cache_schem, t.elapsed().as_millis(), pk.len()), Some(port));
     if !pk.is_empty() {
         let _ = cache.save_pkey(&pk);
     }
@@ -850,6 +868,7 @@ fn fetch_column_info_cached(
     let cache_schem = schem2.or(schem);
     let cache = MetaCache::new(basedir, cache_schem, &db.user, table, &db.sha256sum);
     if let Some(rows) = cache.load_ckey() {
+        outputlog(&format!("CACHE HIT column_info({}/{:?})", table, cache_schem), Some(port));
         return rows.into_iter().map(|m| m.into_iter().collect()).collect();
     }
 
@@ -857,7 +876,10 @@ fn fetch_column_info_cached(
         Some(c) => c,
         None => return vec![],
     };
+    outputlog(&format!("CACHE MISS column_info({}/{:?}) - querying DB", table, cache_schem), Some(port));
+    let t = Instant::now();
     let rows = try_column_info(conn, schem2, table, port);
+    outputlog(&format!("CACHE MISS column_info({}/{:?}) - DB done {}ms rows={}", table, cache_schem, t.elapsed().as_millis(), rows.len()), Some(port));
     if !rows.is_empty() {
         let _ = cache.save_ckey(&rows.iter().cloned().map(|m| m.into_iter().collect()).collect());
     }
