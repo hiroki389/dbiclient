@@ -1748,7 +1748,7 @@ function s:getQuery(sql, limitrows2, opt2, port2)
                 \ 'connInfo': s:params[a:port2]
                 \ }
 
-    let l:result = s:chEvalexpr(l:channel, l:param, {"timeout": 30000})
+    let l:result = s:chEvalexpr(l:channel, l:param, {"timeout": get(g:, 'dbiclient_timeout', 120000)})
 
     if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
         call s:joblist(0)
@@ -1976,7 +1976,7 @@ function s:dBCommandNoChk(port, command) abort
     endif
     let command = a:command
     let command.tempfile = s:tempname()
-    let result = s:chEvalexpr(channel, command, {"timeout":60000})
+    let result = s:chEvalexpr(channel, command, {"timeout": get(g:, 'dbiclient_timeout', 120000)})
     if s:ch_statusOk(channel)
         if type(result) ==# v:t_dict
             call s:myChClose(channel)
@@ -5412,7 +5412,9 @@ function! s:chEvalexpr(channel, expr, opt) abort
 
             let l:start = reltime()
             while s:nvim_sock_waiting[a:channel]
-                call feedkeys(" ", "n")
+                " sleep processes pending events (on_data callbacks) in Neovim
+                " feedkeys with empty string triggers event loop without polluting input buffer
+                call feedkeys("", "n")
                 execute "sleep 20m"
                 if reltimefloat(reltime(l:start)) * 1000 > l:timeout
                     throw 'dbiclient: Socket timeout'
