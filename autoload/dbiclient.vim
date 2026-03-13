@@ -4956,7 +4956,7 @@ function s:init() abort
         " また、フロートを閉じた際に winid キャッシュをクリーンアップする
         augroup dbiclient_float_nowrap
             autocmd!
-            autocmd WinEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
+            autocmd WinEnter,BufEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
             autocmd WinClosed * call <SID>onFloatWinClosed(str2nr(expand('<amatch>')))
         augroup END
         call s:zonbie()
