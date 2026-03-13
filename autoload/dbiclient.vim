@@ -30,6 +30,9 @@ let s:scratchFloatWinid = -1   " ScratchSQL フロート
 let s:vsFloatWinid      = -1   " 結果フロート内 vsplit パネル (WHERE/SELECT/ORDER 等)
 let s:resultFloatOrigHeight      = -1  " ScratchSQL 表示前の結果フロート高さ
 let s:resultFloatWinidForRestore = -1  " 高さ復元対象の結果フロート winid
+" vsFloat を閉じたときに結果フロートを復元するためのデータ
+" {winid, orig_col, orig_width, orig_height, orig_row}
+let s:vsFloatRestoreData = {}
 let s:msg = {
             \'EO01': 'Buffer not found.',
             \'EO02': 'File not found: ($1).',
@@ -4505,14 +4508,17 @@ function s:openVsFloat(bufname) abort
     let orig_height = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
     let orig_row    = float2nr(type(cfg.row)    == v:t_float ? cfg.row    : cfg.row    + 0.0)
 
-    " 結果フロートを左半分に縮小
+    " 左: 条件編集パネル (vsFloat)  右: 結果フロート
     let gap       = 1
     let left_w    = (orig_width - gap) / 2
     let right_w   = orig_width - left_w - gap
-    let left_cfg  = {'relative': 'editor', 'width': left_w, 'height': orig_height, 'row': orig_row, 'col': orig_col}
-    call nvim_win_set_config(s:resultFloatWinid, left_cfg)
+    let right_col = orig_col + left_w + gap
 
-    " 右側に新フロートを作成
+    " 結果フロートを右半分に移動・縮小
+    let right_cfg = {'relative': 'editor', 'width': right_w, 'height': orig_height, 'row': orig_row, 'col': right_col}
+    call nvim_win_set_config(s:resultFloatWinid, right_cfg)
+
+    " 左側に条件編集パネルを新規作成
     let bnr = bufnr(a:bufname)
     if bnr == -1
         let bnr = nvim_create_buf(0, 1)
@@ -4524,22 +4530,30 @@ function s:openVsFloat(bufname) abort
     call setbufvar(bnr, '&wrap',      0)
     call setbufvar(bnr, '&filetype',  'dbiclient')
 
-    let right_col = orig_col + left_w + gap
-    let right_opts = {
+    let left_opts = {
         \ 'relative': 'editor',
-        \ 'width': right_w,
+        \ 'width': left_w,
         \ 'height': orig_height,
         \ 'row': orig_row,
-        \ 'col': right_col,
+        \ 'col': orig_col,
         \ 'style': 'minimal',
         \ 'border': 'rounded',
         \ 'title': ' ' . fnamemodify(a:bufname, ':t') . ' ',
         \ 'title_pos': 'center',
         \ }
-    let winid = nvim_open_win(bnr, 1, right_opts)
+    let winid = nvim_open_win(bnr, 1, left_opts)
     call setwinvar(winid, 'dbiclient_float', 1)
     call setwinvar(winid, 'dbiclient_vs_float', 1)
     let s:vsFloatWinid = winid
+
+    " 復元データを保存（q/Esc キーマップと WinClosed autocmd 両方で使用）
+    let s:vsFloatRestoreData = {
+        \ 'winid': s:resultFloatWinid,
+        \ 'orig_col': orig_col,
+        \ 'orig_width': orig_width,
+        \ 'orig_height': orig_height,
+        \ 'orig_row': orig_row,
+        \ }
 
     " vsFloat を閉じたら結果フロートを元のサイズに戻す
     let restore_cmd = printf(
@@ -4554,12 +4568,17 @@ endfunction
 " vsFloat を閉じて結果フロートを元のサイズに戻す
 function s:restoreResultFloat(orig_col, orig_width, orig_height, orig_row, winid) abort
     let s:vsFloatWinid = -1
+    let s:vsFloatRestoreData = {}
     try
         if nvim_win_is_valid(a:winid)
-            let cfg = nvim_win_get_config(a:winid)
-            let cfg.col   = a:orig_col
-            let cfg.width = a:orig_width
-            call nvim_win_set_config(a:winid, cfg)
+            let restore_cfg = {
+                \ 'relative': 'editor',
+                \ 'width':  a:orig_width,
+                \ 'height': a:orig_height,
+                \ 'row':    a:orig_row,
+                \ 'col':    a:orig_col,
+                \ }
+            call nvim_win_set_config(a:winid, restore_cfg)
         endif
     catch
     endtry
@@ -5006,6 +5025,24 @@ function s:onFloatWinClosed(winid) abort
     endif
     if a:winid == s:vsFloatWinid
         let s:vsFloatWinid = -1
+        " vsFloat が閉じられたら結果フロートを元の geometry に戻す
+        if !empty(s:vsFloatRestoreData)
+            let rd = s:vsFloatRestoreData
+            let s:vsFloatRestoreData = {}
+            try
+                if nvim_win_is_valid(rd.winid)
+                    let restore_cfg = {
+                        \ 'relative': 'editor',
+                        \ 'width':  rd.orig_width,
+                        \ 'height': rd.orig_height,
+                        \ 'row':    rd.orig_row,
+                        \ 'col':    rd.orig_col,
+                        \ }
+                    call nvim_win_set_config(rd.winid, restore_cfg)
+                endif
+            catch
+            endtry
+        endif
     endif
 endfunction
 
