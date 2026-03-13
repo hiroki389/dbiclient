@@ -5107,6 +5107,23 @@ function s:onFloatWinClosedPost(winid) abort
             endtry
         endif
     endfor
+
+    " 明示的候補が全て無効な場合、残存する任意の dbiclient フロートへ移動する
+    " (テーブル一覧など s:openFloatWindow で開いた汎用フロートをカバー)
+    for wid in s:getAllFloatWinids()
+        if wid != a:winid
+            try
+                if nvim_win_is_valid(wid)
+                    let s:closing_floats = 1
+                    call win_gotoid(wid)
+                    call timer_start(0, {-> execute('let s:closing_floats = 0')})
+                    return
+                endif
+            catch
+            endtry
+        endif
+    endfor
+
     " 有効な移動先がなかった場合もフラグをリセットする
     call timer_start(0, {-> execute('let s:closing_floats = 0')})
 endfunction
