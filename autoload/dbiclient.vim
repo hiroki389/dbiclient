@@ -5140,9 +5140,16 @@ function s:cycleFloatWindows() abort
         call feedkeys("\<Tab>", 'n')
         return
     endif
+    " フロートが1つしかない場合は何もしない（背後ウィンドウへ移動しない）
+    if len(floats) == 1
+        call win_gotoid(floats[0])
+        return
+    endif
     let cur = win_getid()
     let idx = index(floats, cur)
     let next = floats[(idx == -1 ? 0 : (idx + 1) % len(floats))]
+    " 次が自分自身なら移動しない
+    if next == cur | return | endif
     let s:closing_floats = 1
     call win_gotoid(next)
     call timer_start(0, {-> execute('let s:closing_floats = 0')})
