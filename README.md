@@ -1,43 +1,46 @@
 # dbiclient.vim
 
-Vim / Neovim から非同期で SQL を実行するデータベースクライアントプラグインです。
-バックエンドは Rust 製の TCP ソケットサーバーで、PostgreSQL・MySQL・SQLite・Oracle・ODBC に対応しています。
+An asynchronous SQL database client plugin for Vim / Neovim.  
+The backend is a Rust TCP socket server supporting PostgreSQL, MySQL, SQLite, Oracle, and ODBC.
 
-## 🚀 特徴
+![demo](assets/demo.gif)
 
-* **非同期実行**: Vim 8.2+ / Neovim のソケット通信を利用し、重いクエリ実行中も Vim の操作を妨げません。
-* **Rust バックエンド**: 高速な Rust 製ソケットサーバー (`rplugin/rust/socket`) を使用。接続時に未ビルドまたはドライバ未対応の場合は自動でビルドします。
-* **フロートウィンドウ UI** *(Neovim 専用)*: テーブル一覧・クエリ結果・SQL 生成バッファをすべてフロートウィンドウで表示。分割せずに操作できます。Vim では従来のスプリットウィンドウにフォールバックします。
-* **環境変数による接続管理**: 接続設定を環境変数で管理するため、プロジェクトごとの切り替えが容易です。
+## 🚀 Features
 
-## 📋 必須要件
-
-| | 最低バージョン | 備考 |
-|---|---|---|
-| **Neovim** | 0.9+ | フロートウィンドウ UI を使用する場合 |
-| **Vim** | 8.2+ | フロートウィンドウは使用不可。SQL実行・結果表示はスプリットで動作 |
-| **Rust / Cargo** | 1.70+ | バックエンドのビルドに必要 |
-
-### バックエンドのビルド
-
-```shell
-# プラグインルートの Rust ソースをビルド
-cd rplugin/rust/socket
-cargo build --release --features pg,mysql-db,sqlite
-
-# Oracle を使う場合
-cargo build --release --features pg,mysql-db,sqlite,oracle-native
-```
-
-> **Note**: 接続時に `g:dbiclient_rustPath` のバイナリが存在しない、またはドライバが未コンパイルの場合は Vim から自動ビルドを実行します。
+* **Async execution** – Uses Vim 8.2+ / Neovim socket communication so heavy queries never block the editor.
+* **Rust backend** – Fast Rust socket server (`rplugin/rust/socket`). Automatically builds on first connect if the binary is missing or the required driver is not compiled in.
+* **Float window UI** *(Neovim only)* – Table list, query results, and SQL generation buffers all displayed in floating windows. Falls back to split windows in Vim.
+* **Environment-variable connection management** – Connection settings live in environment variables for easy per-project switching.
 
 ---
 
-## ⚡ クイックスタート
+## 📋 Requirements
 
-### ステップ 1: プラグインをインストール
+| | Minimum version | Notes |
+|---|---|---|
+| **Neovim** | 0.9+ | Required for float window UI |
+| **Vim** | 8.2+ | Float windows unavailable; SQL execution and results use splits |
+| **Rust / Cargo** | 1.70+ | Required to build the backend |
 
-[lazy.nvim](https://github.com/folke/lazy.nvim) の例:
+### Building the backend
+
+```shell
+cd rplugin/rust/socket
+cargo build --release --features pg,mysql-db,sqlite
+
+# With Oracle support
+cargo build --release --features pg,mysql-db,sqlite,oracle-native
+```
+
+> **Note:** If the binary at `g:dbiclient_rustPath` is missing or the required driver is not compiled in, the plugin triggers an automatic build from Vim.
+
+---
+
+## ⚡ Quick Start
+
+### Step 1 — Install the plugin
+
+**[lazy.nvim](https://github.com/folke/lazy.nvim)**
 
 ```lua
 {
@@ -46,74 +49,74 @@ cargo build --release --features pg,mysql-db,sqlite,oracle-native
 }
 ```
 
-[vim-plug](https://github.com/junegunn/vim-plug) の例:
+**[vim-plug](https://github.com/junegunn/vim-plug)**
 
 ```vim
 Plug 'hiroki389/dbiclient'
 ```
 
-### ステップ 2: 接続設定を `init.vim` / `init.lua` に書く
+### Step 2 — Add connection settings to your `vimrc` / `init.lua`
 
-接続情報は **任意の「名前」に `_DB_DSN` / `_DB_USER` / `_DB_PASS` を付けた環境変数** で指定します。
-`dbiclient#connect('名前')` を呼ぶと対応する環境変数が自動で読み込まれます。
-
-環境変数が未設定の場合は Vim が対話的に入力を求めます（試すだけなら設定不要）。
+Connection details are stored in environment variables following the pattern  
+`{PREFIX}_DB_DSN`, `{PREFIX}_DB_USER`, `{PREFIX}_DB_PASS`.  
+Calling `dbiclient#connect('{PREFIX}')` reads those variables automatically.  
+If a variable is not set, Vim prompts for input interactively.
 
 ```vim
-" ── PostgreSQL の例 ──────────────────────────────────────
-" DSN 書式: Pg:dbname=<DB名>;host=<ホスト>;port=<ポート>
+" ── PostgreSQL example ─────────────────────────────────────
+" DSN format: Pg:dbname=<DB>;host=<host>;port=<port>
 call setenv('MYPG_DB_DSN',  'Pg:dbname=mydb;host=localhost')
 call setenv('MYPG_DB_USER', 'myuser')
 call setenv('MYPG_DB_PASS', 'mypassword')
 
-" vimrc/init.vim に接続コマンドを登録しておくと便利
+" Register a short command in your vimrc for convenience
 command! DBIConnMyPg call dbiclient#connect('MYPG')
 ```
 
-> 💡 **名前は自由に付けられます。** `WORK_PG`・`DEV_MYSQL` など用途別に複数登録できます。
+> 💡 The prefix is completely free — register multiple connections like `WORK_PG`, `DEV_MYSQL`, etc.
 
-### ステップ 3: 接続する
+### Step 3 — Connect
 
 ```
 :DBIConnMyPg
 ```
 
-接続に成功するとテーブル一覧が自動で表示されます（Neovim ではフロートウィンドウ、Vim ではスプリット）。
+On success the table list opens automatically (float window in Neovim, split in Vim).
 
-### ステップ 4: 操作する
+### Step 4 — Explore
 
-| 操作 | 手順 |
+![table list demo](assets/tables.gif)
+
+| Action | How |
 |---|---|
-| テーブルを SELECT | テーブル一覧で `<CR>` |
-| SQL を実行 | ビジュアルモードで範囲選択 → `:DBIExecute` |
-| WHERE 条件を変える | SELECT 結果で `mw` → 値を編集 → `<CR>` |
-| コミット | `:DBICommit` |
+| SELECT a table | Press `<CR>` in the table list |
+| Execute SQL | Visual-select SQL → `:DBIExecute` |
+| Change WHERE | Press `mw` in result → edit → `<CR>` |
+| Commit | `:DBICommit` |
 
 ---
 
-## 🔌 DB 接続設定の詳細
+## 🔌 Connection Configuration
 
-### 環境変数の命名規則
+### Environment variable naming
 
 ```
-{PREFIX}_DB_DSN   ← データソース名（ドライバ名:接続パラメータ）
-{PREFIX}_DB_USER  ← ユーザー名
-{PREFIX}_DB_PASS  ← パスワード
+{PREFIX}_DB_DSN   — data source name (driver:connection-params)
+{PREFIX}_DB_USER  — user name
+{PREFIX}_DB_PASS  — password
 ```
 
-`dbiclient#connect('{PREFIX}')` が上記3変数を読み取ります。変数が未設定の場合は Vim が対話的に入力を促します。
+### DSN format by DBMS
 
-### DSN 書式一覧
-
-| DBMS | DSN の書式例 |
+| DBMS | DSN example |
 |---|---|
 | PostgreSQL | `Pg:dbname=mydb;host=localhost;port=5432` |
 | MySQL / MariaDB | `mysql:dbname=mydb;host=localhost` |
 | SQLite | `sqlite:/path/to/database.db` |
-| Oracle | `Oracle:sid=XE` または `Oracle:service_name=XEPDB1` |
+| Oracle | `Oracle:sid=XE` or `Oracle:service_name=XEPDB1` or `Oracle:host:port/service` |
 | ODBC | `ODBC:MY_DSN_NAME` |
 
-### 接続設定の例
+### Connection examples
 
 #### PostgreSQL
 
@@ -136,7 +139,7 @@ command! DBIConnMySQL call dbiclient#connect('MYSQL')
 #### SQLite
 
 ```vim
-" パスワード不要 (空文字でよい)
+" Password not required (leave empty)
 call setenv('SQLITE_DB_DSN',  'sqlite:/path/to/my.db')
 call setenv('SQLITE_DB_USER', '')
 call setenv('SQLITE_DB_PASS', '')
@@ -146,11 +149,11 @@ command! DBIConnSQLite call dbiclient#connect('SQLITE')
 #### Oracle
 
 ```vim
-call setenv('ORA_DB_DSN',  'Oracle:sid=XE')
+call setenv('ORA_DB_DSN',  'Oracle:host:1521/service_name')
 call setenv('ORA_DB_USER', 'system')
 call setenv('ORA_DB_PASS', 'password')
 
-" NLS_LANG など Oracle 固有の環境変数が必要な場合
+" Pass Oracle-specific environment variables when needed
 let l:opt = {'connect_opt_envdict': {'NLS_LANG': 'Japanese_Japan.AL32UTF8'}}
 command! DBIConnOra call dbiclient#connect('ORA', l:opt)
 ```
@@ -164,141 +167,157 @@ call setenv('ODBC_DB_PASS', 'password')
 command! DBIConnODBC call dbiclient#connect('ODBC')
 ```
 
-### 接続オプション（`connect` 関数の第2引数）
-| キー | デフォルト値 | 説明 |
-| :---------------------------- | :----------                                  | :----------------------------------------------------------- |
-| connect_opt_limitrows         | g:dbiclient_connect_opt_limitrows = 1000     | 最大フェッチ件数                                             |
-| connect_opt_encoding          | g:dbiclient_connect_opt_encoding = 'utf8'    | 文字エンコーディング                                         |
-| connect_opt_table_name        | g:dbiclient_connect_opt_table_name = ''      | テーブル一覧のテーブルフィルター                             |
-| connect_opt_table_type        | g:dbiclient_connect_opt_table_type = ''      | テーブル一覧のタイプフィルター                               |
-| connect_opt_envdict           | g:dbiclient_connect_opt_envdict = {}         | DBMS の環境変数を設定                                        |
-| connect_opt_schema_flg        | g:dbiclient_connect_opt_schema_flg = 0       | スキーマ名付与フラグ                                         |
-| connect_opt_schema_list       | g:dbiclient_connect_opt_schema_list = []     | 同一インスタンス内の別スキーマからカラム名を取得する         |
-| connect_opt_history_data_flg  | g:dbiclient_connect_opt_history_data_flg = 0 | SQL結果の履歴保持フラグ（デフォルト OFF）                    |
-| connect_opt_columninfoflg     | g:dbiclient_connect_opt_columninfoflg = 0    | カラムコメントの表示設定                                     |
+### `connect` options (second argument)
 
-## 🖥 フロートウィンドウ UI *(Neovim 専用)*
+| Key | Default | Description |
+| :--- | :--- | :--- |
+| connect_opt_limitrows        | `g:dbiclient_connect_opt_limitrows = 1000`  | Maximum rows to fetch |
+| connect_opt_encoding         | `g:dbiclient_connect_opt_encoding = 'utf8'` | Character encoding |
+| connect_opt_table_name       | `g:dbiclient_connect_opt_table_name = ''`   | Table name filter for table list |
+| connect_opt_table_type       | `g:dbiclient_connect_opt_table_type = ''`   | Table type filter for table list |
+| connect_opt_envdict          | `g:dbiclient_connect_opt_envdict = {}`      | DBMS-specific environment variables |
+| connect_opt_schema_flg       | `g:dbiclient_connect_opt_schema_flg = 0`    | Prefix schema name to table name |
+| connect_opt_schema_list      | `g:dbiclient_connect_opt_schema_list = []`  | Additional schemas to search for column info |
+| connect_opt_history_data_flg | `g:dbiclient_connect_opt_history_data_flg = 0` | Persist SQL result history (default OFF) |
+| connect_opt_columninfoflg    | `g:dbiclient_connect_opt_columninfoflg = 0` | Show column comments |
 
-Neovim では結果・条件編集・SQL 生成をフロートウィンドウで表示します。
+---
+
+## 🖥 Float Window UI *(Neovim only)*
+
+In Neovim, results, condition editing, and SQL generation all use floating windows.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        テーブル一覧フロート                           │
-│   (幅 95% × 高さ 85%  ─  :DBITables / DBIJobList の <CR>)           │
+│                         Table List float                              │
+│              (:DBITables / <CR> from :DBIJobList)                    │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌───────────────────────────────────────┐ ┌──────────────────────────────┐
-│   条件編集パネル (左 50%)              │ │   クエリ結果フロート (右 50%)  │
-│  WHERE / ORDER / SELECT / GROUP       │ │  SELECT * FROM ...           │
-│  ─ <CR> で実行・パネルが閉じて復元     │ │                              │
+│   Condition panel (left 50%)          │ │   Query result float (right)  │
+│  WHERE / ORDER / SELECT / GROUP       │ │  SELECT * FROM ...            │
+│  — press <CR> to run, panel closes    │ │                               │
 └───────────────────────────────────────┘ └──────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        ScratchSQL フロート (下部)                     │
-│  INSERT / UPDATE / DELETE 文の生成結果を追記形式で集約                │
+│                       ScratchSQL float (bottom)                       │
+│        INSERT / UPDATE / DELETE statements appended here              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### フロートウィンドウの操作
+### Float window navigation
 
-| キー | 動作 |
+| Key | Action |
 |---|---|
-| `<Tab>` | フロートウィンドウを順方向に切り替える（フロートがない場合は通常の `<Tab>`） |
-| `<S-Tab>` | フロートウィンドウを逆方向に切り替える（フロートがない場合は通常の `<S-Tab>`） |
-| `q` / `<Esc>` | フロートを閉じる（別フロートが残っていればそちらへフォーカス移動） |
-| 非フロートウィンドウへ移動 | 全フロートウィンドウを自動的に閉じる |
-
-## 🛠 コマンドリファレンス
-| コマンド | 内容 |
-| :----------------------        | :-----------------------------------------------------------------------           |
-| :DBIJobList                    | 接続中の DB 情報一覧を表示する                                                      |
-| :DBIClose [port]               | DB を切断する（Vim 終了時は全コネクションを自動切断）                               |
-| :DBITables                     | テーブル一覧を表示する                                                              |
-| :DBISelect[!] [count]          | ビジュアルモードで選択した SQL を複数実行し結果を表示する（区切り文字: `/` or `;`）  |
-| :DBISelectFrom[!] [tableNm]    | テーブル名を指定して SELECT を実行する                                              |
-| :DBIColumnsTable [tableNm]     | テーブル名を指定してカラム情報を取得する                                            |
-| :DBIExecute[!]                 | ビジュアルモードで選択した SQL を複数実行する（区切り文字: `/` or `;`）              |
-| :DBIExecuteNoSplit[!]          | ビジュアルモードで選択した SQL を1件実行する                                        |
-| :DBICommit                     | コミットする                                                                        |
-| :DBIRollback                   | ロールバックする                                                                    |
-| :DBICancel                     | 実行中の SQL をキャンセルする                                                       |
-| :DBIHistory                    | SQL 履歴を表示する                                                                  |
-| :DBIOpenBuf                    | 直前の結果バッファをフロートウィンドウで再表示する                                  |
-| :DBILog                        | ソケットのログファイル（`socket_YYYYMMDD.log`）を開く                               |
-
-### テーブル一覧のキーマップ
-| キー (デフォルト) | 動作 |
-|---|---|
-| `<CR>` | カーソル行のテーブルを SELECT |
-| `mc`   | テーブルの件数を取得 |
-| `mt`   | TABLE_TYPE フィルタを変更 |
-| `mw`   | TABLE_NAME フィルタを変更 |
-
-### クエリ結果のキーマップ
-| キー (デフォルト) | 動作 |
-|---|---|
-| `mw` | WHERE 条件を編集（左パネルで開く） |
-| `mo` | ORDER BY を編集 |
-| `ms` | SELECT カラムを編集 |
-| `mg` | GROUP BY を編集 |
-| `mji`| INNER JOIN テーブルを追加 |
-| `mjl`| LEFT JOIN テーブルを追加 |
-| `me` | SQL を直接編集 |
-| `ma` | カラム幅を整列（EasyAlign） |
-| `mr` | 現在の SQL を再実行 |
-| `mll`| LIMIT 件数を変更して再実行 |
-| `+`  | 次の結果バッファへ |
-| `-`  | 前の結果バッファへ |
-| `mid`| DELETE → INSERT 文を生成して ScratchSQL に追記 |
-
-### SQL 生成 (ScratchSQL フロート)
-
-SELECT 結果バッファ上で以下のキーを押すと INSERT/UPDATE/DELETE 文が生成され、**ScratchSQL** フロートに追記されます（上書きではありません）。
-
-| キー (デフォルト) | 動作 |
-|---|---|
-| `mi` | INSERT 文を生成 |
-| `mu` | UPDATE 文を生成 |
-| `md` | DELETE 文を生成 |
-
-## ⚙ グローバル設定（`.vimrc` 用）
-| 変数名 | デフォルト | 説明 |
-|  :----------------------------       |  :----------                     |  :----------------------------------------------------------- |
-|  g:dbiclient_rustPath                |  (自動検出)                      |  Rust バイナリのパス                                          |
-|  g:dbiclient_rust_features           |  `'pg,mysql-db,sqlite'`          |  ビルド時に有効にする Cargo features                          |
-|  g:dbiclient_col_delimiter           |  `"\t"`                          |  未整列状態のカラム区切り文字                                 |
-|  g:dbiclient_col_delimiter_align     |  `"\|"`                          |  整列状態のカラム区切り文字                                   |
-|  g:dbiclient_null                    |  `''`                            |  NULL の表示文字                                              |
-|  g:dbiclient_linesep                 |  `"\n"`                          |  改行コードの表示文字                                         |
-|  g:dbiclient_surround                |  `''`                            |  カラムの囲い文字                                             |
-|  g:dbiclient_new_window_hight        |  `'12'`                          |  フォールバック時のスプリット高さ                             |
-|  g:dbiclient_buffer_encoding         |  `'utf8'`                        |  Vim バッファの文字エンコーディング                           |
-|  g:dbiclient_hist_cnt                |  `1000`                          |  SQL 履歴の最大保持件数                                       |
-|  g:dbiclient_disp_headerline         |  `1`                             |  カラム名の下に罫線を表示                                     |
-|  g:dbiclient_disp_remarks            |  `1`                             |  カラムコメントを表示（columninfoflg が ON の場合）           |
-|  g:dbiclient_float_window            |  `1`                             |  フロートウィンドウを使用する（Neovim のみ有効）               |
-|  g:dbiclient_float_window_width      |  `0.9`                           |  結果フロートの幅比率（画面幅に対する割合）                   |
-|  g:dbiclient_float_window_height     |  `0.8`                           |  結果フロートの高さ比率                                       |
-|  g:dbiclient_float_tables_width      |  `0.98`                          |  テーブル一覧フロートの幅比率                                 |
-|  g:dbiclient_float_tables_height     |  `0.92`                          |  テーブル一覧フロートの高さ比率                               |
-|  g:dbiclient_rootPath                |  `$XDG_CACHE_HOME/dbiclient`     |  ログ・キャッシュ・履歴の保存先ディレクトリ                   |
-|  g:dbiclient_debuglog                |  `1`                             |  ソケットログをファイルに出力する（`0` で無効）→ `:DBILog` で確認 |
-|  g:dbiclient_debugflg                |  `0`                             |  Vim 側デバッグログを `echom` に出力する（`1` で有効）         |
-|  g:dbiclient_timeout                 |  `120000`                        |  ソケット同期応答のタイムアウト（ミリ秒）。初回メタデータ取得が遅い場合に大きくする |
-|  g:dbiclient_prelinesep              |  `'<<CRR>>'`                     |  改行コードの一時変換文字                                     |
-|  g:Dbiclient_call_after_connected    |  `{-> dbiclient#userTablesMain()}`| DB 接続後に実行する関数                                      |
+| `<Tab>` | Cycle forward through float windows (passes through as normal `<Tab>` when no floats are open) |
+| `<S-Tab>` | Cycle backward through float windows (passes through as normal `<S-Tab>` when no floats are open) |
+| `q` / `<Esc>` | Close the current float (focus moves to another open float if one exists) |
+| Move to a non-float window | All float windows are closed automatically |
 
 ---
 
-## 📄 ライセンス
+## 🛠 Command Reference
 
-Copyright (c) 2019 Hiroki Kitamura
+| Command | Description |
+| :--- | :--- |
+| `:DBIJobList`                 | Show list of active DB connections |
+| `:DBIClose [port]`            | Disconnect (all connections are closed automatically on Vim exit) |
+| `:DBITables`                  | Open the table list |
+| `:DBISelect[!] [count]`       | Execute multiple SQL statements from visual selection (delimiter: `/` or `;`) |
+| `:DBISelectFrom[!] [tableNm]` | Run `SELECT * FROM <table>` |
+| `:DBIColumnsTable [tableNm]`  | Fetch column info for a table |
+| `:DBIExecute[!]`              | Execute multiple SQL statements from visual selection |
+| `:DBIExecuteNoSplit[!]`       | Execute a single SQL statement from visual selection |
+| `:DBICommit`                  | Commit |
+| `:DBIRollback`                | Rollback |
+| `:DBICancel`                  | Cancel the running SQL |
+| `:DBIHistory`                 | Show SQL history |
+| `:DBIOpenBuf`                 | Re-open the last result buffer in a float window |
+| `:DBILog`                     | Open the socket log file (`socket_YYYYMMDD.log`) |
 
+---
+
+## ⌨ Key Mappings
+
+### Table list
+
+| Key (default) | Action |
+|---|---|
+| `<CR>` | SELECT the table under cursor |
+| `mc`   | Count rows in the table |
+| `mt`   | Change TABLE_TYPE filter |
+| `mw`   | Change TABLE_NAME filter |
+
+### Query result
+
+![query result demo](assets/query.gif)
+
+| Key (default) | Action |
+|---|---|
+| `mw`  | Edit WHERE clause (opens condition panel) |
+| `mo`  | Edit ORDER BY |
+| `ms`  | Edit SELECT columns |
+| `mg`  | Edit GROUP BY |
+| `mji` | Add INNER JOIN table |
+| `mjl` | Add LEFT JOIN table |
+| `me`  | Edit SQL directly |
+| `ma`  | Align column widths (EasyAlign) |
+| `mr`  | Re-execute the current SQL |
+| `mll` | Change LIMIT and re-execute |
+| `+`   | Next result buffer |
+| `-`   | Previous result buffer |
+| `mid` | Generate DELETE → INSERT and append to ScratchSQL |
+
+### SQL generation (ScratchSQL float)
+
+In a result buffer, the following keys generate DML and **append** it to the ScratchSQL float.
+
+![sql generation demo](assets/sqlgen.gif)
+
+| Key (default) | Action |
+|---|---|
+| `mi` | Generate INSERT |
+| `mu` | Generate UPDATE |
+| `md` | Generate DELETE |
+
+---
+
+## ⚙ Global Settings (`vimrc`)
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `g:dbiclient_rustPath`             | (auto-detected)                    | Path to the Rust backend binary |
+| `g:dbiclient_rust_features`        | `'pg,mysql-db,sqlite'`             | Cargo features enabled at build time |
+| `g:dbiclient_col_delimiter`        | `"\t"`                             | Column delimiter (non-aligned) |
+| `g:dbiclient_col_delimiter_align`  | `"\|"`                             | Column delimiter (aligned) |
+| `g:dbiclient_null`                 | `''`                               | String displayed for NULL |
+| `g:dbiclient_linesep`              | `"\n"`                             | Newline placeholder character |
+| `g:dbiclient_surround`             | `''`                               | Surrounding character for column values |
+| `g:dbiclient_new_window_hight`     | `'12'`                             | Split height used when float is unavailable |
+| `g:dbiclient_buffer_encoding`      | `'utf8'`                           | Vim buffer character encoding |
+| `g:dbiclient_hist_cnt`             | `1000`                             | Maximum number of SQL history entries |
+| `g:dbiclient_disp_headerline`      | `1`                                | Show a separator line below column headers |
+| `g:dbiclient_disp_remarks`         | `1`                                | Show column comments (requires `columninfoflg`) |
+| `g:dbiclient_float_window`         | `1`                                | Enable float window UI (Neovim only) |
+| `g:dbiclient_float_window_width`   | `0.9`                              | Result float width ratio (fraction of screen width) |
+| `g:dbiclient_float_window_height`  | `0.8`                              | Result float height ratio |
+| `g:dbiclient_float_tables_width`   | `0.98`                             | Table list float width ratio |
+| `g:dbiclient_float_tables_height`  | `0.92`                             | Table list float height ratio |
+| `g:dbiclient_rootPath`             | `$XDG_CACHE_HOME/dbiclient`        | Directory for logs, cache, and history |
+| `g:dbiclient_debuglog`             | `1`                                | Write socket log to file (`0` to disable) — view with `:DBILog` |
+| `g:dbiclient_debugflg`             | `0`                                | Print Vim-side debug log to `echom` (`1` to enable) |
+| `g:dbiclient_timeout`              | `120000`                           | Synchronous socket response timeout in ms (increase if first metadata fetch times out) |
+| `g:dbiclient_prelinesep`           | `'<<CRR>>'`                        | Temporary newline escape sequence used internally |
+| `g:Dbiclient_call_after_connected` | `{-> dbiclient#userTablesMain()}`  | Function called after a successful connection |
+
+---
+
+## 📄 License
+
+Copyright (c) 2019 Hiroki Kitamura  
 Released under the [MIT license](https://opensource.org/licenses/mit-license.php).
 
-## 👤 著者
+## 👤 Author
 
 [hiroki389](https://github.com/hiroki389)
-
----
 
