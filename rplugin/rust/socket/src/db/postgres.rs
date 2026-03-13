@@ -68,6 +68,13 @@ fn simple_query_to_cursor(
         }
     }
 
+    if columns.is_empty() {
+        let stmt = client
+            .prepare(sql)
+            .with_context(|| format!("pg prepare for columns: {}", &sql[..sql.len().min(80)]))?;
+        columns = stmt.columns().iter().map(|c| c.name().to_string()).collect();
+    }
+
     Ok(Box::new(EagerCursor { columns, rows, pos: 0, affected_rows: 0 }))
 }
 

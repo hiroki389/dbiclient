@@ -54,11 +54,11 @@ pub fn exec_sql(
 
     let cols: Vec<String> = cursor.column_names().to_vec();
     if cols.is_empty() {
-        // カラムなし → DML 扱い
-        let cnt = cursor.row_count();
+        // 一部ドライバでは 0 件 SELECT でカラムメタデータが返らないことがある。
+        // is_dml=false の経路では DML へフォールバックせず、0 件の SELECT として扱う。
         return Ok(ExecSqlResult {
-            status: 2,
-            cnt,
+            status: 1,
+            cnt: 0,
             has_next: false,
             sql_time_ms: exec_start_ms,
             fetch_time_ms: 0,
