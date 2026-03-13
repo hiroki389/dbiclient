@@ -27,6 +27,7 @@ let s:shadowpass = ''
 " 共有フロートウィンドウ ID (-1 = 未開またはクローズ済み)
 let s:resultFloatWinid  = -1   " SELECT/UPDATE 等の結果を表示する共有フロート
 let s:scratchFloatWinid = -1   " ScratchSQL フロート
+let s:vsFloatWinid      = -1   " 結果フロート内 vsplit パネル (WHERE/SELECT/ORDER 等)
 let s:msg = {
             \'EO01': 'Buffer not found.',
             \'EO02': 'File not found: ($1).',
@@ -3566,6 +3567,8 @@ function s:ijoin(prefix) abort
         let ijoin = extend(ijoin, map(cols[:], {_, x -> x .. repeat(' ' , maxcol - strdisplaywidth(x) +1) .. '| ='}))
 
         let bufname = bufname('%')
+        " vsFloat の quit 前にウィンドウIDをリセット（結果フロートリサイズをスキップ）
+        let s:vsFloatWinid = -1
         quit
         exe 'silent! bwipeout! ' .. bufnr
         call s:gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
@@ -4423,12 +4426,35 @@ function s:aboveNewBuffer(bufname, ...) abort
 endfunction
 
 function s:vsNewBuffer(bufname, ...) abort
-    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
-        let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
-        if winid != -1
-            call s:f.noreadonly(bnr)
-            call setbufvar(bnr, '&filetype', 'dbiclient')
-            return bnr
+    " フロートモードかつ結果フロート内での操作なら、
+    " 結果フロートを左半分に縮小して右に新フロートを並べる
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim') && exists('*nvim_open_win')
+        " 結果フロートが有効かどうか確認
+        let in_result_float = 0
+        if s:resultFloatWinid != -1
+            try
+                if nvim_win_is_valid(s:resultFloatWinid)
+                    " 現在ウィンドウが結果フロート、またはそこから呼ばれた場合
+                    let in_result_float = 1
+                endif
+            catch
+                let s:resultFloatWinid = -1
+            endtry
+        endif
+
+        if in_result_float
+            let bnr = s:openVsFloat(a:bufname)
+            if bnr != -1
+                return bnr
+            endif
+        else
+            " 結果フロート外では通常の単独フロートとして開く
+            let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
+            if winid != -1
+                call s:f.noreadonly(bnr)
+                call setbufvar(bnr, '&filetype', 'dbiclient')
+                return bnr
+            endif
         endif
     endif
     let [bufnr, cbufnr] = s:f.newBuffer('vertical new', '', a:bufname, g:dbiclient_buffer_encoding, 0)
@@ -4436,6 +4462,106 @@ function s:vsNewBuffer(bufname, ...) abort
     let cwid = s:f.getwidCurrentTab(cbufnr)
     exe 'autocmd BufDelete,BufWipeout,QuitPre,BufUnload <buffer=' .. bufnr .. '> :call win_gotoid(' .. cwid .. ')'
     return bufnr
+endfunction
+
+" 結果フロートを左半分に縮小し、右側に vsplit パネルを開く
+" 戻り値: bufnr (-1 なら失敗)
+function s:openVsFloat(bufname) abort
+    if !has('nvim') || !exists('*nvim_open_win')
+        return -1
+    endif
+
+    " 既に vsFloat が開いていれば中身だけ差し替える
+    if s:vsFloatWinid != -1
+        try
+            if nvim_win_is_valid(s:vsFloatWinid)
+                let bnr = bufnr(a:bufname)
+                if bnr == -1
+                    let bnr = nvim_create_buf(0, 1)
+                    call nvim_buf_set_name(bnr, a:bufname)
+                endif
+                call nvim_win_set_buf(s:vsFloatWinid, bnr)
+                let cfg = nvim_win_get_config(s:vsFloatWinid)
+                let cfg.title = ' ' . fnamemodify(a:bufname, ':t') . ' '
+                call nvim_win_set_config(s:vsFloatWinid, cfg)
+                call setbufvar(bnr, '&buftype',   'nofile')
+                call setbufvar(bnr, '&buflisted', 0)
+                call setbufvar(bnr, '&swapfile',  0)
+                call setbufvar(bnr, '&wrap',      0)
+                call win_gotoid(s:vsFloatWinid)
+                return bnr
+            endif
+        catch
+        endtry
+        let s:vsFloatWinid = -1
+    endif
+
+    " 結果フロートの現在の geometry を取得
+    let cfg = nvim_win_get_config(s:resultFloatWinid)
+    let orig_col    = float2nr(type(cfg.col)    == v:t_float ? cfg.col    : cfg.col    + 0.0)
+    let orig_width  = float2nr(type(cfg.width)  == v:t_float ? cfg.width  : cfg.width  + 0.0)
+    let orig_height = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
+    let orig_row    = float2nr(type(cfg.row)    == v:t_float ? cfg.row    : cfg.row    + 0.0)
+
+    " 結果フロートを左半分に縮小
+    let gap       = 1
+    let left_w    = (orig_width - gap) / 2
+    let right_w   = orig_width - left_w - gap
+    let left_cfg  = {'relative': 'editor', 'width': left_w, 'height': orig_height, 'row': orig_row, 'col': orig_col}
+    call nvim_win_set_config(s:resultFloatWinid, left_cfg)
+
+    " 右側に新フロートを作成
+    let bnr = bufnr(a:bufname)
+    if bnr == -1
+        let bnr = nvim_create_buf(0, 1)
+        call nvim_buf_set_name(bnr, a:bufname)
+    endif
+    call setbufvar(bnr, '&buftype',   'nofile')
+    call setbufvar(bnr, '&buflisted', 0)
+    call setbufvar(bnr, '&swapfile',  0)
+    call setbufvar(bnr, '&wrap',      0)
+    call setbufvar(bnr, '&filetype',  'dbiclient')
+
+    let right_col = orig_col + left_w + gap
+    let right_opts = {
+        \ 'relative': 'editor',
+        \ 'width': right_w,
+        \ 'height': orig_height,
+        \ 'row': orig_row,
+        \ 'col': right_col,
+        \ 'style': 'minimal',
+        \ 'border': 'rounded',
+        \ 'title': ' ' . fnamemodify(a:bufname, ':t') . ' ',
+        \ 'title_pos': 'center',
+        \ }
+    let winid = nvim_open_win(bnr, 1, right_opts)
+    call setwinvar(winid, 'dbiclient_float', 1)
+    call setwinvar(winid, 'dbiclient_vs_float', 1)
+    let s:vsFloatWinid = winid
+
+    " vsFloat を閉じたら結果フロートを元のサイズに戻す
+    let restore_cmd = printf(
+        \ '<Cmd>call <SID>restoreResultFloat(%d, %d, %d, %d, %d)<CR>',
+        \ orig_col, orig_width, orig_height, orig_row, s:resultFloatWinid)
+    exe 'nnoremap <buffer> <silent> <nowait> q ' . restore_cmd
+    exe 'nnoremap <buffer> <silent> <nowait> <Esc> ' . restore_cmd
+
+    return bnr
+endfunction
+
+" vsFloat を閉じて結果フロートを元のサイズに戻す
+function s:restoreResultFloat(orig_col, orig_width, orig_height, orig_row, winid) abort
+    let s:vsFloatWinid = -1
+    try
+        if nvim_win_is_valid(a:winid)
+            let cfg = nvim_win_get_config(a:winid)
+            let cfg.col   = a:orig_col
+            let cfg.width = a:orig_width
+            call nvim_win_set_config(a:winid, cfg)
+        endif
+    catch
+    endtry
+    close
 endfunction
 
 " ─── フロートウィンドウ共通ユーティリティ ─────────────────────────────────────
@@ -4827,13 +4953,27 @@ function s:init() abort
             call mkdir(logpath)
         endif
         " フロートウィンドウ内でバッファを切り替えても nowrap を維持する
+        " また、フロートを閉じた際に winid キャッシュをクリーンアップする
         augroup dbiclient_float_nowrap
             autocmd!
             autocmd WinEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
+            autocmd WinClosed * call <SID>onFloatWinClosed(str2nr(expand('<amatch>')))
         augroup END
         call s:zonbie()
     endif
     let s:loaded = 1
+endfunction
+
+function s:onFloatWinClosed(winid) abort
+    if a:winid == s:resultFloatWinid
+        let s:resultFloatWinid = -1
+    endif
+    if a:winid == s:scratchFloatWinid
+        let s:scratchFloatWinid = -1
+    endif
+    if a:winid == s:vsFloatWinid
+        let s:vsFloatWinid = -1
+    endif
 endfunction
 
 function s:zonbie()
