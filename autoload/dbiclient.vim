@@ -684,7 +684,7 @@ function s:rustBuildIfNeeded() abort
 
     let l:features = get(g:, 'dbiclient_rust_features', 'pg,mysql-db,sqlite')
     echohl WarningMsg
-    echo 'dbiclient: Rust ソースを検出 - ビルド中 (' . l:features . ')...'
+    echo 'dbiclient: Rust source changes detected - building (' . l:features . ')...'
     echohl None
     redraw
 
@@ -695,7 +695,7 @@ function s:rustBuildIfNeeded() abort
 
     if v:shell_error != 0
         echohl ErrorMsg
-        echom 'dbiclient: Rust ビルドエラー (cargo exit=' . v:shell_error . ')'
+        echom 'dbiclient: Rust build failed (cargo exit=' . v:shell_error . ')'
         for l:line in split(l:output, "\n")
             if l:line =~# '^error'
                 echom '  ' . l:line
@@ -705,7 +705,7 @@ function s:rustBuildIfNeeded() abort
         return 1
     endif
 
-    echo 'dbiclient: Rust ビルド完了'
+    echo 'dbiclient: Rust build completed'
     redraw
     return 0
 endfunction
@@ -2065,14 +2065,10 @@ function s:cb_do(ch, dict) abort
     let ro = getbufvar(bufnr, '&readonly', 0)
     let matchadds=[]
     if is_commit
-        if get(a:dict, "status", 9) ==# 1
-            call s:echoMsg('IO13')
-        endif
+        call s:echoMsg('IO13')
         return
     elseif is_rollback
-        if get(a:dict, "status", 9) ==# 1
-            call s:echoMsg('IO14')
-        endif
+        call s:echoMsg('IO14')
         return
     else
         let ymdhms = strftime("%Y%m%d%H%M%S", localtime())
@@ -5493,7 +5489,10 @@ function! s:ExecuteCallbackFinal(res, id, cbName) abort
             call s:NvimSafeDraw(l:target_buf, l:res)
         endif
     finally
-        echo ""
+        if !(has_key(l:res, 'commit') || has_key(get(l:res, 'data', {}), 'commit')
+                    \ || has_key(l:res, 'rollback') || has_key(get(l:res, 'data', {}), 'rollback'))
+            echo ""
+        endif
         redraw
     endtry
 endfunction
