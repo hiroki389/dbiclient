@@ -3739,6 +3739,7 @@ function s:dbhistoryRestore(str) abort
     if s:f.getwidCurrentTab(s:bufnr(dbiclient_bufmap.data.reloadBufname)) ==# -1
         call s:f.delbuf(s:bufnr(dbiclient_bufmap.data.reloadBufname))
     endif
+    let restore_bufname = dbiclient_bufmap.data.reloadBufname
     if has_key(dbiclient_bufmap.data, 'sql')
         let callbackstr = get(dbiclient_bufmap.data, 'callbackstr', 's:cb_outputResultEasyAlign')
         if has_key(dbiclient_bufmap, 'opt')
@@ -3747,6 +3748,17 @@ function s:dbhistoryRestore(str) abort
         call funcref(callbackstr)({}, dbiclient_bufmap)
     else
         call s:cb_do({}, dbiclient_bufmap)
+    endif
+    " 結果フロートへフォーカスを移動（previewwindow廃止後のフォールバック）
+    if s:resultFloatWinid != -1
+        try
+            if nvim_win_is_valid(s:resultFloatWinid)
+                call win_gotoid(s:resultFloatWinid)
+            endif
+        catch
+        endtry
+    else
+        call s:gotoWin(s:bufnr(restore_bufname))
     endif
 endfunction
 
