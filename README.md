@@ -31,58 +31,137 @@ cargo build --release --features pg,mysql-db,sqlite,oracle-native
 
 > **Note**: 接続時に `g:dbiclient_rustPath` のバイナリが存在しない、またはドライバが未コンパイルの場合は Vim から自動ビルドを実行します。
 
-## 🔌 DB接続方法
+---
 
-本プラグインは環境変数を参照して接続を行います。`dbiclient#connect({prefix} [, {options}])` を呼び出す際、`{prefix}` に指定した文字列に対応する環境変数が参照されます。
+## ⚡ クイックスタート
 
-### 接続の例
+### ステップ 1: プラグインをインストール
 
-#### PostgreSQL接続
+[lazy.nvim](https://github.com/folke/lazy.nvim) の例:
 
-```vim
-call setenv('MYPG_DNS', 'Pg:dbname=postgres')
-call setenv('MYPG_USER', 'postgres')
-call setenv('MYPG_PASS', 'password')
-call dbiclient#connect('MYPG')
+```lua
+{
+  "hiroki389/dbiclient",
+  cmd = { "DBITables", "DBISelect", "DBIExecute" },
+}
 ```
 
-#### MySQL / MariaDB 接続
+[vim-plug](https://github.com/junegunn/vim-plug) の例:
 
 ```vim
-call setenv('MYDB_DNS', 'mysql:dbname=mydb;host=localhost')
-call setenv('MYDB_USER', 'root')
-call setenv('MYDB_PASS', 'password')
-call dbiclient#connect('MYDB')
+Plug 'hiroki389/dbiclient'
 ```
 
-#### SQLite 接続
+### ステップ 2: 接続設定を `init.vim` / `init.lua` に書く
+
+接続情報は **任意の「名前」に `_DB_DSN` / `_DB_USER` / `_DB_PASS` を付けた環境変数** で指定します。
+`dbiclient#connect('名前')` を呼ぶと対応する環境変数が自動で読み込まれます。
+
+環境変数が未設定の場合は Vim が対話的に入力を求めます（試すだけなら設定不要）。
 
 ```vim
-call setenv('MYDB_DNS', 'sqlite:/path/to/my.db')
-call setenv('MYDB_USER', '')
-call setenv('MYDB_PASS', '')
-call dbiclient#connect('MYDB')
+" ── PostgreSQL の例 ──────────────────────────────────────
+" DSN 書式: Pg:dbname=<DB名>;host=<ホスト>;port=<ポート>
+call setenv('MYPG_DB_DSN',  'Pg:dbname=mydb;host=localhost')
+call setenv('MYPG_DB_USER', 'myuser')
+call setenv('MYPG_DB_PASS', 'mypassword')
+
+" vimrc/init.vim に接続コマンドを登録しておくと便利
+command! DBIConnMyPg call dbiclient#connect('MYPG')
 ```
 
-#### Oracle 接続 (環境変数の動的設定を含む)
+> 💡 **名前は自由に付けられます。** `WORK_PG`・`DEV_MYSQL` など用途別に複数登録できます。
 
-```vim
-call setenv('MYORA_DNS', 'Oracle:sid=XE')
-call setenv('MYORA_USER', 'RIVUS')
-call setenv('MYORA_PASS', 'password')
+### ステップ 3: 接続する
 
-let l:opt = {}
-let l:opt.connect_opt_envdict = {'NLS_LANG': 'Japanese_Japan.AL32UTF8'}
-call dbiclient#connect('MYORA', l:opt)
+```
+:DBIConnMyPg
 ```
 
-#### ODBC 接続
+接続に成功するとテーブル一覧が自動で表示されます（Neovim ではフロートウィンドウ、Vim ではスプリット）。
+
+### ステップ 4: 操作する
+
+| 操作 | 手順 |
+|---|---|
+| テーブルを SELECT | テーブル一覧で `<CR>` |
+| SQL を実行 | ビジュアルモードで範囲選択 → `:DBIExecute` |
+| WHERE 条件を変える | SELECT 結果で `mw` → 値を編集 → `<CR>` |
+| コミット | `:DBICommit` |
+
+---
+
+## 🔌 DB 接続設定の詳細
+
+### 環境変数の命名規則
+
+```
+{PREFIX}_DB_DSN   ← データソース名（ドライバ名:接続パラメータ）
+{PREFIX}_DB_USER  ← ユーザー名
+{PREFIX}_DB_PASS  ← パスワード
+```
+
+`dbiclient#connect('{PREFIX}')` が上記3変数を読み取ります。変数が未設定の場合は Vim が対話的に入力を促します。
+
+### DSN 書式一覧
+
+| DBMS | DSN の書式例 |
+|---|---|
+| PostgreSQL | `Pg:dbname=mydb;host=localhost;port=5432` |
+| MySQL / MariaDB | `mysql:dbname=mydb;host=localhost` |
+| SQLite | `sqlite:/path/to/database.db` |
+| Oracle | `Oracle:sid=XE` または `Oracle:service_name=XEPDB1` |
+| ODBC | `ODBC:MY_DSN_NAME` |
+
+### 接続設定の例
+
+#### PostgreSQL
 
 ```vim
-call setenv('MYODBC_DNS', 'ODBC:RIVUS')
-call setenv('MYODBC_USER', 'RIVUS')
-call setenv('MYODBC_PASS', 'password')
-call dbiclient#connect('MYODBC')
+call setenv('MYPG_DB_DSN',  'Pg:dbname=mydb;host=localhost')
+call setenv('MYPG_DB_USER', 'postgres')
+call setenv('MYPG_DB_PASS', 'password')
+command! DBIConnMyPg call dbiclient#connect('MYPG')
+```
+
+#### MySQL / MariaDB
+
+```vim
+call setenv('MYSQL_DB_DSN',  'mysql:dbname=mydb;host=localhost')
+call setenv('MYSQL_DB_USER', 'root')
+call setenv('MYSQL_DB_PASS', 'password')
+command! DBIConnMySQL call dbiclient#connect('MYSQL')
+```
+
+#### SQLite
+
+```vim
+" パスワード不要 (空文字でよい)
+call setenv('SQLITE_DB_DSN',  'sqlite:/path/to/my.db')
+call setenv('SQLITE_DB_USER', '')
+call setenv('SQLITE_DB_PASS', '')
+command! DBIConnSQLite call dbiclient#connect('SQLITE')
+```
+
+#### Oracle
+
+```vim
+call setenv('ORA_DB_DSN',  'Oracle:sid=XE')
+call setenv('ORA_DB_USER', 'system')
+call setenv('ORA_DB_PASS', 'password')
+
+" NLS_LANG など Oracle 固有の環境変数が必要な場合
+let l:opt = {'connect_opt_envdict': {'NLS_LANG': 'Japanese_Japan.AL32UTF8'}}
+command! DBIConnOra call dbiclient#connect('ORA', l:opt)
+```
+
+#### ODBC
+
+```vim
+call setenv('ODBC_DB_DSN',  'ODBC:MY_DSN_NAME')
+call setenv('ODBC_DB_USER', 'myuser')
+call setenv('ODBC_DB_PASS', 'password')
+command! DBIConnODBC call dbiclient#connect('ODBC')
 ```
 
 ### 接続オプション（`connect` 関数の第2引数）
