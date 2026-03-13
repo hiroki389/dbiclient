@@ -4914,7 +4914,9 @@ function s:setallmap(bufnr) abort
     endfor
     call s:debugLog('setallmap')
     if cwid != -1
+        let s:closing_floats = 1
         call win_gotoid(cwid)
+        let s:closing_floats = 0
         call s:debugLog('win_gotoid:[' .. s:bufnr('%') .. ',' .. cwid .. ']')
     else
         call s:gotoWin(cbufnr)
@@ -5292,7 +5294,9 @@ function s:gotoWin(bufnr)
     let wid = s:getwid(a:bufnr)
     call s:debugLog('gotoWin:[' .. a:bufnr .. ',' .. wid .. ']')
     if wid != -1
+        let s:closing_floats = 1
         call win_gotoid(wid)
+        let s:closing_floats = 0
         return 1
     endif
     return -1
@@ -5312,7 +5316,9 @@ function s:gotoWinCurrentTab(bufnr)
     let wid = s:getwidCurrentTab(a:bufnr)
     call s:debugLog('gotoWinCurrentTab:[' .. a:bufnr .. ',' .. wid .. ']')
     if wid != -1
+        let s:closing_floats = 1
         call win_gotoid(wid)
+        let s:closing_floats = 0
         return 1
     endif
     return -1
@@ -5468,7 +5474,11 @@ function! s:ExecuteCallbackFinal(res, id, cbName) abort
         let l:target_buf = get(get(l:res, 'data', {}), 'reloadBufnr', -1)
         if l:target_buf != -1 && bufexists(l:target_buf)
             let l:target_win = bufwinid(l:target_buf)
-            if l:target_win != -1 | call win_gotoid(l:target_win) | endif
+            if l:target_win != -1
+                let s:closing_floats = 1
+                call win_gotoid(l:target_win)
+                let s:closing_floats = 0
+            endif
             " let b: ではなく setbufvar を使う
             call setbufvar(l:target_buf, 'dbiclient_bufmap', get(l:res, 'data', {}))
         endif
