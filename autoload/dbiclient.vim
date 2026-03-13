@@ -3362,6 +3362,7 @@ function s:editSql() abort
     endif
     let bufname = bufname('%') .. '_SQL_EDIT'
     let bufnr = s:vsNewBuffer(bufname)
+    call s:deletebufline(bufnr, 1, '$')
     call s:appendbufline(bufnr, 0, split(dbiclient_bufmap.data.sql, "\n"))
     norm gg
     call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
@@ -3550,6 +3551,7 @@ function s:ijoin(prefix) abort
         let bufname = bufname('%') .. '_SQL_JOIN'
         let bufnr = s:vsNewBuffer(bufname)
         inoremap <buffer> <silent> <CR> <ESC>
+        call s:deletebufline(bufnr, 1, '$')
         call s:appendbufline(bufnr, 0, get(s:params[port], 'table_list', []))
         norm gg
         call setbufvar(s:bufnr('%'), 'dbiclient_bufmap', dbiclient_bufmap)
@@ -3579,6 +3581,7 @@ function s:ijoin(prefix) abort
         call s:gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
         let bufnr = s:vsNewBuffer(bufname)
         inoremap <buffer> <silent> <CR> <ESC>
+        call s:deletebufline(bufnr, 1, '$')
         call s:appendbufline(bufnr, 0, ijoin)
         norm gg
         call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
@@ -3660,6 +3663,7 @@ function s:where() abort
         let bufname = bufname('%') .. '_SQL_WHERE'
         let bufnr = s:vsNewBuffer(bufname)
         inoremap <buffer> <silent> <CR> <ESC>
+        call s:deletebufline(bufnr, 1, '$')
         call s:appendbufline(bufnr, 0, where)
     endfunction
     function! s:whereQuery(alignFlg) abort
@@ -4238,6 +4242,7 @@ function s:selectExtends(bufname, orderflg, dict) abort
         let list = cols
     endif
     let bufnr = s:vsNewBuffer(bufname)
+    call s:deletebufline(bufnr, 1, '$')
     call s:appendbufline(bufnr, 0, list)
     if a:orderflg
         call s:setnmap(bufnr, '<SPACE>', ':<C-u>call <SID>SelectLineOrder(line("."))<CR>')
