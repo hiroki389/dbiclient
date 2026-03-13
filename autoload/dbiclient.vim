@@ -5007,6 +5007,8 @@ function s:init() abort
             autocmd!
             autocmd WinEnter,BufEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
             autocmd WinClosed * call <SID>onFloatWinClosed(str2nr(expand('<amatch>')))
+            " 非フロートウィンドウに移動したら全フロートを閉じる
+            autocmd WinEnter * call <SID>onWinEnterCloseFloats()
         augroup END
         call s:zonbie()
     endif
@@ -5099,13 +5101,107 @@ function s:onFloatWinClosedPost(winid) abort
         if wid != -1
             try
                 if nvim_win_is_valid(wid)
+                    " 別フロートへフォーカス移動するとき onWinEnterCloseFloats が
+                    " 発火しないようにフラグを立てる
+                    let s:closing_floats = 1
                     call win_gotoid(wid)
+                    call timer_start(0, {-> execute('let s:closing_floats = 0')})
                     return
                 endif
             catch
             endtry
         endif
     endfor
+endfunction
+
+" 現在タブの全 dbiclient フロートウィンドウ (winid リスト) を順番で返す
+function s:getAllFloatWinids() abort
+    if !has('nvim') | return [] | endif
+    let result = []
+    for wid in range(1, winnr('$'))
+        let winid = win_getid(wid)
+        try
+            if nvim_win_is_valid(winid) && nvim_win_get_config(winid).relative !=# ''
+                        \ && getwinvar(winid, 'dbiclient_float', 0)
+                call add(result, winid)
+            endif
+        catch
+        endtry
+    endfor
+    return result
+endfunction
+
+" Tab: フロートウィンドウ間をサイクル
+function s:cycleFloatWindows() abort
+    if !has('nvim') | return | endif
+    let floats = s:getAllFloatWinids()
+    if empty(floats)
+        " フロートがなければ通常の <Tab> として動作
+        call feedkeys("\<Tab>", 'n')
+        return
+    endif
+    let cur = win_getid()
+    let idx = index(floats, cur)
+    let next = floats[(idx == -1 ? 0 : (idx + 1) % len(floats))]
+    let s:closing_floats = 1
+    call win_gotoid(next)
+    call timer_start(0, {-> execute('let s:closing_floats = 0')})
+endfunction
+" 公開 API
+function dbiclient#cycleFloatWindows() abort
+    call s:cycleFloatWindows()
+endfunction
+
+" 全フロートを閉じる
+function s:closeAllFloats() abort
+    if !has('nvim') | return | endif
+    for winid in s:getAllFloatWinids()
+        try
+            if nvim_win_is_valid(winid)
+                noautocmd call nvim_win_close(winid, 0)
+            endif
+        catch
+        endtry
+    endfor
+    let s:resultFloatWinid  = -1
+    let s:scratchFloatWinid = -1
+    let s:vsFloatWinid      = -1
+endfunction
+
+" WinEnter: 非フロートに移動したら全フロートを閉じる
+" dbiclient_float でないウィンドウに入ったとき発火
+let s:closing_floats = 0
+function s:onWinEnterCloseFloats() abort
+    if !has('nvim') || s:closing_floats | return | endif
+    let winid = win_getid()
+    try
+        let cfg = nvim_win_get_config(winid)
+        if cfg.relative !=# ''
+            " フロートに入った → 何もしない
+            return
+        endif
+    catch
+        return
+    endtry
+    " 非フロートに入った → フロートが残っていれば全部閉じる
+    let floats = s:getAllFloatWinids()
+    if empty(floats) | return | endif
+    let s:closing_floats = 1
+    try
+        for fwid in floats
+            try
+                if nvim_win_is_valid(fwid)
+                    noautocmd call nvim_win_close(fwid, 0)
+                endif
+            catch
+            endtry
+        endfor
+        let s:resultFloatWinid  = -1
+        let s:scratchFloatWinid = -1
+        let s:vsFloatWinid      = -1
+    finally
+        let s:closing_floats = 0
+    endtry
 endfunction
 
 function s:zonbie()
