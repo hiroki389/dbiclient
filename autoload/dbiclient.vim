@@ -2933,17 +2933,7 @@ function s:selectTableOfList(schemtable, port) abort
     if s:isDisableline() || s:error2CurrentBuffer(a:port)
         return
     endif
-    let caller_winid = win_getid()
     call s:selectTableCmn(1, a:schemtable, a:port)
-    " テーブル一覧フロートを閉じる
-    if has('nvim')
-        try
-            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
-                call nvim_win_close(caller_winid, 1)
-            endif
-        catch
-        endtry
-    endif
 endfunction
 
 function s:selectTable(alignFlg, wordFlg, table) abort
