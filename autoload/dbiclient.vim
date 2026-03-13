@@ -1113,6 +1113,7 @@ function s:joblist(moveFlg)
     if (a:moveFlg && s:f.getwidCurrentTab(l:bufnrNm) ==# -1) || (!a:moveFlg && s:f.getwid(l:bufnrNm) ==# -1)
         let l:bufnrNm = s:enewBuffer(l:bufname)
         call s:f.noreadonly(l:bufnrNm)
+        call s:deletebufline(l:bufnrNm, 1, '$')
         let l:save_cursor = getcurpos()
     else
         call s:gotoWinCurrentTab(l:bufnrNm)
@@ -2993,6 +2994,8 @@ function s:selectHistory(port) abort
     if s:f.getwidCurrentTab(bufnr) ==# -1
         let bufnr = s:enewBuffer(bufname)
         call s:f.noreadonly(bufnr)
+        call s:deletebufline(bufnr, 1, '$')
+        call setbufvar(bufnr, 'dbiclient_bufmap', {})
     else
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
