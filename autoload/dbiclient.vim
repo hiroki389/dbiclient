@@ -1825,9 +1825,10 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     let tableJoinNmWithAs = s:getTableJoinList(a:sql)
     let cols = []
     for item in tableJoinNmWithAs
-        let prefix = empty(item.AS) ? item.tableNm .. '.' : item.AS .. '.'
-        if empty(prefix) && len(tableJoinNmWithAs) > 1
-            let prefix = item.tableNm .. '.'
+        if len(tableJoinNmWithAs) > 1
+            let prefix = empty(item.AS) ? item.tableNm .. '.' : item.AS .. '.'
+        else
+            let prefix = ''
         endif
         let cols = extend(cols, map(s:getColumns(item.tableNm, a:port), {_, x -> prefix .. x}))
     endfor
@@ -3615,6 +3616,24 @@ function s:ijoin(prefix) abort
         let s:vsFloatWinid = -1
         quit
         exe 'silent! bwipeout! ' .. bufnr
+        " 結果フロートを元のサイズに戻してから次の vsFloat を開く
+        if !empty(s:vsFloatRestoreData)
+            let s:rd_tmp = s:vsFloatRestoreData
+            let s:vsFloatRestoreData = {}
+            try
+                if nvim_win_is_valid(s:rd_tmp.winid)
+                    call nvim_win_set_config(s:rd_tmp.winid, {
+                        \ 'relative': 'editor',
+                        \ 'width':  s:rd_tmp.orig_width,
+                        \ 'height': s:rd_tmp.orig_height,
+                        \ 'row':    s:rd_tmp.orig_row,
+                        \ 'col':    s:rd_tmp.orig_col,
+                        \ })
+                endif
+            catch
+            endtry
+            unlet s:rd_tmp
+        endif
         call s:gotoWin(s:bufnr(dbiclient_bufmap.data.reloadBufname))
         let bufnr = s:vsNewBuffer(bufname)
         inoremap <buffer> <silent> <CR> <ESC>
@@ -4459,14 +4478,19 @@ function s:getCurrentPort() abort
 endfunction
 
 function s:getLimitrows() abort
-    return get(s:params, 'limitrows', s:limitrows)
+    let port = s:getCurrentPort()
+    return get(get(s:params, port, {}), 'limitrows', s:limitrows)
 endfunction
 
 function s:getLimitrowsaBuffer() abort
     let bufnr = s:bufnr('%')
     let dbiclient_bufmap = get(getbufvar(bufnr, 'dbiclient_bufmap', {}), 'data', {})
     let limitrows = get(dbiclient_bufmap, 'limitrows', '')
-    return get(s:params, 'limitrows', limitrows)
+    if limitrows !=# ''
+        return limitrows
+    endif
+    let port = s:getCurrentPort()
+    return get(get(s:params, port, {}), 'limitrows', s:limitrows)
 endfunction
 
 function s:enewBuffer(bufname, ...) abort
