@@ -40,7 +40,7 @@ let g:dbiclient_prelinesep             = get(g:,'dbiclient_prelinesep', '<<CRR>>
 let g:dbiclient_prelinesep2            = get(g:,'dbiclient_prelinesep2', '<<2CRR2>>')
 let g:dbiclient_hist_cnt               = get(g:,'dbiclient_hist_cnt', 1000)
 let g:dbiclient_testdata_fixedmap      = get(g:,'dbiclient_testdata_fixedmap', {})
-let g:Dbiclient_call_after_connected   = get(g:,'Dbiclient_call_after_connected', {-> dbiclient#userTablesMain()})
+let g:Dbiclient_call_after_connected   = get(g:,'Dbiclient_call_after_connected', {-> dbiclient#afterConnected()})
 let g:dbiclient_disp_headerline        = get(g:,'dbiclient_disp_headerline', 1)
 let g:dbiclient_dblinesep              = get(g:,'dbiclient_dblinesep', 'CHR(13) || CHR(10)')
 

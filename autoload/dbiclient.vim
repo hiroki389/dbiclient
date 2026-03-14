@@ -24,8 +24,17 @@ let s:params = {}
 let s:hardparseDict = {}
 let s:lastparse = {}
 let s:shadowpass = ''
+" ─── 統合メインフロートウィンドウ ─────────────────────────────────────────────
+" Tables / Result / History / Jobs をひとつのフロートウィンドウで管理する。
+" ウィンドウタイトルに擬似タブラインを描画してビューを切り替える。
+let s:mainFloatWinid   = -1   " 統合メインフロートウィンドウ ID
+let s:mainFloatCurTab  = ''   " 現在表示中のタブ種別
+let s:mainFloatTabBufs = {}   " タブ種別 → bufnr  {'tables':N,'result':N,'history':N,'jobs':N}
+let s:main_tab_order   = ['tables', 'result', 'history', 'jobs']
+let s:main_tab_labels  = {'tables': 'Tables', 'result': 'Result', 'history': 'History', 'jobs': 'Jobs'}
+
 " 共有フロートウィンドウ ID (-1 = 未開またはクローズ済み)
-let s:resultFloatWinid  = -1   " SELECT/UPDATE 等の結果を表示する共有フロート
+let s:resultFloatWinid  = -1   " = s:mainFloatWinid (常に同期)
 let s:scratchFloatWinid = -1   " ScratchSQL フロート
 let s:vsFloatWinid      = -1   " 結果フロート内 vsplit パネル (WHERE/SELECT/ORDER 等)
 let s:resultFloatOrigHeight      = -1  " ScratchSQL 表示前の結果フロート高さ
@@ -121,6 +130,16 @@ endfunction
 
 function dbiclient#sqllog() abort
     return s:sqllog()
+endfunction
+
+" 接続後コールバック: job一覧（非フォーカス）とテーブル一覧（フォーカス）を同時表示
+function dbiclient#afterConnected() abort
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        call s:joblist(0)
+        call s:userTablesMain(s:getCurrentPort())
+    else
+        call s:userTablesMain(s:getCurrentPort())
+    endif
 endfunction
 
 function dbiclient#joblist() abort
@@ -1126,7 +1145,12 @@ function s:joblist(moveFlg)
     let l:bufnrNm = s:bufnr(l:bufname)
     let l:save_cursor = getcurpos()
 
-    if (a:moveFlg && s:f.getwidCurrentTab(l:bufnrNm) ==# -1) || (!a:moveFlg && s:f.getwid(l:bufnrNm) ==# -1)
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [l:bufnrNm, l:_cbnr, l:_wid] = s:openMainFloat('jobs', l:bufname, a:moveFlg)
+        call s:f.noreadonly(l:bufnrNm)
+        call s:deletebufline(l:bufnrNm, 1, '$')
+        let l:save_cursor = getcurpos()
+    elseif (a:moveFlg && s:f.getwidCurrentTab(l:bufnrNm) ==# -1) || (!a:moveFlg && s:f.getwid(l:bufnrNm) ==# -1)
         let l:bufnrNm = s:enewBuffer(l:bufname)
         call s:f.noreadonly(l:bufnrNm)
         call s:deletebufline(l:bufnrNm, 1, '$')
@@ -1150,6 +1174,10 @@ function s:joblist(moveFlg)
     call add(l:msgList, [get(g:, 'dbiclient_nmap_job_ST', s:nmap_job_ST), ':' .. 'STOP'])
     call add(l:msgList, [get(g:, 'dbiclient_nmap_job_TA', s:nmap_job_TA), ':' .. 'TABLES'])
     call add(l:msgList, [get(g:, 'dbiclient_nmap_job_HI', s:nmap_job_HI), ':' .. 'HISTORY'])
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        call add(l:msgList, ['gt', ':NEXTTAB'])
+        call add(l:msgList, ['gT', ':PREVTAB'])
+    endif
 
     let l:info = '"Quick Help<nmap> :'
     let l:info .= s:f2.Foldl({x, y -> x .. y}, "", map(msgList, {_, val -> ' [' .. val[0] .. val[1] .. ']'}))
@@ -2118,6 +2146,10 @@ function s:cb_do(ch, dict) abort
         call add(msgList, [get(g:, 'dbiclient_nmap_do_BN', s:nmap_do_BN), ':NEXTBUF'])
         call add(msgList, [get(g:, 'dbiclient_nmap_do_BP', s:nmap_do_BP), ':PREVBUF'])
         call add(msgList, [get(g:, 'dbiclient_nmap_do_BD', s:nmap_do_BD), ':DELBUF'])
+        if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+            call add(msgList, ['gt', ':NEXTTAB'])
+            call add(msgList, ['gT', ':PREVTAB'])
+        endif
         call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
         call setbufvar(bufnr, 'dbiclient_tupleList', tupleList)
         let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
@@ -2287,6 +2319,10 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
                     call add(msgList2, msg)
                 endif
             endfor
+            if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+                call add(msgList2, ['gt', ':NEXTTAB'])
+                call add(msgList2, ['gT', ':PREVTAB'])
+            endif
             call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList2))
             call add(matchadds, ['Comment', '\v%3l^".{-}:'])
             call add(matchadds, ['String', '\v%3l^".{-}:\zs.*$'])
@@ -2314,6 +2350,10 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
             call add(msgList, [get(g:, 'dbiclient_nmap_table_CT', s:nmap_table_CT), ':COUNT'])
             call add(msgList, [get(g:, 'dbiclient_nmap_table_TW', s:nmap_table_TW), ':TABLE_NAME'])
             call add(msgList, [get(g:, 'dbiclient_nmap_table_TT', s:nmap_table_TT), ':TABLE_TYPE'])
+            if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+                call add(msgList, ['gt', ':NEXTTAB'])
+                call add(msgList, ['gT', ':PREVTAB'])
+            endif
             call add(tupleList, s:Tuple('"Quick Help', msgList))
             call add(matchadds, ['Comment', '\v%3l^".{-}:'])
             call add(matchadds, ['String', '\v%3l^".{-}:\zs.*$'])
@@ -2998,7 +3038,12 @@ function s:selectHistory(port) abort
     let list = map(list, {_, x -> substitute(x, '\V{DELIMITER_CR}', " ", 'g')})
     let bufname='DB_HISTORY_CMD'
     let bufnr = s:bufnr(bufname)
-    if s:f.getwidCurrentTab(bufnr) ==# -1
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bufnr, l:_cbnr, l:_wid] = s:openMainFloat('history', bufname, 1)
+        call s:f.noreadonly(bufnr)
+        call s:deletebufline(bufnr, 1, '$')
+        call setbufvar(bufnr, 'dbiclient_bufmap', {})
+    elseif s:f.getwidCurrentTab(bufnr) ==# -1
         let bufnr = s:enewBuffer(bufname)
         call s:f.noreadonly(bufnr)
         call s:deletebufline(bufnr, 1, '$')
@@ -3024,6 +3069,10 @@ function s:selectHistory(port) abort
     "call add(msgList, [get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':SQL_PREVIEW'])
     call add(msgList, [get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':RELOAD'])
     "call add(msgList, [get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':DELETE'])
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        call add(msgList, ['gt', ':NEXTTAB'])
+        call add(msgList, ['gT', ':PREVTAB'])
+    endif
     call add(tupleList, s:Tuple('"Quick Help<nmap>', msgList))
     let maxsize = max(map(deepcopy(tupleList, 1), {_, x -> len(x.Get1())}))
     for tuple in tupleList
@@ -3731,9 +3780,12 @@ function s:dbhistoryCmd(port) abort
     call s:selectHistory(port)
     call setpos('.', save_cursor)
     " joblist フロートから呼ばれた場合は閉じる
+    " ただしメインフロート (Tables/Result/History/Jobs 共用) からの呼び出しは閉じない
     if has('nvim')
         try
-            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+            if nvim_win_is_valid(caller_winid)
+                        \ && nvim_win_get_config(caller_winid).relative !=# ''
+                        \ && caller_winid != s:mainFloatWinid
                 call nvim_win_close(caller_winid, 1)
             endif
         catch
@@ -3781,9 +3833,12 @@ function s:dbhistoryRestore(str) abort
         call s:cb_do({}, dbiclient_bufmap)
     endif
     " 履歴フロートを閉じる
+    " ただしメインフロート (Tables/Result/History/Jobs 共用) からの呼び出しは閉じない
     if has('nvim')
         try
-            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+            if nvim_win_is_valid(caller_winid)
+                        \ && nvim_win_get_config(caller_winid).relative !=# ''
+                        \ && caller_winid != s:mainFloatWinid
                 call nvim_win_close(caller_winid, 1)
             endif
         catch
@@ -3897,9 +3952,12 @@ function s:userTablesMain(port) abort
     let tabletype = s:params[port].tabletype
     call s:userTables(1, tableNm, tabletype, port)
     " joblist フロートから呼ばれた場合は閉じる
+    " ただしメインフロート (Tables/Result/History/Jobs 共用) からの呼び出しは閉じない
     if has('nvim')
         try
-            if nvim_win_is_valid(caller_winid) && nvim_win_get_config(caller_winid).relative !=# ''
+            if nvim_win_is_valid(caller_winid)
+                        \ && nvim_win_get_config(caller_winid).relative !=# ''
+                        \ && caller_winid != s:mainFloatWinid
                 call nvim_win_close(caller_winid, 1)
             endif
         catch
@@ -3943,7 +4001,19 @@ function s:userTables(alignFlg, tableNm, tabletype, port) abort
     let bufname = 'Tables'
     let bufnr = s:bufnr(bufname)
 
-    if s:f.getwidCurrentTab(bufnr) ==# -1
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bufnr, l:_cbnr, l:_wid] = s:openMainFloat('tables', bufname, 1)
+        call s:f.noreadonly(bufnr)
+        call s:deletebufline(bufnr, 1, '$')
+        call setbufvar(bufnr, 'dbiclient_bufmap', {})
+        call setbufvar(bufnr, 'dbiclient_col_line', 0)
+        call setbufvar(bufnr, 'dbiclient_header', [])
+        call setbufvar(bufnr, 'dbiclient_lines', [])
+        call setbufvar(bufnr, 'dbiclient_matches', [])
+        call setbufvar(bufnr, 'dbiclient_nmap', [])
+        call setbufvar(bufnr, 'dbiclient_vmap', [])
+        call add(s:bufferList, bufnr)
+    elseif s:f.getwidCurrentTab(bufnr) ==# -1
         let bufnr = s:enewBuffer(bufname, {'width_ratio': g:dbiclient_float_tables_width, 'height_ratio': g:dbiclient_float_tables_height})
         call s:f.noreadonly(bufnr)
         call add(s:bufferList, bufnr)
@@ -4674,13 +4744,36 @@ function s:openFloatWindow(bufname, ...) abort
     return [bnr, cbufnr, winid]
 endfunction
 
-" ─── 共有結果フロートウィンドウ ──────────────────────────────────────────────
-" SELECT/UPDATE 等の結果バッファはすべてこの1つのフロートウィンドウに表示する。
-" ウィンドウが既に開いている場合はバッファを切り替えるだけ。
-" 戻り値: [bufnr, cbufnr]  (-1 なら非フロート)
-function s:openResultFloat(bufname) abort
+" ─── 統合メインフロートウィンドウ (タブUI) ─────────────────────────────────────
+" Tables / Result / History / Jobs を1つのフロートで管理する。
+" ウィンドウタイトルにハイライト付きタブインジケーターを描画する。
+" Scratch (ScratchSQL) と vsFloat (条件検索) は現状維持の分割表示。
+
+" タイトルのハイライストリストを構築する (nvim_open_win の title に渡す)
+" 例: [ [' Tables ', 'TabLineSel'], ['│','TabLineFill'], [' Result ','TabLine'] ]
+function s:mainFloatTitle(cur_tab) abort
+    let parts = []
+    for tab in s:main_tab_order
+        if has_key(s:mainFloatTabBufs, tab) && bufexists(get(s:mainFloatTabBufs, tab, -1))
+            let hl = (tab ==# a:cur_tab) ? 'TabLineSel' : 'TabLine'
+            call add(parts, [' ' .. s:main_tab_labels[tab] .. ' ', hl])
+            call add(parts, ['│', 'TabLineFill'])
+        endif
+    endfor
+    if !empty(parts)
+        call remove(parts, -1)  " 末尾のセパレータを除去
+    endif
+    return empty(parts) ? ' DBIClient ' : parts
+endfunction
+
+" メインフロートに tab_type のバッファを表示する
+" tab_type: 'tables' | 'result' | 'history' | 'jobs'
+" bufname:  バッファ名
+" focus:    1=フロートにフォーカス移動, 0=元のウィンドウに戻る
+" 戻り値: [bufnr, cbufnr, winid]  winid=-1 は非フロート
+function s:openMainFloat(tab_type, bufname, focus) abort
     if !has('nvim') || !exists('*nvim_open_win')
-        return [-1, -1]
+        return [-1, -1, -1]
     endif
     let cbufnr = bufnr('%')
 
@@ -4695,34 +4788,145 @@ function s:openResultFloat(bufname) abort
     call setbufvar(bnr, '&swapfile',  0)
     call setbufvar(bnr, '&wrap',      0)
     call setbufvar(bnr, '&filetype',  'dbiclient')
-    call nvim_buf_set_keymap(bnr, 'n', 'q',     '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
 
-    " 既存の結果フロートが有効ならバッファを切り替えるだけ
-    if s:resultFloatWinid != -1
+    " タブ登録・カレントタブ更新
+    let s:mainFloatTabBufs[a:tab_type] = bnr
+    let s:mainFloatCurTab = a:tab_type
+
+    " バッファローカルのキーマップを設定 (q=閉じる, gt/gT=タブ切り替え)
+    call nvim_buf_set_keymap(bnr, 'n', 'q', '<Cmd>close<CR>',
+        \ {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+    call s:setMainFloatTabMaps(bnr)
+
+    " 既存メインフロートが有効ならバッファを切り替えるだけ
+    if s:mainFloatWinid != -1
         try
-            if nvim_win_is_valid(s:resultFloatWinid)
-                call nvim_win_set_buf(s:resultFloatWinid, bnr)
-                " タイトルを更新
-                let cfg = nvim_win_get_config(s:resultFloatWinid)
-                let cfg.title = ' ' . fnamemodify(a:bufname, ':t') . ' '
-                call nvim_win_set_config(s:resultFloatWinid, cfg)
-                call setwinvar(s:resultFloatWinid, 'dbiclient_float', 1)
-                let orig_wid = s:f.getwidCurrentTab(cbufnr)
-                if orig_wid != -1
-                    noautocmd call win_gotoid(orig_wid)
+            if nvim_win_is_valid(s:mainFloatWinid)
+                call nvim_win_set_buf(s:mainFloatWinid, bnr)
+                let cfg = nvim_win_get_config(s:mainFloatWinid)
+                let cfg.title = s:mainFloatTitle(a:tab_type)
+                let cfg.title_pos = 'left'
+                call nvim_win_set_config(s:mainFloatWinid, cfg)
+                call setwinvar(s:mainFloatWinid, 'dbiclient_float', 1)
+                if a:focus
+                    let s:closing_floats = 1
+                    call win_gotoid(s:mainFloatWinid)
+                    call timer_start(0, {-> execute('let s:closing_floats = 0')})
+                else
+                    let ow = s:f.getwidCurrentTab(cbufnr)
+                    if ow != -1
+                        noautocmd call win_gotoid(ow)
+                    endif
                 endif
-                return [bnr, cbufnr]
+                let s:resultFloatWinid = s:mainFloatWinid
+                return [bnr, cbufnr, s:mainFloatWinid]
             endif
         catch
         endtry
+        let s:mainFloatWinid   = -1
         let s:resultFloatWinid = -1
     endif
 
-    " 新規フロートを作成
-    let [bnr2, cbnr, winid] = s:openFloatWindow(a:bufname, 0)
+    " 新規メインフロートを作成
+    let tw = &columns
+    let th = &lines
+    let fw = float2nr(tw * g:dbiclient_float_window_width)
+    let fh = float2nr(th * g:dbiclient_float_window_height)
+    let row = float2nr((th - fh) / 2)
+    let col = float2nr((tw - fw) / 2)
+    let opts = {
+        \ 'relative': 'editor',
+        \ 'width': fw,
+        \ 'height': fh,
+        \ 'row': row,
+        \ 'col': col,
+        \ 'style': 'minimal',
+        \ 'border': 'rounded',
+        \ 'title': s:mainFloatTitle(a:tab_type),
+        \ 'title_pos': 'left',
+        \ }
+    let winid = nvim_open_win(bnr, 1, opts)
+    setlocal buftype=nofile nobuflisted noswapfile nowrap
+    setlocal filetype=dbiclient
+    call setwinvar(winid, 'dbiclient_float', 1)
+    call setwinvar(winid, 'dbiclient_main_float', 1)
+
+    let s:mainFloatWinid   = winid
+    let s:resultFloatWinid = winid
+
+    if !a:focus
+        let ow = s:f.getwidCurrentTab(cbufnr)
+        if ow != -1
+            noautocmd call win_gotoid(ow)
+        endif
+    endif
+
+    return [bnr, cbufnr, winid]
+endfunction
+
+" メインフロートのバッファにタブナビゲーションマップを設定する (gt / gT)
+function s:setMainFloatTabMaps(bnr) abort
+    call nvim_buf_set_keymap(a:bnr, 'n', 'gt',
+        \ '<Cmd>call <SID>mainFloatNextTab()<CR>',
+        \ {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+    call nvim_buf_set_keymap(a:bnr, 'n', 'gT',
+        \ '<Cmd>call <SID>mainFloatPrevTab()<CR>',
+        \ {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+endfunction
+
+" 有効なタブ一覧を順番で返す (bufexists でフィルタリング)
+function s:mainFloatValidTabs() abort
+    return filter(copy(s:main_tab_order),
+        \ {_, t -> has_key(s:mainFloatTabBufs, t)
+        \       && bufexists(get(s:mainFloatTabBufs, t, -1))})
+endfunction
+
+function s:mainFloatNextTab() abort
+    let tabs = s:mainFloatValidTabs()
+    if len(tabs) < 2 | return | endif
+    let idx = index(tabs, s:mainFloatCurTab)
+    call s:mainFloatSwitchToTab(tabs[(idx + 1) % len(tabs)])
+endfunction
+
+function s:mainFloatPrevTab() abort
+    let tabs = s:mainFloatValidTabs()
+    if len(tabs) < 2 | return | endif
+    let n = len(tabs)
+    let idx = index(tabs, s:mainFloatCurTab)
+    call s:mainFloatSwitchToTab(tabs[(idx - 1 + n) % n])
+endfunction
+
+function s:mainFloatSwitchToTab(tab_type) abort
+    if s:mainFloatWinid ==# -1 || a:tab_type ==# s:mainFloatCurTab | return | endif
+    if !has_key(s:mainFloatTabBufs, a:tab_type) | return | endif
+    let bnr = s:mainFloatTabBufs[a:tab_type]
+    if !bufexists(bnr) | return | endif
+    try
+        if nvim_win_is_valid(s:mainFloatWinid)
+            call nvim_win_set_buf(s:mainFloatWinid, bnr)
+            let s:mainFloatCurTab = a:tab_type
+            let cfg = nvim_win_get_config(s:mainFloatWinid)
+            let cfg.title = s:mainFloatTitle(a:tab_type)
+            let cfg.title_pos = 'left'
+            call nvim_win_set_config(s:mainFloatWinid, cfg)
+            let s:closing_floats = 1
+            call win_gotoid(s:mainFloatWinid)
+            call timer_start(0, {-> execute('let s:closing_floats = 0')})
+        endif
+    catch
+    endtry
+endfunction
+
+" ─── 共有結果フロートウィンドウ ──────────────────────────────────────────────
+" SELECT/UPDATE 等の結果バッファはすべてメインフロートに表示する。
+" 戻り値: [bufnr, cbufnr]  (-1 なら非フロート)
+function s:openResultFloat(bufname) abort
+    if !has('nvim') || !exists('*nvim_open_win')
+        return [-1, -1]
+    endif
+    let [bnr, cbnr, winid] = s:openMainFloat('result', a:bufname, 0)
     if winid != -1
-        let s:resultFloatWinid = winid
-        return [bnr2, cbnr]
+        return [bnr, cbnr]
     endif
     return [-1, -1]
 endfunction
@@ -5026,6 +5230,8 @@ function s:onFloatWinClosedPost(winid) abort
 
     if a:winid == s:resultFloatWinid
         let s:resultFloatWinid = -1
+        let s:mainFloatWinid   = -1
+        let s:mainFloatCurTab  = ''
         let closed_result = 1
     endif
     if a:winid == s:scratchFloatWinid
@@ -5171,6 +5377,8 @@ function s:closeAllFloats() abort
     let s:resultFloatWinid  = -1
     let s:scratchFloatWinid = -1
     let s:vsFloatWinid      = -1
+    let s:mainFloatWinid    = -1
+    let s:mainFloatCurTab   = ''
 endfunction
 
 " WinEnter: 非フロートに移動したら全フロートを閉じる
