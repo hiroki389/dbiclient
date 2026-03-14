@@ -4603,11 +4603,7 @@ function s:openVsFloat(bufname) abort
     let right_w   = orig_width - left_w - gap
     let right_col = orig_col + left_w + gap
 
-    " 結果フロートを右半分に移動・縮小
-    let right_cfg = {'relative': 'editor', 'width': right_w, 'height': orig_height, 'row': orig_row, 'col': right_col}
-    call nvim_win_set_config(s:resultFloatWinid, right_cfg)
-
-    " 左側に条件編集パネルを新規作成
+    " 左側に条件編集パネルを先に作成（先に開くことで結果フロート縮小時のちらつきを防ぐ）
     let bnr = bufnr(a:bufname)
     if bnr == -1
         let bnr = nvim_create_buf(0, 1)
@@ -4631,6 +4627,10 @@ function s:openVsFloat(bufname) abort
         \ 'title_pos': 'center',
         \ }
     let winid = nvim_open_win(bnr, 1, left_opts)
+
+    " 左パネルを開いた後で結果フロートを右半分に移動・縮小（先に左を開くことでちらつきを防ぐ）
+    let right_cfg = {'relative': 'editor', 'width': right_w, 'height': orig_height, 'row': orig_row, 'col': right_col}
+    call nvim_win_set_config(s:resultFloatWinid, right_cfg)
     call setwinvar(winid, 'dbiclient_float', 1)
     call setwinvar(winid, 'dbiclient_vs_float', 1)
     let s:vsFloatWinid = winid
