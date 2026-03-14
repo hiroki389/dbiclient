@@ -375,7 +375,10 @@ endfunction
 
 function dbiclient#createDeleteInsertSql(...) range abort
     let limitrows = get(a:, 1, s:getLimitrows() + 1)
-    let sqls = join(getline(a:firstline, a:lastline),"\n")->split('\v;\s*($|\n)')
+    " トークナイザ経由で分割し、文字列リテラル内のセミコロンを誤検知しない
+    let l:rawsql = join(getline(a:firstline, a:lastline), "\n")
+    let l:parsedata = s:parseSQL2(l:rawsql)
+    let sqls = l:parsedata.splitSql3(l:parsedata, g:dbiclient_sql_delimiter1)
     let bufnr = s:openScratchBuffer()
     if bufnr == -1
         let bufnr_f = s:bufnr('ScratchSQL')
@@ -1715,13 +1718,9 @@ function s:splitSql(sqllist, doFlg)
         endwhile
         return filter(l:ret1, {_, x -> !empty(trim(x))})
     else
-        if l:sql =~? '\v^\\_s*(insert|update|delete|merge|replace|create|alter|grant|revoke|with)'
-            return s:split(l:sql, '\v' .. l:delim .. '\s*(\n|$)')->filter(({_, x -> !empty(trim(x))}))
-        else
-            " var parsedata = s:parseSQL2(sql) -> VimLではlet
-            let l:parsedata = s:parseSQL2(l:sql)
-            return l:parsedata.splitSql3(l:parsedata, l:delim)
-        endif
+        " DML文も含めトークナイザ経由で分割し、文字列リテラル内のデリミタを誤検知しない
+        let l:parsedata = s:parseSQL2(l:sql)
+        return l:parsedata.splitSql3(l:parsedata, l:delim)
     endif
 endfunction
 
@@ -3122,33 +3121,28 @@ endfunction
 
 function s:lex(sql)
     let l:tokenList = []
-    let l:sqllist = split(a:sql, "\n")
-    let l:i = 1
-    for l:sql2 in l:sqllist
-        let l:start = 0
-        " 正規表現の文字列結合は . を使用
-        let l:regex = '\v^\_s+|'
-        let l:regex .= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
-        let l:regex .= '\v^[qQ]''(.)\_.{-}\1''|'
-        let l:regex .= '\v^\/\*\_.{-}\*\/|'
-        let l:regex .= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
-        let l:regex .= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
-        let l:regex .= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
-        let l:regex .= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
-        let l:regex .= '\v^%([^[:punct:][:space:]]|[_$])+|'
-        let l:regex .= '\v^[[:punct:]]\ze'
-        let l:msp = []
-        while l:start > -1
-            let l:msp = matchstrpos(l:sql2, l:regex, l:start)
-            call add(l:tokenList, l:msp[0])
-            let l:start = l:msp[2]
-        endwhile
-        if l:i != len(l:sqllist)
-            call add(l:tokenList, "\n")
+    let l:start = 0
+    " SQL全体を一度に処理することで /* */ 形式の複数行コメントを正しくトークン化する
+    " ^\s+ はスペース・タブのみにマッチし、改行は個別トークンとして扱う
+    let l:regex  = '\v^\s+|'
+    let l:regex .= '\v^%(\r\n|\r|\n)|'
+    let l:regex .= '\v^[qQ]''[<{(\[]\_.{-}[>})\]]''|'
+    let l:regex .= '\v^[qQ]''(.)\_.{-}\1''|'
+    let l:regex .= '\v^\/\*\_.{-}\*\/|'
+    let l:regex .= '\v^%(--|#).{-}\ze%(\r\n|\r|\n|$)|'
+    let l:regex .= '\v^''%(''''|[^'']|%(\r\n|\r|\n))*''|'
+    let l:regex .= '\v^"%(""|[^"]|%(\r\n|\r|\n))*"|'
+    let l:regex .= '\v^`%(``|[`"]|%(\r\n|\r|\n))*`|'
+    let l:regex .= '\v^%([^[:punct:][:space:]]|[_$])+|'
+    let l:regex .= '\v^[[:punct:]]\ze'
+    while l:start > -1
+        let l:msp = matchstrpos(a:sql, l:regex, l:start)
+        if l:msp[2] == -1
+            break
         endif
-        let l:i += 1
-    endfor
-    " filter(tokenList, ((_, x) => x !~ '^$')) の変換
+        call add(l:tokenList, l:msp[0])
+        let l:start = l:msp[2]
+    endwhile
     return filter(l:tokenList, {_, x -> x !~ '^$'})
 endfunction
 
