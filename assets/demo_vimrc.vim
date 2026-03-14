@@ -1,12 +1,17 @@
 set nocompatible
 set number
 set termguicolors
+set shortmess+=I
+set noshowmode
+set noruler
+set laststatus=0
 
-" dbiclient plugin path
-set runtimepath+=/home/w033u/.local/share/nvim/site/pack/core/opt/dbiclient
+let s:assets_dir = fnamemodify(expand('<sfile>:p'), ':h')
+let s:repo_root = fnamemodify(s:assets_dir, ':h')
 
 " SQLite connection
-call setenv('DEMO_DB_DSN',  'sqlite:/home/w033u/.local/share/nvim/site/pack/core/opt/dbiclient/assets/demo.db')
+execute 'set runtimepath^=' .. fnameescape(s:repo_root)
+call setenv('DEMO_DB_DSN',  'sqlite:' .. s:assets_dir .. '/demo.db')
 call setenv('DEMO_DB_USER', '')
 call setenv('DEMO_DB_PASS', '')
 command! DBIConnDemo call dbiclient#connect('DEMO')

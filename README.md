@@ -266,13 +266,13 @@ In Neovim, results, condition editing, and SQL generation all use floating windo
 
 ### SQL generation (ScratchSQL float)
 
-In a result buffer, the following keys generate DML and **append** it to the ScratchSQL float.
+In a result buffer, visually select one or more rows, then use the following keys to generate DML and **append** it to the ScratchSQL float.
 
 | Key (default) | Action |
 |---|---|
-| `mi` | Generate INSERT |
-| `mu` | Generate UPDATE |
-| `md` | Generate DELETE |
+| `<C-I>` | Generate INSERT |
+| `<C-U>` | Generate UPDATE |
+| `<C-D>` | Generate DELETE |
 
 ---
 

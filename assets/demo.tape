@@ -7,7 +7,7 @@ Set Framerate 24
 Set PlaybackSpeed 0.8
 Output assets/demo.gif
 
-Type "nvim -u /tmp/dbiclient_demo_vimrc.vim"
+Type "nvim -u assets/demo_vimrc.vim"
 Enter
 Sleep 3s
 Type ":DBIConnDemo"
@@ -35,7 +35,7 @@ Sleep 0.8s
 Enter
 Sleep 4s
 
-# edit one row and generate UPDATE into ScratchSQL
+# edit one row and generate UPDATE into ScratchSQL with Visual + Ctrl+U
 Type "/Alice Johnson"
 Enter
 Sleep 1s
