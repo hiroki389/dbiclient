@@ -424,19 +424,13 @@ function dbiclient#cancel() abort
     call s:cancel(s:getCurrentPort())
 endfunction
 
-function dbiclient#clearCache(bang, tableNm) abort
+function dbiclient#clearCache() abort
     let port = s:getCurrentPort()
     let connInfo = get(s:params, port, {})
     let schema = s:getuser(connInfo)
-    if a:bang ==# '!'
-        for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/*' .. schema .. '_*')), "\n")
-            call delete(file)
-        endfor
-    else
-        for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/*' .. schema .. '_' .. a:tableNm .. '_*')), "\n")
-            call delete(file)
-        endfor
-    endif
+    for file in split(glob(s:Filepath.join(s:getRootPath(), 'dictionary/*' .. schema .. '_*')), "\n")
+        call delete(file)
+    endfor
 endfunction
 
 function dbiclient#openbuf() abort
@@ -3358,6 +3352,35 @@ function s:extendquery(alignFlg, extend, reloadflg) abort
     let opt.extend.having = having
     let dbiclient_bufmap.data.sql = sql
 
+    " vsFloat から呼ばれた場合は閉じてから結果を表示する
+    if has('nvim') && s:vsFloatWinid != -1
+        try
+            if nvim_win_is_valid(s:vsFloatWinid)
+                " vsFloatRestoreData があれば mainFloat を元のサイズに戻す
+                if !empty(s:vsFloatRestoreData)
+                    let rd = s:vsFloatRestoreData
+                    let s:vsFloatRestoreData = {}
+                    try
+                        if nvim_win_is_valid(rd.winid)
+                            call nvim_win_set_config(rd.winid, {
+                                \ 'relative': 'editor',
+                                \ 'width':  rd.orig_width,
+                                \ 'height': rd.orig_height,
+                                \ 'row':    rd.orig_row,
+                                \ 'col':    rd.orig_col,
+                                \ })
+                        endif
+                    catch
+                    endtry
+                endif
+                let vs_wid = s:vsFloatWinid
+                let s:vsFloatWinid = -1
+                noautocmd call nvim_win_close(vs_wid, 1)
+            endif
+        catch
+        endtry
+    endif
+
     "call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
     call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql, a:reloadflg)
 endfunction
@@ -3389,6 +3412,33 @@ function s:editSql() abort
         let dbiclient_bufmap.data.single_table = ''
         let dbiclient_bufmap.opt = {}
         let limitrows = get(dbiclient_bufmap, 'limitrows', s:getLimitrows())
+        " vsFloat から呼ばれた場合は閉じる
+        if has('nvim') && s:vsFloatWinid != -1
+            try
+                if nvim_win_is_valid(s:vsFloatWinid)
+                    if !empty(s:vsFloatRestoreData)
+                        let rd = s:vsFloatRestoreData
+                        let s:vsFloatRestoreData = {}
+                        try
+                            if nvim_win_is_valid(rd.winid)
+                                call nvim_win_set_config(rd.winid, {
+                                    \ 'relative': 'editor',
+                                    \ 'width':  rd.orig_width,
+                                    \ 'height': rd.orig_height,
+                                    \ 'row':    rd.orig_row,
+                                    \ 'col':    rd.orig_col,
+                                    \ })
+                            endif
+                        catch
+                        endtry
+                    endif
+                    let vs_wid = s:vsFloatWinid
+                    let s:vsFloatWinid = -1
+                    noautocmd call nvim_win_close(vs_wid, 1)
+                endif
+            catch
+            endtry
+        endif
         "call setbufvar(dbiclient_bufmap.data.reloadBufnr, 'dbiclient_bufmap', dbiclient_bufmap)
         call s:reload(dbiclient_bufmap.data.reloadBufnr, dbiclient_bufmap.data.sql, 0)
     endfunction
@@ -3904,6 +3954,7 @@ function s:reloadLimit(bufnr, sql, limitrows) abort
     if limitrows !~ '\v^-?[[0-9]+$'
         return
     endif
+    let limitrows = str2nr(limitrows)
     let delbufnr = -1
     let winid = s:f.getwidCurrentTab(bufnr)
     let dbiclient_bufmap = getbufvar(bufnr, 'dbiclient_bufmap', {})
@@ -4538,35 +4589,11 @@ function s:aboveNewBuffer(bufname, ...) abort
 endfunction
 
 function s:vsNewBuffer(bufname, ...) abort
-    " フロートモードかつ結果フロート内での操作なら、
-    " 結果フロートを左半分に縮小して右に新フロートを並べる
+    " フロートモードなら常に openVsFloat でフルサイズフロートとして開く
     if get(g:, 'dbiclient_float_window', 1) && has('nvim') && exists('*nvim_open_win')
-        " 結果フロートが有効かどうか確認
-        let in_result_float = 0
-        if s:resultFloatWinid != -1
-            try
-                if nvim_win_is_valid(s:resultFloatWinid)
-                    " 現在ウィンドウが結果フロート、またはそこから呼ばれた場合
-                    let in_result_float = 1
-                endif
-            catch
-                let s:resultFloatWinid = -1
-            endtry
-        endif
-
-        if in_result_float
-            let bnr = s:openVsFloat(a:bufname)
-            if bnr != -1
-                return bnr
-            endif
-        else
-            " 結果フロート外では通常の単独フロートとして開く
-            let [bnr, cbnr, winid] = s:openFloatWindow(a:bufname, 1)
-            if winid != -1
-                call s:f.noreadonly(bnr)
-                call setbufvar(bnr, '&filetype', 'dbiclient')
-                return bnr
-            endif
+        let bnr = s:openVsFloat(a:bufname)
+        if bnr != -1
+            return bnr
         endif
     endif
     let [bufnr, cbufnr] = s:f.newBuffer('vertical new', '', a:bufname, g:dbiclient_buffer_encoding, 0)
@@ -4608,20 +4635,21 @@ function s:openVsFloat(bufname) abort
         let s:vsFloatWinid = -1
     endif
 
-    " 結果フロートの現在の geometry を取得
-    let cfg = nvim_win_get_config(s:resultFloatWinid)
-    let orig_col    = float2nr(type(cfg.col)    == v:t_float ? cfg.col    : cfg.col    + 0.0)
-    let orig_width  = float2nr(type(cfg.width)  == v:t_float ? cfg.width  : cfg.width  + 0.0)
-    let orig_height = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
-    let orig_row    = float2nr(type(cfg.row)    == v:t_float ? cfg.row    : cfg.row    + 0.0)
+    " mainFloat が有効な場合は左右分割、ない場合はフルサイズスタンドアロン
+    let has_main = s:resultFloatWinid != -1
+    try
+        let has_main = has_main && nvim_win_is_valid(s:resultFloatWinid)
+    catch
+        let has_main = 0
+    endtry
 
-    " 左: 条件編集パネル (vsFloat)  右: 結果フロート
-    let gap       = 1
-    let left_w    = (orig_width - gap) / 2
-    let right_w   = orig_width - left_w - gap
-    let right_col = orig_col + left_w + gap
+    let tw = &columns
+    let th = &lines
+    let fw  = float2nr(tw * g:dbiclient_float_window_width)
+    let fh  = float2nr(th * g:dbiclient_float_window_height)
+    let row = float2nr((th - fh) / 2)
+    let col = float2nr((tw - fw) / 2)
 
-    " 左側に条件編集パネルを先に作成（先に開くことで結果フロート縮小時のちらつきを防ぐ）
     let bnr = bufnr(a:bufname)
     if bnr == -1
         let bnr = nvim_create_buf(0, 1)
@@ -4632,6 +4660,40 @@ function s:openVsFloat(bufname) abort
     call setbufvar(bnr, '&swapfile',  0)
     call setbufvar(bnr, '&wrap',      0)
     call setbufvar(bnr, '&filetype',  'dbiclient')
+
+    if !has_main
+        " スタンドアロン: フルサイズ
+        let opts = {
+            \ 'relative': 'editor',
+            \ 'width': fw,
+            \ 'height': fh,
+            \ 'row': row,
+            \ 'col': col,
+            \ 'style': 'minimal',
+            \ 'border': 'rounded',
+            \ 'title': ' ' . fnamemodify(a:bufname, ':t') . ' ',
+            \ 'title_pos': 'center',
+            \ }
+        let winid = nvim_open_win(bnr, 1, opts)
+        call setwinvar(winid, 'dbiclient_float', 1)
+        call setwinvar(winid, 'dbiclient_vs_float', 1)
+        let s:vsFloatWinid = winid
+        let s:vsFloatRestoreData = {}
+        exe 'nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>'
+        return bnr
+    endif
+
+    " mainFloat と左右分割
+    let cfg = nvim_win_get_config(s:resultFloatWinid)
+    let orig_col    = float2nr(type(cfg.col)    == v:t_float ? cfg.col    : cfg.col    + 0.0)
+    let orig_width  = float2nr(type(cfg.width)  == v:t_float ? cfg.width  : cfg.width  + 0.0)
+    let orig_height = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
+    let orig_row    = float2nr(type(cfg.row)    == v:t_float ? cfg.row    : cfg.row    + 0.0)
+
+    let gap       = 1
+    let left_w    = (orig_width - gap) / 2
+    let right_w   = orig_width - left_w - gap
+    let right_col = orig_col + left_w + gap
 
     let left_opts = {
         \ 'relative': 'editor',
@@ -4646,14 +4708,14 @@ function s:openVsFloat(bufname) abort
         \ }
     let winid = nvim_open_win(bnr, 1, left_opts)
 
-    " 左パネルを開いた後で結果フロートを右半分に移動・縮小（先に左を開くことでちらつきを防ぐ）
+    " mainFloat を右半分に縮小（左パネルを先に開いてちらつきを防ぐ）
     let right_cfg = {'relative': 'editor', 'width': right_w, 'height': orig_height, 'row': orig_row, 'col': right_col}
     call nvim_win_set_config(s:resultFloatWinid, right_cfg)
     call setwinvar(winid, 'dbiclient_float', 1)
     call setwinvar(winid, 'dbiclient_vs_float', 1)
     let s:vsFloatWinid = winid
 
-    " 復元データを保存（q/Esc キーマップと WinClosed autocmd 両方で使用）
+    " vsFloat を閉じたときに mainFloat を元のサイズに戻すための復元データ
     let s:vsFloatRestoreData = {
         \ 'winid': s:resultFloatWinid,
         \ 'orig_col': orig_col,
@@ -4662,7 +4724,6 @@ function s:openVsFloat(bufname) abort
         \ 'orig_row': orig_row,
         \ }
 
-    " vsFloat を閉じたら結果フロートを元のサイズに戻す
     let restore_cmd = printf(
         \ '<Cmd>call <SID>restoreResultFloat(%d, %d, %d, %d, %d)<CR>',
         \ orig_col, orig_width, orig_height, orig_row, s:resultFloatWinid)
@@ -4671,7 +4732,7 @@ function s:openVsFloat(bufname) abort
     return bnr
 endfunction
 
-" vsFloat を閉じて結果フロートを元のサイズに戻す
+" vsFloat を閉じて mainFloat を元のサイズに戻す
 function s:restoreResultFloat(orig_col, orig_width, orig_height, orig_row, winid) abort
     let s:vsFloatWinid = -1
     let s:vsFloatRestoreData = {}
@@ -5021,18 +5082,18 @@ function s:openScratchBuffer() abort
                 let s:resultFloatWinidForRestore = s:resultFloatWinid
             else
                 let s:resultFloatWinid = -1
-                let row = th - fh_scratch - 2
+                let fh_scratch  = float2nr(th * g:dbiclient_float_window_height)
+                let row         = float2nr((th - fh_scratch) / 2)
                 let col_scratch = col
-                let fh_scratch = max([float2nr(th * 0.25), 5])
             endif
         catch
-            let row = th - fh_scratch - 2
+            let fh_scratch = float2nr(th * g:dbiclient_float_window_height)
+            let row        = float2nr((th - fh_scratch) / 2)
             let col_scratch = col
-            let fh_scratch = max([float2nr(th * 0.25), 5])
         endtry
     else
-        let fh_scratch = max([float2nr(th * 0.25), 5])
-        let row = th - fh_scratch - 2
+        let fh_scratch  = float2nr(th * g:dbiclient_float_window_height)
+        let row         = float2nr((th - fh_scratch) / 2)
         let col_scratch = col
     endif
 
@@ -5219,12 +5280,32 @@ function s:init() abort
             autocmd!
             autocmd WinEnter,BufEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
             autocmd WinClosed * call <SID>onFloatWinClosed(str2nr(expand('<amatch>')))
-            " 非フロートウィンドウに移動したら全フロートを閉じる
-            autocmd WinEnter * call <SID>onWinEnterCloseFloats()
+
         augroup END
         call s:zonbie()
     endif
     let s:loaded = 1
+endfunction
+
+" フロートウィンドウを標準フルサイズに拡大するヘルパー
+function s:expandFloatToFull(winid) abort
+    if a:winid == -1 | return | endif
+    try
+        if nvim_win_is_valid(a:winid)
+            let tw = &columns
+            let th = &lines
+            let fw  = float2nr(tw * g:dbiclient_float_window_width)
+            let fh  = float2nr(th * g:dbiclient_float_window_height)
+            let row = float2nr((th - fh) / 2)
+            let col = float2nr((tw - fw) / 2)
+            call nvim_win_set_config(a:winid, {
+                \ 'relative': 'editor',
+                \ 'width': fw, 'height': fh,
+                \ 'row': row,  'col': col,
+                \ })
+        endif
+    catch
+    endtry
 endfunction
 
 function s:onFloatWinClosed(winid) abort
@@ -5256,6 +5337,13 @@ function s:onFloatWinClosedPost(winid) abort
         let s:mainFloatWinid   = -1
         let s:mainFloatCurTab  = ''
         let closed_result = 1
+        " mainFloat が閉じたら残っている vsFloat / scratchFloat をフルサイズに拡大
+        call s:expandFloatToFull(s:vsFloatWinid)
+        call s:expandFloatToFull(s:scratchFloatWinid)
+        " 復元データはもう不要
+        let s:vsFloatRestoreData         = {}
+        let s:resultFloatOrigHeight      = -1
+        let s:resultFloatWinidForRestore = -1
     endif
     if a:winid == s:scratchFloatWinid
         let s:scratchFloatWinid = -1

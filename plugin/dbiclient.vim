@@ -61,12 +61,10 @@ command! DBITables :call dbiclient#userTablesMain()
 command! DBIOpenBuf :call dbiclient#openbuf()
 command! DBILog :call dbiclient#sqllog()
 
-command! -nargs=1 DBISetSecurePassword :call dbiclient#setSecurePassword(<f-args>)
-
 command! DBICommit :call dbiclient#commit()
 command! DBIRollback :call dbiclient#rollback()
 command! DBICancel :call dbiclient#cancel()
-command! -bang -nargs=? DBIClearCache :call dbiclient#clearCache("<bang>", <q-args>)
+command! DBIClearCache :call dbiclient#clearCache()
 
 command! -bang -range -nargs=? DBISelect :<line1>,<line2>call dbiclient#selectRangeSQL("<bang>" == '!' ? 0 : 1,<f-args>)
 command! -bang -nargs=? -complete=customlist,dbiclient#getTables DBISelectFrom :call dbiclient#selectTable("<bang>" == '!' ? 0 : 1,1,<q-args>)
