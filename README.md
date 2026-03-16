@@ -187,19 +187,19 @@ In Neovim, results, condition editing, and SQL generation all use floating windo
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                         Table List float                              │
+│                         Table List float                             │
 │              (:DBITables / <CR> from :DBIJobList)                    │
 └──────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────┐ ┌──────────────────────────────┐
-│   Condition panel (left 50%)          │ │   Query result float (right)  │
-│  WHERE / ORDER / SELECT / GROUP       │ │  SELECT * FROM ...            │
-│  — press <CR> to run, panel closes    │ │                               │
-└───────────────────────────────────────┘ └──────────────────────────────┘
+┌─────────────────────────────────────┐ ┌──────────────────────────────┐
+│   Condition panel (left 50%)        │ │   Query result float (right) │
+│  WHERE / ORDER / SELECT / GROUP     │ │  SELECT * FROM ...           │
+│  — press <CR> to run, panel closes  │ │                              │
+└─────────────────────────────────────┘ └──────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│                       ScratchSQL float (bottom)                       │
-│        INSERT / UPDATE / DELETE statements appended here              │
+│                       ScratchSQL float (bottom)                      │
+│        INSERT / UPDATE / DELETE statements appended here             │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -21,10 +21,10 @@ Sleep 1s
 Enter
 Sleep 4s
 
-# WHERE panel -> employees.dept = 'Engineering'
+# WHERE panel -> dept = 'Engineering'
 Type "mw"
 Sleep 1s
-Type "/employees.dept"
+Type "/dept"
 Enter
 Sleep 0.8s
 Type "$"
@@ -41,7 +41,7 @@ Enter
 Sleep 1s
 Type "0"
 Sleep 0.5s
-Type "3f|wciw96000"
+Type "3f|wciw99000"
 Escape
 Sleep 1s
 Type "V"
