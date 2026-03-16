@@ -78,9 +78,8 @@ command! -bang -range DBIExecuteNoSplit :<line1>,<line2>call dbiclient#dBExecRan
 
 command! -range -nargs=? DBICreateDeleteInsertSql :<line1>,<line2>call dbiclient#createDeleteInsertSql(<f-args>)
 
-" Tab / Shift-Tab キーでフロートウィンドウをサイクル（フロートが1つ以上あるときだけ）
-nnoremap <silent> <Tab>   :call dbiclient#cycleFloatWindows()<CR>
-nnoremap <silent> <S-Tab> :call dbiclient#cycleFloatWindowsRev()<CR>
+" NOTE: 以前は <Tab>/<S-Tab> でフロート移動していたが、デフォルトマップは廃止。
+" フロート内では <C-h/j/k/l> がバッファローカルで自動設定される。
 
 let &cpo = s:cpo_save
 unlet s:cpo_save

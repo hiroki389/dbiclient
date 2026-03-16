@@ -207,9 +207,9 @@ In Neovim, results, condition editing, and SQL generation all use floating windo
 
 | Key | Action |
 |---|---|
-| `<Tab>` | Cycle forward through float windows (passes through as normal `<Tab>` when no floats are open) |
-| `<S-Tab>` | Cycle backward through float windows (passes through as normal `<S-Tab>` when no floats are open) |
+| `<C-h>` / `<C-j>` / `<C-k>` / `<C-l>` | Move focus to the nearest float in that direction |
 | `q` | Close the current float (focus moves to another open float if one exists) |
+| `q` in result while condition panel is open | Closes the condition panel too |
 | Move to a non-float window | All float windows are closed automatically |
 
 ---

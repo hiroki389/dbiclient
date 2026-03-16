@@ -4627,6 +4627,8 @@ function s:openVsFloat(bufname) abort
                 call setbufvar(bnr, '&buflisted', 0)
                 call setbufvar(bnr, '&swapfile',  0)
                 call setbufvar(bnr, '&wrap',      0)
+                call s:registerFloatWinid(s:vsFloatWinid)
+                call s:setFloatNavMapsForBuf(bnr)
                 call win_gotoid(s:vsFloatWinid)
                 return bnr
             endif
@@ -4677,6 +4679,8 @@ function s:openVsFloat(bufname) abort
         let winid = nvim_open_win(bnr, 1, opts)
         call setwinvar(winid, 'dbiclient_float', 1)
         call setwinvar(winid, 'dbiclient_vs_float', 1)
+        call s:registerFloatWinid(winid)
+        call s:setFloatNavMapsForBuf(bnr)
         let s:vsFloatWinid = winid
         let s:vsFloatRestoreData = {}
         exe 'nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>'
@@ -4713,6 +4717,8 @@ function s:openVsFloat(bufname) abort
     call nvim_win_set_config(s:resultFloatWinid, right_cfg)
     call setwinvar(winid, 'dbiclient_float', 1)
     call setwinvar(winid, 'dbiclient_vs_float', 1)
+    call s:registerFloatWinid(winid)
+    call s:setFloatNavMapsForBuf(bnr)
     let s:vsFloatWinid = winid
 
     " vsFloat を閉じたときに mainFloat を元のサイズに戻すための復元データ
@@ -4785,14 +4791,26 @@ function s:openFloatWindow(bufname, ...) abort
         call nvim_buf_set_name(bnr, a:bufname)
     else
         " 既にフロートで開いていれば既存 winid を返す
-        for wid in range(1, winnr('$'))
-            if winbufnr(wid) == bnr && nvim_win_get_config(win_getid(wid)).relative !=# ''
-                if focus
-                    call win_gotoid(win_getid(wid))
-                endif
-                return [bnr, cbufnr, win_getid(wid)]
-            endif
-        endfor
+        " (winnr() はフロートを拾えないことがあるため nvim_list_wins を使用)
+        if exists('*nvim_list_wins')
+            let curtab = nvim_get_current_tabpage()
+            for winid in nvim_list_wins()
+                try
+                    if nvim_win_get_tabpage(winid) != curtab
+                        continue
+                    endif
+                    if nvim_win_get_buf(winid) == bnr && get(nvim_win_get_config(winid), 'relative', '') !=# ''
+                        call s:registerFloatWinid(winid)
+                        call s:setFloatNavMapsForBuf(bnr)
+                        if focus
+                            call win_gotoid(winid)
+                        endif
+                        return [bnr, cbufnr, winid]
+                    endif
+                catch
+                endtry
+            endfor
+        endif
     endif
 
     let opts = {
@@ -4812,6 +4830,8 @@ function s:openFloatWindow(bufname, ...) abort
     setlocal filetype=dbiclient
     nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
     call setwinvar(winid, 'dbiclient_float', 1)
+    call s:registerFloatWinid(winid)
+    call s:setFloatNavMapsForBuf(bnr)
 
     if !focus
         let orig_wid = s:f.getwidCurrentTab(cbufnr)
@@ -4887,6 +4907,8 @@ function s:openMainFloat(tab_type, bufname, focus) abort
                 let cfg.title_pos = 'left'
                 call nvim_win_set_config(s:mainFloatWinid, cfg)
                 call setwinvar(s:mainFloatWinid, 'dbiclient_float', 1)
+                call s:registerFloatWinid(s:mainFloatWinid)
+                call s:setFloatNavMapsForBuf(bnr)
                 if a:focus
                     let s:closing_floats = 1
                     call win_gotoid(s:mainFloatWinid)
@@ -4929,6 +4951,8 @@ function s:openMainFloat(tab_type, bufname, focus) abort
     setlocal filetype=dbiclient
     call setwinvar(winid, 'dbiclient_float', 1)
     call setwinvar(winid, 'dbiclient_main_float', 1)
+    call s:registerFloatWinid(winid)
+    call s:setFloatNavMapsForBuf(bnr)
 
     let s:mainFloatWinid   = winid
     let s:resultFloatWinid = winid
@@ -5036,6 +5060,8 @@ function s:openScratchBuffer() abort
         try
             if nvim_win_is_valid(s:scratchFloatWinid)
                 call nvim_win_set_buf(s:scratchFloatWinid, bnr)
+                call s:registerFloatWinid(s:scratchFloatWinid)
+                call s:setFloatNavMapsForBuf(bnr)
                 call win_gotoid(s:scratchFloatWinid)
                 return bnr
             endif
@@ -5112,6 +5138,8 @@ function s:openScratchBuffer() abort
     setlocal buftype=nofile nobuflisted noswapfile nowrap filetype=sql
     nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
     call setwinvar(winid, 'dbiclient_float', 1)
+    call s:registerFloatWinid(winid)
+    call s:setFloatNavMapsForBuf(bnr)
     let s:scratchFloatWinid = winid
     return bnr
 endfunction
@@ -5278,13 +5306,62 @@ function s:init() abort
         " また、フロートを閉じた際に winid キャッシュをクリーンアップする
         augroup dbiclient_float_nowrap
             autocmd!
-            autocmd WinEnter,BufEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | endif
+            autocmd WinEnter,BufEnter * if getwinvar(0, 'dbiclient_float', 0) | setlocal nowrap | call <SID>ensureFloatNavMaps() | endif
             autocmd WinClosed * call <SID>onFloatWinClosed(str2nr(expand('<amatch>')))
 
         augroup END
         call s:zonbie()
     endif
     let s:loaded = 1
+endfunction
+
+let s:dbiclient_float_winids = {}
+
+function s:registerFloatWinid(winid) abort
+    if a:winid == -1 | return | endif
+    let s:dbiclient_float_winids[a:winid] = 1
+endfunction
+
+function s:unregisterFloatWinid(winid) abort
+    if has_key(s:dbiclient_float_winids, a:winid)
+        call remove(s:dbiclient_float_winids, a:winid)
+    endif
+endfunction
+
+function s:isDbiclientFloatWinid(winid) abort
+    if has_key(s:dbiclient_float_winids, a:winid)
+        return 1
+    endif
+    " 既知キャッシュ (WinClosed 時点では getwinvar が取れないことがある)
+    if a:winid == get(s:, 'resultFloatWinid', -2)
+                \ || a:winid == get(s:, 'scratchFloatWinid', -2)
+                \ || a:winid == get(s:, 'vsFloatWinid', -2)
+                \ || a:winid == get(s:, 'mainFloatWinid', -2)
+        return 1
+    endif
+    return getwinvar(a:winid, 'dbiclient_float', 0) ? 1 : 0
+endfunction
+
+function s:setFloatNavMapsForBuf(bnr) abort
+    if a:bnr == -1 || !bufexists(a:bnr) | return | endif
+    if getbufvar(a:bnr, 'dbiclient_float_nav_mapped', 0)
+        return
+    endif
+    call setbufvar(a:bnr, 'dbiclient_float_nav_mapped', 1)
+
+    if has('nvim') && exists('*nvim_buf_set_keymap')
+        let opts = {'silent': v:true, 'nowait': v:true, 'noremap': v:true}
+        call nvim_buf_set_keymap(a:bnr, 'n', '<C-h>', "<Cmd>call dbiclient#moveFloatFocus('h')<CR>", opts)
+        call nvim_buf_set_keymap(a:bnr, 'n', '<C-j>', "<Cmd>call dbiclient#moveFloatFocus('j')<CR>", opts)
+        call nvim_buf_set_keymap(a:bnr, 'n', '<C-k>', "<Cmd>call dbiclient#moveFloatFocus('k')<CR>", opts)
+        call nvim_buf_set_keymap(a:bnr, 'n', '<C-l>', "<Cmd>call dbiclient#moveFloatFocus('l')<CR>", opts)
+    else
+        " フロートUIは Neovim 専用のため Vim 側では何もしない
+    endif
+endfunction
+
+function s:ensureFloatNavMaps() abort
+    call s:setFloatNavMapsForBuf(bufnr('%'))
 endfunction
 
 " フロートウィンドウを標準フルサイズに拡大するヘルパー
@@ -5309,16 +5386,16 @@ function s:expandFloatToFull(winid) abort
 endfunction
 
 function s:onFloatWinClosed(winid) abort
-    " WinClosed は close 前に発火するため、フォーカス移動は timer で遅延させる
-    " dbiclient フロートが閉じられる場合は closing_floats を立てて
-    " WinEnter による全フロート一括クローズを抑制する
-    if getwinvar(a:winid, 'dbiclient_float', 0)
+    " WinClosed は close 後に発火するため、winid が無効で getwinvar() が取れないことがある。
+    " dbiclient フロート close の場合は closing_floats を立てて WinEnter による全閉じを抑制する。
+    if s:isDbiclientFloatWinid(a:winid)
         let s:closing_floats = 1
     endif
     call timer_start(0, {-> s:onFloatWinClosedPost(a:winid)})
 endfunction
 
 function s:onFloatWinClosedPost(winid) abort
+    call s:unregisterFloatWinid(a:winid)
     " 閉じたウィンドウに対応するキャッシュをクリアし、
     " 優先順位に従って別フロートへフォーカスを移動する
     "
@@ -5396,6 +5473,23 @@ function s:onFloatWinClosedPost(winid) abort
         " ScratchSQL 閉 → 結果
         call add(candidates, s:resultFloatWinid)
     elseif closed_result
+        " 結果が閉じられた場合、条件検索(vsFloat)も同時に閉じる
+        if s:vsFloatWinid != -1
+            try
+                if nvim_win_is_valid(s:vsFloatWinid)
+                    let vs_wid = s:vsFloatWinid
+                    let s:vsFloatWinid = -1
+                    let s:vsFloatRestoreData = {}
+                    noautocmd call nvim_win_close(vs_wid, 0)
+                else
+                    let s:vsFloatWinid = -1
+                    let s:vsFloatRestoreData = {}
+                endif
+            catch
+                let s:vsFloatWinid = -1
+                let s:vsFloatRestoreData = {}
+            endtry
+        endif
         " 結果 閉 → ScratchSQL
         call add(candidates, s:scratchFloatWinid)
     else
@@ -5440,21 +5534,29 @@ function s:onFloatWinClosedPost(winid) abort
     call timer_start(0, {-> execute('let s:closing_floats = 0')})
 endfunction
 
-" 現在タブの全 dbiclient フロートウィンドウ (winid リスト) を順番で返す
+" 現在タブの全 dbiclient フロートウィンドウ (winid リスト) を返す
+" NOTE: winnr()/tabpagewinnr() はフロートを数えないことがあるため、nvim_list_wins() を使う
 function s:getAllFloatWinids() abort
-    if !has('nvim') | return [] | endif
-    let result = []
-    for wid in range(1, winnr('$'))
-        let winid = win_getid(wid)
+    if !has('nvim') || !exists('*nvim_list_wins') | return [] | endif
+    let curtab = nvim_get_current_tabpage()
+    let floats = []
+    for winid in nvim_list_wins()
         try
-            if nvim_win_is_valid(winid) && nvim_win_get_config(winid).relative !=# ''
-                        \ && getwinvar(winid, 'dbiclient_float', 0)
-                call add(result, winid)
+            if nvim_win_get_tabpage(winid) != curtab
+                continue
+            endif
+            let cfg = nvim_win_get_config(winid)
+            if get(cfg, 'relative', '') !=# '' && getwinvar(winid, 'dbiclient_float', 0)
+                " 安定した順序のため row/col でソートする素材を保持
+                let row = float2nr(type(cfg.row) == v:t_float ? cfg.row : cfg.row + 0.0)
+                let col = float2nr(type(cfg.col) == v:t_float ? cfg.col : cfg.col + 0.0)
+                call add(floats, [row, col, winid])
             endif
         catch
         endtry
     endfor
-    return result
+    call sort(floats, {a, b -> a[0] == b[0] ? (a[1] == b[1] ? a[2] - b[2] : a[1] - b[1]) : a[0] - b[0]})
+    return map(floats, {_, x -> x[2]})
 endfunction
 
 " Tab: フロートウィンドウ間をサイクル
@@ -5491,6 +5593,83 @@ function dbiclient#cycleFloatWindows() abort
 endfunction
 function dbiclient#cycleFloatWindowsRev() abort
     call s:cycleFloatWindows(-1)
+endfunction
+
+function s:floatCenter(winid) abort
+    let cfg = nvim_win_get_config(a:winid)
+    let row = float2nr(type(cfg.row) == v:t_float ? cfg.row : cfg.row + 0.0)
+    let col = float2nr(type(cfg.col) == v:t_float ? cfg.col : cfg.col + 0.0)
+    let w   = float2nr(type(cfg.width) == v:t_float ? cfg.width : cfg.width + 0.0)
+    let h   = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
+    let cx = col + (w / 2.0)
+    let cy = row + (h / 2.0)
+    return [cx, cy]
+endfunction
+
+function s:nextFloatByDir(cur, floats, dir) abort
+    let target = -1
+    let best_primary = 1.0e20
+    let best_secondary = 1.0e20
+
+    let [curx, cury] = s:floatCenter(a:cur)
+    for wid in a:floats
+        if wid == a:cur | continue | endif
+        try
+            if !nvim_win_is_valid(wid) | continue | endif
+            let [x, y] = s:floatCenter(wid)
+        catch
+            continue
+        endtry
+        let dx = x - curx
+        let dy = y - cury
+
+        if a:dir ==# 'h'
+            if dx >= 0 | continue | endif
+            let primary = abs(dx)
+            let secondary = abs(dy)
+        elseif a:dir ==# 'l'
+            if dx <= 0 | continue | endif
+            let primary = abs(dx)
+            let secondary = abs(dy)
+        elseif a:dir ==# 'k'
+            if dy >= 0 | continue | endif
+            let primary = abs(dy)
+            let secondary = abs(dx)
+        elseif a:dir ==# 'j'
+            if dy <= 0 | continue | endif
+            let primary = abs(dy)
+            let secondary = abs(dx)
+        else
+            return -1
+        endif
+
+        if primary < best_primary || (primary == best_primary && secondary < best_secondary)
+            let best_primary = primary
+            let best_secondary = secondary
+            let target = wid
+        endif
+    endfor
+    return target
+endfunction
+
+" 公開 API: <C-h/j/k/l> でフロート間を移動する
+function dbiclient#moveFloatFocus(dir) abort
+    if !has('nvim') | return | endif
+    let floats = s:getAllFloatWinids()
+    if len(floats) < 2 | return | endif
+
+    let cur = win_getid()
+    if index(floats, cur) == -1
+        " フロート以外からは何もしない (フロート内専用マップ前提)
+        return
+    endif
+
+    let next = s:nextFloatByDir(cur, floats, a:dir)
+    if next == -1 || next == cur | return | endif
+
+    let s:closing_floats = 1
+    call win_gotoid(next)
+    call timer_start(0, {-> execute('let s:closing_floats = 0')})
 endfunction
 
 " 全フロートを閉じる
