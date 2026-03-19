@@ -30,8 +30,8 @@ let s:shadowpass = ''
 let s:mainFloatWinid   = -1   " 統合メインフロートウィンドウ ID
 let s:mainFloatCurTab  = ''   " 現在表示中のタブ種別
 let s:mainFloatTabBufs = {}   " タブ種別 → bufnr  {'tables':N,'result':N,'history':N,'jobs':N}
-let s:main_tab_order   = ['tables', 'result', 'history', 'jobs']
-let s:main_tab_labels  = {'tables': 'Tables', 'result': 'Result', 'history': 'History', 'jobs': 'Jobs'}
+let s:main_tab_order   = ['tables', 'result', 'history', 'jobs', 'log']
+let s:main_tab_labels  = {'tables': 'Tables', 'result': 'Result', 'history': 'History', 'jobs': 'Jobs', 'log': 'Log'}
 
 " 共有フロートウィンドウ ID (-1 = 未開またはクローズ済み)
 let s:resultFloatWinid  = -1   " = s:mainFloatWinid (常に同期)
@@ -728,9 +728,44 @@ endfunction
 
 function s:sqllog() abort
     let ymd = strftime("%Y%m%d", localtime())
-    let logfile= 'socket_' .. ymd .. '.log'
-    bo new
-    exe 'e ' .. s:Filepath.join(s:getRootPath(), logfile)
+    let logfile = 'socket_' .. ymd .. '.log'
+    let path = s:Filepath.join(s:getRootPath(), logfile)
+
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let bufname = 'DBI_LOG'
+        let bnr = bufnr(bufname)
+        if bnr == -1
+            let bnr = nvim_create_buf(0, 1)
+            call nvim_buf_set_name(bnr, bufname)
+        endif
+        
+        " ファイル読み込み
+        if filereadable(path)
+            let lines = readfile(path)
+            call setbufvar(bnr, '&modifiable', 1)
+            call deletebufline(bnr, 1, '$')
+            call setbufline(bnr, 1, lines)
+            call setbufvar(bnr, '&modifiable', 0)
+        else
+            call setbufvar(bnr, '&modifiable', 1)
+            call deletebufline(bnr, 1, '$')
+            call setbufvar(bnr, '&modifiable', 0)
+        endif
+
+        call setbufvar(bnr, '&buftype', 'nofile')
+        call setbufvar(bnr, '&filetype', 'log')
+        " 自動更新のために autoread を設定したいが nofile では効かないため
+        " 簡易的に開いた時点の内容を表示する (tail -f 的な動作は別途実装が必要)
+
+        let [bnr, _cbnr, _winid] = s:openMainFloat('log', bufname, 1)
+        
+        " 最後に最下行へ移動
+        normal! G
+    else
+        bo new
+        exe 'e ' .. path
+        normal! G
+    endif
 endfunction
 
 function s:error1CurrentPort() abort
@@ -837,6 +872,10 @@ function s:getTableJoinList(sql) abort
     let table = filter(table, {_, x -> x !~# '\v^\s*[_$#.]+\s*$'})
     let table = map(table, {_, x -> split(x, '\v[[:space:]]+') })
     let table = map(table, {_, x -> {'tableNm':get(x, 0, ''), 'AS':get(x, 1, '') =~? '\v(<on>|<where>|<group>|<order>|<join>|<left>|<right>|<inner>|<cross>|<natural>|<having>|<union>|<minus>|<except>|<using>|<as>|<of>)' ? '' : get(x, 1, '')}})
+    " FROM TABLE(...) など関数呼び出し形式のものを除外（テーブルではなく SQL 関数）
+    let table = filter(table, {_, x ->
+        \ sql !~? '\v\c%(from|join)\s+' .. escape(x.tableNm, '\/.^$*[]~') .. '\s*\('
+        \})
     if empty(table)
         return []
     else
@@ -854,6 +893,11 @@ function s:getPrimaryKeys(tableNm, port) abort
 endfunction
 
 function s:getColumns(tableNm, port) abort
+    " TABLE() 関数などをテーブル名として処理しないように除外
+    if a:tableNm =~? '\v^table$'
+        return []
+    endif
+
     let cols = get(get(s:params, a:port, {}), a:tableNm, [])
     if !has_key(get(s:params, a:port, {}), a:tableNm)
         let s:params[a:port][a:tableNm] = []
@@ -3047,7 +3091,7 @@ function s:selectHistory(port) abort
         call s:deletebufline(bufnr, 1, '$')
         call setbufvar(bufnr, 'dbiclient_bufmap', {})
     endif
-    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
+    call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_PR', s:nmap_history_PR), ':<C-u>call <SID>dbhistoryRestore(<SID>getHistoryItem(<SID>getPort()))<CR>')
     "call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_SQ', s:nmap_history_SQ), ':call <SID>editHistory(<SID>loadQueryHistoryCmd(<SID>getPort())[line(".")  - len(b:dbiclient_disableline) - 1])<CR>')
     call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_RE', s:nmap_history_RE), ':call <SID>dbhistoryCmd(<SID>getPort())<CR>')
     "call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_history_DD', s:nmap_history_DD), ':<C-u>call <SID>deleteHistory(<SID>getHistoryPathCmd(<SID>getPort()), line(".")  - len(b:dbiclient_disableline) - 1, 1)<CR>:call <SID>dbhistoryCmd(<SID>getPort())<CR>')
@@ -3828,6 +3872,10 @@ function s:where() abort
     call s:selectWhere()
     let bufnr = s:bufnr('%')
     norm gg$
+    " 補完プラグインによるフロートウィンドウ生成でフォーカスが移動しないよう無効化
+    call setbufvar(bufnr, '&complete', '')
+    call setbufvar(bufnr, '&completefunc', '')
+    call setbufvar(bufnr, '&omnifunc', '')
     call setbufvar(bufnr, 'dbiclient_bufmap', dbiclient_bufmap)
     call s:setnmap(bufnr, get(g:, 'dbiclient_nmap_where_SQ', s:nmap_where_SQ), ':<C-u>call <SID>whereQuery(b:dbiclient_bufmap.alignFlg)<CR>')
     call s:setallmap(bufnr)
@@ -3857,14 +3905,30 @@ function s:dbhistoryCmd(port) abort
     return
 endfunction
 
+function s:getHistoryItem(port) abort
+    let list = s:loadQueryHistoryCmd(a:port)
+    let idx = line('.') - len(get(b:, 'dbiclient_disableline', [])) - 1
+    if idx < 0 || idx >= len(list)
+        return ''
+    endif
+    return list[idx]
+endfunction
+
 function s:dbhistoryRestore(str) abort
+    if empty(a:str)
+        return
+    endif
     if s:isDisableline()
         return
     endif
     let caller_winid = win_getid()
     "sandbox silent! let cmd = map(split(matchstr(a:str, '\v^.{-}\t\zs.*'), '{DELIMITER_CR}'), {_, x ->  eval(x)})
     "let dbiclient_bufmap = cmd[0]
-    sandbox silent! let dbiclient_bufmap = eval(substitute(matchstr(a:str, '\v^.{-}\t\zs.*'), '{DELIMITER_CR}', '\r', 'g'))
+    try
+        sandbox silent! let dbiclient_bufmap = eval(substitute(matchstr(a:str, '\v^.{-}\t\zs.*'), '{DELIMITER_CR}', '\r', 'g'))
+    catch
+        return
+    endtry
     let tempfile = get(get(dbiclient_bufmap, 'data', {}), 'tempfile', '')
     "echom tempfile
     if !filereadable(tempfile)
@@ -5388,13 +5452,15 @@ endfunction
 function s:onFloatWinClosed(winid) abort
     " WinClosed は close 後に発火するため、winid が無効で getwinvar() が取れないことがある。
     " dbiclient フロート close の場合は closing_floats を立てて WinEnter による全閉じを抑制する。
+    let is_dbiclient = 0
     if s:isDbiclientFloatWinid(a:winid)
         let s:closing_floats = 1
+        let is_dbiclient = 1
     endif
-    call timer_start(0, {-> s:onFloatWinClosedPost(a:winid)})
+    call timer_start(0, {-> s:onFloatWinClosedPost(a:winid, is_dbiclient)})
 endfunction
 
-function s:onFloatWinClosedPost(winid) abort
+function s:onFloatWinClosedPost(winid, is_dbiclient) abort
     call s:unregisterFloatWinid(a:winid)
     " 閉じたウィンドウに対応するキャッシュをクリアし、
     " 優先順位に従って別フロートへフォーカスを移動する
@@ -5494,8 +5560,11 @@ function s:onFloatWinClosedPost(winid) abort
         call add(candidates, s:scratchFloatWinid)
     else
         " その他フロート閉 → 結果 → ScratchSQL
-        call add(candidates, s:resultFloatWinid)
-        call add(candidates, s:scratchFloatWinid)
+        " ただし、ここで移動するのは「dbiclientフロートが閉じられた場合」のみとする
+        if a:is_dbiclient
+            call add(candidates, s:resultFloatWinid)
+            call add(candidates, s:scratchFloatWinid)
+        endif
     endif
 
     for wid in candidates
@@ -5516,19 +5585,22 @@ function s:onFloatWinClosedPost(winid) abort
 
     " 明示的候補が全て無効な場合、残存する任意の dbiclient フロートへ移動する
     " (テーブル一覧など s:openFloatWindow で開いた汎用フロートをカバー)
-    for wid in s:getAllFloatWinids()
-        if wid != a:winid
-            try
-                if nvim_win_is_valid(wid)
-                    let s:closing_floats = 1
-                    call win_gotoid(wid)
-                    call timer_start(0, {-> execute('let s:closing_floats = 0')})
-                    return
-                endif
-            catch
-            endtry
-        endif
-    endfor
+    " これも「dbiclientフロートが閉じられた場合」のみ発動する
+    if a:is_dbiclient
+        for wid in s:getAllFloatWinids()
+            if wid != a:winid
+                try
+                    if nvim_win_is_valid(wid)
+                        let s:closing_floats = 1
+                        call win_gotoid(wid)
+                        call timer_start(0, {-> execute('let s:closing_floats = 0')})
+                        return
+                    endif
+                catch
+                endtry
+            endif
+        endfor
+    endif
 
     " 有効な移動先がなかった場合もフラグをリセットする
     call timer_start(0, {-> execute('let s:closing_floats = 0')})
@@ -6223,7 +6295,7 @@ function s:jobStart(cmdlist, opt) abort
 endfunction
 augroup dbiclient
     au!
-    autocmd WinNew,BufEnter * :call dbiclient#sethl(bufnr('%'))
+    autocmd WinNew,BufEnter * if mode() !~# '[iRs]' | call dbiclient#sethl(bufnr('%')) | endif
     autocmd VimLeavePre * :call dbiclient#jobStopAll()
 augroup END
 

@@ -115,9 +115,13 @@ pub fn table_info_via_sql(
                 conditions.push(format!("table_type = '{}'", kind));
             }
             let sql = format!(
-                "SELECT table_catalog AS \"TABLE_CAT\", table_schema AS \"TABLE_SCHEM\", \
-                 table_name AS \"TABLE_NAME\", table_type AS \"TABLE_TYPE\", NULL AS \"REMARKS\" \
-                 FROM information_schema.tables WHERE {} ORDER BY table_name",
+                "SELECT table_catalog AS \"TABLE_CAT\", t.table_schema AS \"TABLE_SCHEM\", \
+                 t.table_name AS \"TABLE_NAME\", t.table_type AS \"TABLE_TYPE\", \
+                 obj_description(c.oid, 'pg_class') AS \"REMARKS\" \
+                 FROM information_schema.tables t \
+                 LEFT JOIN pg_catalog.pg_class c ON c.relname = t.table_name \
+                 LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema \
+                 WHERE {} ORDER BY table_name",
                 conditions.join(" AND ")
             );
             conn.query(&sql, -1)
@@ -181,11 +185,12 @@ pub fn table_info_via_sql(
                 _ => "",
             };
             let sql = format!(
-                "SELECT NULL AS TABLE_CAT, OWNER AS TABLE_SCHEM, OBJECT_NAME AS TABLE_NAME, \
-                 OBJECT_TYPE AS TABLE_TYPE, NULL AS REMARKS \
-                 FROM ALL_OBJECTS \
-                 WHERE OBJECT_TYPE IN ('TABLE','VIEW','SYNONYM','MATERIALIZED VIEW') \
-                 AND {} {} ORDER BY OBJECT_NAME",
+                "SELECT NULL AS TABLE_CAT, ao.OWNER AS TABLE_SCHEM, ao.OBJECT_NAME AS TABLE_NAME, \
+                 ao.OBJECT_TYPE AS TABLE_TYPE, tc.COMMENTS AS REMARKS \
+                 FROM ALL_OBJECTS ao \
+                 LEFT JOIN ALL_TAB_COMMENTS tc ON tc.OWNER = ao.OWNER AND tc.TABLE_NAME = ao.OBJECT_NAME \
+                 WHERE ao.OBJECT_TYPE IN ('TABLE','VIEW','SYNONYM','MATERIALIZED VIEW') \
+                 AND {} {} ORDER BY ao.OBJECT_NAME",
                 obj_conditions.join(" AND "),
                 type_filter
             );

@@ -95,7 +95,7 @@ pub fn handle_request(
     );
 
     if let Err(e) = run_result {
-        let msg = clean_error_message(&e.to_string());
+        let msg = clean_error_message(&format!("{:#}", e));
         outputlog(&msg, Some(port));
         outputlines.push(msg.clone());
         // Oracle DBMS_OUTPUT
@@ -343,6 +343,10 @@ fn run_main(
 
             if table_join_nm.len() <= 20 {
                 for table_entry in &table_join_nm.clone() {
+                    // SQL 関数/予約語はテーブルとして検索しない
+                    if is_sql_non_table(table_entry) {
+                        continue;
+                    }
                     fetch_table_metadata(
                         db,
                         basedir,
@@ -401,6 +405,9 @@ fn run_main(
     // ---- column_info_data ----
     if data["column_info_data"].as_i64().unwrap_or(0) == 1 {
         let table = data["tableNm"].as_str().unwrap_or("").to_string();
+        if is_sql_non_table(&table) {
+            return Ok(());
+        }
         outputlog(&format!("SQL: COLUMN_INFO_DATA({})", table), Some(port));
         let schem_raw = data["schem"].as_str().unwrap_or("");
         let schem_str: Option<String> = if schem_raw.is_empty() {
@@ -417,13 +424,16 @@ fn run_main(
         // Oracle: シノニムを解決して実際のスキーマ・テーブルに絞り込む
         let user_schema_opt = if user_str.is_empty() { None } else { Some(user_str.as_str()) };
         let t_syn = Instant::now();
-        let (effective_table, effective_schema_list) = if let Some((actual_owner, actual_name)) =
-            resolve_oracle_synonym(db, &table, user_schema_opt, port)
-        {
-            outputlog(&format!("SYNONYM resolve done: {}ms", t_syn.elapsed().as_millis()), Some(port));
-            (actual_name, vec![actual_owner])
+        // システムテーブルの場合はシノニム解決をスキップ（高速化）
+        let (effective_table, effective_schema_list) = if !is_system_table(&table) {
+             if let Some((actual_owner, actual_name)) = resolve_oracle_synonym(db, &table, user_schema_opt, port) {
+                outputlog(&format!("SYNONYM resolve done: {}ms", t_syn.elapsed().as_millis()), Some(port));
+                (actual_name, vec![actual_owner])
+            } else {
+                outputlog(&format!("SYNONYM resolve done (not a synonym): {}ms", t_syn.elapsed().as_millis()), Some(port));
+                (table.clone(), schema_list.clone())
+            }
         } else {
-            outputlog(&format!("SYNONYM resolve done (not a synonym): {}ms", t_syn.elapsed().as_millis()), Some(port));
             (table.clone(), schema_list.clone())
         };
         outputlog(&format!("COLUMN_INFO_DATA: effective_table={} schemas={:?}", effective_table, effective_schema_list), Some(port));
@@ -442,6 +452,9 @@ fn run_main(
     // ---- column_info ----
     if data["column_info"].as_i64().unwrap_or(0) == 1 {
         let table = data["tableNm"].as_str().unwrap_or("").to_string();
+        if is_sql_non_table(&table) {
+            return Ok(());
+        }
         let schem_raw = data["schem"].as_str().unwrap_or("");
         let schem_str: Option<String> = if schem_raw.is_empty() {
             if user_str.is_empty() { None } else { Some(user_str.clone()) }
@@ -454,10 +467,12 @@ fn run_main(
 
         // Oracle: シノニムを解決して実際のスキーマ・テーブルに絞り込む
         let user_schema_opt = if user_str.is_empty() { None } else { Some(user_str.as_str()) };
-        let (effective_table, effective_schema_list) = if let Some((actual_owner, actual_name)) =
-            resolve_oracle_synonym(db, &table, user_schema_opt, port)
-        {
-            (actual_name, vec![actual_owner])
+        let (effective_table, effective_schema_list) = if !is_system_table(&table) {
+            if let Some((actual_owner, actual_name)) = resolve_oracle_synonym(db, &table, user_schema_opt, port) {
+                (actual_name, vec![actual_owner])
+            } else {
+                (table.clone(), schema_list.clone())
+            }
         } else {
             (table.clone(), schema_list.clone())
         };
@@ -472,9 +487,12 @@ fn run_main(
             }
 
             // PK 取得
-            let pk = fetch_pk_cached(db, basedir, &effective_table, schem_str.as_deref(), schem2_opt, port);
-            if !pk.is_empty() {
-                result["primary_key"] = json!(pk);
+            // システムテーブルは PK を持たない/遅いのでスキップ
+            if !is_system_table(&effective_table) {
+                let pk = fetch_pk_cached(db, basedir, &effective_table, schem_str.as_deref(), schem2_opt, port);
+                if !pk.is_empty() {
+                    result["primary_key"] = json!(pk);
+                }
             }
 
             // column_info カーソル → exec_sql
@@ -620,7 +638,7 @@ fn fetch_table_metadata(
         }
 
         // PK 取得
-        if db.primary_key_flg {
+        if db.primary_key_flg && !is_system_schema(schem2_opt) {
             let pk = fetch_pk_cached(db, basedir, &resolved_table, user_schem, schem2_opt, port);
             if let Value::Array(arr) = &mut result["primary_key"] {
                 for k in &pk {
@@ -669,7 +687,7 @@ fn fetch_full_metadata(
         }
     }
 
-    if fetch_pk {
+    if fetch_pk && !is_system_schema(schem2) && !is_system_table(table) {
         let t1 = Instant::now();
         let pk = fetch_pk_cached(db, basedir, table, user_schem, schem2, port);
         outputlog(&format!("META pk({}/{:?}): {}ms rows={}", table, schem2, t1.elapsed().as_millis(), pk.len()), Some(port));
@@ -917,4 +935,33 @@ fn cursor_to_map_rows(cursor: &mut Box<dyn crate::db::StmtCursor>) -> Vec<serde_
         result.push(map);
     }
     result
+}
+
+/// FROM TABLE(...) など SQL 関数・予約語として使われる名前を返す。
+/// これらはテーブルとして DB に問い合わせない。
+fn is_sql_non_table(name: &str) -> bool {
+    const NON_TABLES: &[&str] = &[
+        "TABLE", "DUAL", "LATERAL", "XMLTABLE", "JSON_TABLE",
+        "OPENJSON", "OPENROWSET", "OPENQUERY", "CHANGETABLE",
+        "GENERATE_SERIES", "UNNEST",
+    ];
+    let upper = name.to_uppercase();
+    NON_TABLES.iter().any(|&kw| kw == upper)
+}
+
+/// PK フェッチをスキップすべきシステムスキーマかどうかを判定する。
+/// Oracle の SYS 系スキーマに属する V$/GV$ ビュー等は PK を持たず、
+/// all_constraints の問い合わせが非常に遅いためスキップする。
+fn is_system_schema(schema: Option<&str>) -> bool {
+    schema.map(|s| {
+        let su = s.to_uppercase();
+        matches!(su.as_str(), "SYS" | "SYSTEM" | "XDB" | "DBSNMP" | "OUTLN" | "WMSYS" | "MDSYS")
+    }).unwrap_or(false)
+}
+
+fn is_system_table(name: &str) -> bool {
+    let upper = name.to_uppercase();
+    upper.starts_with("V$") || upper.starts_with("GV$")
+    || upper.starts_with("ALL_") || upper.starts_with("DBA_") || upper.starts_with("USER_")
+    || upper.starts_with("SYS.")
 }

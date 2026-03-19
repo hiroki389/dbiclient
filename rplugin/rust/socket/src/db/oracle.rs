@@ -19,7 +19,7 @@ pub fn connect(dsn_body: &str, user: &str, pass: &str, _encoding: &str) -> Resul
 
 fn run_query(conn: &Connection, sql: &str, max_rows: i64) -> Result<Box<dyn StmtCursor>> {
     let mut stmt = conn.statement(sql).build().context("Oracle prepare")?;
-    let rows_obj = stmt.query(&[]).context("Oracle query")?;
+    let rows_obj = stmt.query(&[])?;
     let columns: Vec<String> = rows_obj
         .column_info()
         .iter()
@@ -51,7 +51,7 @@ impl DbConn for OracleConn {
     fn execute(&mut self, sql: &str) -> Result<i64> {
         let mut stmt = self.conn.statement(sql).build()
             .with_context(|| format!("Oracle prepare: {}", &sql[..sql.len().min(80)]))?;
-        stmt.execute(&[]).with_context(|| format!("Oracle execute: {}", &sql[..sql.len().min(80)]))?;
+        stmt.execute(&[])?;
         let n = stmt.row_count().unwrap_or(0);
         Ok(n as i64)
     }
