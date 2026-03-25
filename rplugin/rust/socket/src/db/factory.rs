@@ -166,10 +166,10 @@ pub fn table_info_via_sql(
         DbType::Oracle => {
             let mut obj_conditions = vec!["1=1".to_string()];
             if let Some(s) = schema {
-                obj_conditions.push(format!("OWNER = '{}'", s.to_uppercase().replace('\'', "''")));
+                obj_conditions.push(format!("ao.OWNER = '{}'", s.to_uppercase().replace('\'', "''")));
             }
             if let Some(t) = table {
-                obj_conditions.push(format!("OBJECT_NAME LIKE '{}'", t.to_uppercase().replace('\'', "''")));
+                obj_conditions.push(format!("ao.OBJECT_NAME LIKE '{}'", t.to_uppercase().replace('\'', "''")));
             }
             // table_type フィルタ: TABLE/VIEW/SYNONYM/MATERIALIZED VIEW に対応
             let type_filter = match table_type {
