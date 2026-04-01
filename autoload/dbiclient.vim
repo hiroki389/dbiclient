@@ -42,6 +42,7 @@ let s:resultFloatWinidForRestore = -1  " 高さ復元対象の結果フロート
 " vsFloat を閉じたときに結果フロートを復元するためのデータ
 " {winid, orig_col, orig_width, orig_height, orig_row}
 let s:vsFloatRestoreData = {}
+let s:modalBackdropWinid = -1   " モーダル時の背景用 backdrop フロート
 let s:msg = {
             \'EO01': 'Buffer not found.',
             \'EO02': 'File not found: ($1).',
@@ -57,6 +58,10 @@ let s:msg = {
             \'IO22': 'SQL is already running. Please wait.',
             \'EO23': 'Display limit reached (1000 rows). Narrow the condition.',
             \}
+
+if has('nvim')
+    silent! highlight default DBIClientBackdrop guifg=NONE guibg=#000000 ctermfg=NONE ctermbg=0 blend=65
+endif
 
 let s:tab_placefolder = '\V<<#TAB#>>'
 
@@ -140,6 +145,67 @@ function dbiclient#afterConnected() abort
     else
         call s:userTablesMain(s:getCurrentPort())
     endif
+endfunction
+
+function s:closeModalBackdrop() abort
+    if !has('nvim') | return | endif
+    if s:modalBackdropWinid != -1
+        try
+            if nvim_win_is_valid(s:modalBackdropWinid)
+                noautocmd call nvim_win_close(s:modalBackdropWinid, 0)
+            endif
+        catch
+        endtry
+    endif
+    let s:modalBackdropWinid = -1
+endfunction
+
+function s:ensureModalBackdrop() abort
+    if !has('nvim') || !exists('*nvim_open_win') | return -1 | endif
+    if s:modalBackdropWinid != -1
+        try
+            if nvim_win_is_valid(s:modalBackdropWinid)
+                call nvim_win_set_config(s:modalBackdropWinid, {
+                    \ 'relative': 'editor',
+                    \ 'row': 0,
+                    \ 'col': 0,
+                    \ 'width': max([&columns, 1]),
+                    \ 'height': max([&lines, 1]),
+                    \ })
+                return s:modalBackdropWinid
+            endif
+        catch
+        endtry
+        let s:modalBackdropWinid = -1
+    endif
+
+    let bnr = nvim_create_buf(0, 1)
+    call nvim_buf_set_name(bnr, '[DBIClientBackdrop]')
+    call setbufvar(bnr, '&buftype', 'nofile')
+    call setbufvar(bnr, '&buflisted', 0)
+    call setbufvar(bnr, '&swapfile', 0)
+    call setbufvar(bnr, '&modifiable', 0)
+    call setbufvar(bnr, '&filetype', 'dbiclient')
+
+    let opts = {
+        \ 'relative': 'editor',
+        \ 'row': 0,
+        \ 'col': 0,
+        \ 'width': max([&columns, 1]),
+        \ 'height': max([&lines, 1]),
+        \ 'style': 'minimal',
+        \ 'focusable': v:false,
+        \ 'noautocmd': v:true,
+        \ 'zindex': 50,
+        \ 'border': 'none',
+        \ }
+    let winid = nvim_open_win(bnr, v:false, opts)
+    call setwinvar(winid, 'dbiclient_backdrop', 1)
+    call setwinvar(winid, 'dbiclient_float', 0)
+    call setwinvar(winid, 'dbiclient_modal_backdrop', 1)
+    call nvim_win_set_option(winid, 'winhl', 'Normal:DBIClientBackdrop')
+    let s:modalBackdropWinid = winid
+    return winid
 endfunction
 
 function dbiclient#joblist() abort
@@ -2065,7 +2131,11 @@ endfunction
 
 function s:dBCommandMain(command) abort
     let port = s:getCurrentPort()
-    return s:dBCommand(port, a:command)
+    let ret = s:dBCommand(port, a:command)
+    if type(ret) ==# v:t_dict && get(ret, 'status', 9) !=# 1
+        throw get(ret, 'message', 'dbiclient command failed')
+    endif
+    return ret
 endfunction
 
 function s:dBCommandAsync(command, callback, port) abort
@@ -2227,8 +2297,21 @@ function s:cb_do(ch, dict) abort
 
         let sql = substitute(s:getSqlLine(string(get(a:dict.data, 'do', ''))), '\t', ' ', 'g')
         let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
-        let dbiclient_bufmap = a:dict
-        call add(bufVals, string(dbiclient_bufmap))
+        let history_dict = {
+                    \ 'status': get(a:dict, 'status', 9),
+                    \ 'message': get(a:dict, 'message', ''),
+                    \ 'data': {
+                    \     'do': get(a:dict.data, 'do', []),
+                    \     'sql': get(a:dict.data, 'sql', ''),
+                    \     'reloadBufname': get(a:dict.data, 'reloadBufname', ''),
+                    \     'reloadBufnr': get(a:dict.data, 'reloadBufnr', -1),
+                    \     'tableNm': get(a:dict.data, 'tableNm', ''),
+                    \     'tableJoinNm': get(a:dict.data, 'tableJoinNm', ''),
+                    \     'tableJoinNmWithAs': get(a:dict.data, 'tableJoinNmWithAs', ''),
+                    \     'limitrows': get(a:dict.data, 'limitrows', -1),
+                    \   }
+                    \ }
+        call add(bufVals, string(history_dict))
 
         "let lastnum = str2nr(get(s:history_data[path], -1, '')->matchstr('\v^[0-9]+\ze ')) + 1
         "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
@@ -4673,6 +4756,7 @@ function s:openVsFloat(bufname) abort
     if !has('nvim') || !exists('*nvim_open_win')
         return -1
     endif
+    call s:ensureModalBackdrop()
 
     " 既に vsFloat が開いていれば中身だけ差し替える
     if s:vsFloatWinid != -1
@@ -4748,6 +4832,7 @@ function s:openVsFloat(bufname) abort
         let s:vsFloatWinid = winid
         let s:vsFloatRestoreData = {}
         exe 'nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>'
+        call win_gotoid(winid)
         return bnr
     endif
 
@@ -4798,6 +4883,7 @@ function s:openVsFloat(bufname) abort
         \ '<Cmd>call <SID>restoreResultFloat(%d, %d, %d, %d, %d)<CR>',
         \ orig_col, orig_width, orig_height, orig_row, s:resultFloatWinid)
     exe 'nnoremap <buffer> <silent> <nowait> q ' . restore_cmd
+    call win_gotoid(winid)
 
     return bnr
 endfunction
@@ -4835,9 +4921,9 @@ function s:openFloatWindow(bufname, ...) abort
     if !has('nvim') || !exists('*nvim_open_win')
         return [-1, -1, -1]
     endif
-    let focus      = get(a:000, 0, 0)
     let size_opts  = get(a:000, 1, {})
     let cbufnr     = bufnr('%')
+    call s:ensureModalBackdrop()
 
     let tw = &columns
     let th = &lines
@@ -4866,9 +4952,7 @@ function s:openFloatWindow(bufname, ...) abort
                     if nvim_win_get_buf(winid) == bnr && get(nvim_win_get_config(winid), 'relative', '') !=# ''
                         call s:registerFloatWinid(winid)
                         call s:setFloatNavMapsForBuf(bnr)
-                        if focus
-                            call win_gotoid(winid)
-                        endif
+                        call win_gotoid(winid)
                         return [bnr, cbufnr, winid]
                     endif
                 catch
@@ -4896,13 +4980,7 @@ function s:openFloatWindow(bufname, ...) abort
     call setwinvar(winid, 'dbiclient_float', 1)
     call s:registerFloatWinid(winid)
     call s:setFloatNavMapsForBuf(bnr)
-
-    if !focus
-        let orig_wid = s:f.getwidCurrentTab(cbufnr)
-        if orig_wid != -1
-            noautocmd call win_gotoid(orig_wid)
-        endif
-    endif
+    call win_gotoid(winid)
 
     return [bnr, cbufnr, winid]
 endfunction
@@ -4939,6 +5017,7 @@ function s:openMainFloat(tab_type, bufname, focus) abort
         return [-1, -1, -1]
     endif
     let cbufnr = bufnr('%')
+    call s:ensureModalBackdrop()
 
     " バッファ準備
     let bnr = bufnr(a:bufname)
@@ -4973,16 +5052,9 @@ function s:openMainFloat(tab_type, bufname, focus) abort
                 call setwinvar(s:mainFloatWinid, 'dbiclient_float', 1)
                 call s:registerFloatWinid(s:mainFloatWinid)
                 call s:setFloatNavMapsForBuf(bnr)
-                if a:focus
-                    let s:closing_floats = 1
-                    call win_gotoid(s:mainFloatWinid)
-                    call timer_start(0, {-> execute('let s:closing_floats = 0')})
-                else
-                    let ow = s:f.getwidCurrentTab(cbufnr)
-                    if ow != -1
-                        noautocmd call win_gotoid(ow)
-                    endif
-                endif
+                let s:closing_floats = 1
+                call win_gotoid(s:mainFloatWinid)
+                call timer_start(0, {-> execute('let s:closing_floats = 0')})
                 let s:resultFloatWinid = s:mainFloatWinid
                 return [bnr, cbufnr, s:mainFloatWinid]
             endif
@@ -5020,13 +5092,9 @@ function s:openMainFloat(tab_type, bufname, focus) abort
 
     let s:mainFloatWinid   = winid
     let s:resultFloatWinid = winid
-
-    if !a:focus
-        let ow = s:f.getwidCurrentTab(cbufnr)
-        if ow != -1
-            noautocmd call win_gotoid(ow)
-        endif
-    endif
+    let s:closing_floats = 1
+    call win_gotoid(winid)
+    call timer_start(0, {-> execute('let s:closing_floats = 0')})
 
     return [bnr, cbufnr, winid]
 endfunction
@@ -5106,6 +5174,7 @@ function s:openScratchBuffer() abort
     if !has('nvim') || !exists('*nvim_open_win')
         return -1
     endif
+    call s:ensureModalBackdrop()
     let bufname = 'ScratchSQL'
     let bnr = bufnr(bufname)
     if bnr == -1
@@ -5583,6 +5652,10 @@ function s:onFloatWinClosedPost(winid, is_dbiclient) abort
         endif
     endfor
 
+    if empty(s:getAllFloatWinids())
+        call s:closeModalBackdrop()
+    endif
+
     " 明示的候補が全て無効な場合、残存する任意の dbiclient フロートへ移動する
     " (テーブル一覧など s:openFloatWindow で開いた汎用フロートをカバー)
     " これも「dbiclientフロートが閉じられた場合」のみ発動する
@@ -5760,6 +5833,7 @@ function s:closeAllFloats() abort
     let s:vsFloatWinid      = -1
     let s:mainFloatWinid    = -1
     let s:mainFloatCurTab   = ''
+    call s:closeModalBackdrop()
 endfunction
 
 " WinEnter: 非フロートに移動したら全フロートを閉じる
@@ -5768,6 +5842,7 @@ let s:closing_floats = 0
 function s:onWinEnterCloseFloats() abort
     if !has('nvim') || s:closing_floats | return | endif
     let winid = win_getid()
+    let should_close_backdrop = 0
     try
         let cfg = nvim_win_get_config(winid)
         if cfg.relative !=# ''
@@ -5793,9 +5868,13 @@ function s:onWinEnterCloseFloats() abort
         let s:resultFloatWinid  = -1
         let s:scratchFloatWinid = -1
         let s:vsFloatWinid      = -1
+        let should_close_backdrop = 1
     finally
         let s:closing_floats = 0
     endtry
+    if should_close_backdrop
+        call s:closeModalBackdrop()
+    endif
 endfunction
 
 function s:zonbie()

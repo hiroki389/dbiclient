@@ -184,6 +184,7 @@ command! DBIConnODBC call dbiclient#connect('ODBC')
 ## 🖥 Float Window UI *(Neovim only)*
 
 In Neovim, results, condition editing, and SQL generation all use floating windows.
+When a float opens, focus always moves to it and the background is dimmed with a modal backdrop.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
