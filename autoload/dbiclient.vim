@@ -179,8 +179,18 @@ function s:ensureModalBackdrop() abort
         let s:modalBackdropWinid = -1
     endif
 
-    let bnr = nvim_create_buf(0, 1)
-    call nvim_buf_set_name(bnr, '[DBIClientBackdrop]')
+    let bnr = bufnr('[DBIClientBackdrop]')
+    if bnr != -1 && bufexists(bnr)
+        if exists('*nvim_buf_is_valid') && !nvim_buf_is_valid(bnr)
+            let bnr = -1
+        endif
+    else
+        let bnr = -1
+    endif
+    if bnr == -1
+        let bnr = nvim_create_buf(0, 1)
+        call nvim_buf_set_name(bnr, '[DBIClientBackdrop]')
+    endif
     call setbufvar(bnr, '&buftype', 'nofile')
     call setbufvar(bnr, '&buflisted', 0)
     call setbufvar(bnr, '&swapfile', 0)
