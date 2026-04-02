@@ -25,13 +25,13 @@ let s:hardparseDict = {}
 let s:lastparse = {}
 let s:shadowpass = ''
 " ─── 統合メインフロートウィンドウ ─────────────────────────────────────────────
-" Tables / Result / History / Jobs をひとつのフロートウィンドウで管理する。
+" Tables / Result / Scratch / History / Jobs / Log をひとつのフロートウィンドウで管理する。
 " ウィンドウタイトルに擬似タブラインを描画してビューを切り替える。
 let s:mainFloatWinid   = -1   " 統合メインフロートウィンドウ ID
 let s:mainFloatCurTab  = ''   " 現在表示中のタブ種別
-let s:mainFloatTabBufs = {}   " タブ種別 → bufnr  {'tables':N,'result':N,'history':N,'jobs':N}
-let s:main_tab_order   = ['tables', 'result', 'history', 'jobs', 'log']
-let s:main_tab_labels  = {'tables': 'Tables', 'result': 'Result', 'history': 'History', 'jobs': 'Jobs', 'log': 'Log'}
+let s:mainFloatTabBufs = {}   " タブ種別 → bufnr  {'tables':N,'result':N,'scratch':N,'history':N,'jobs':N,'log':N}
+let s:main_tab_order   = ['tables', 'result', 'scratch', 'history', 'jobs', 'log']
+let s:main_tab_labels  = {'tables': 'Tables', 'result': 'Result', 'scratch': 'Scratch', 'history': 'History', 'jobs': 'Jobs', 'log': 'Log'}
 
 " 共有フロートウィンドウ ID (-1 = 未開またはクローズ済み)
 let s:resultFloatWinid  = -1   " = s:mainFloatWinid (常に同期)
@@ -2700,7 +2700,11 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
 
         let sql = substitute(s:getSqlLine(get(a:dict.data, 'sql', '')), '\t', ' ', 'g')
         let sql = (strdisplaywidth(sql) > 300 ? strcharpart(sql,0,300) .. '...' : sql) .. "\t"
-        call add(bufVals, string(dbiclient_bufmap))
+        let history_bufmap = deepcopy(dbiclient_bufmap, 1)
+        if has_key(history_bufmap, 'GetData')
+            call remove(history_bufmap, 'GetData')
+        endif
+        call add(bufVals, string(history_bufmap))
 
         "let lastnum = str2nr(get(s:history_data[path], -1, '')->matchstr('\v^[0-9]+\ze ')) + 1
         "let ww = [printf('%04d', lastnum) .. ' ' .. datetime .. 'DSN:' .. connStr .. ' SQL:' .. sql .. ' ' .. join(bufVals, '{DELIMITER_CR}')]
@@ -4986,13 +4990,34 @@ function s:openFloatWindow(bufname, ...) abort
 endfunction
 
 " ─── 統合メインフロートウィンドウ (タブUI) ─────────────────────────────────────
-" Tables / Result / History / Jobs を1つのフロートで管理する。
+" Tables / Result / Scratch / History / Jobs / Log を1つのフロートで管理する。
 " ウィンドウタイトルにハイライト付きタブインジケーターを描画する。
-" Scratch (ScratchSQL) と vsFloat (条件検索) は現状維持の分割表示。
+
+function s:ensureScratchMainTab() abort
+    let bufname = 'ScratchSQL'
+    let bnr = get(s:mainFloatTabBufs, 'scratch', -1)
+    if bnr != -1 && bufexists(bnr)
+        return bnr
+    endif
+    let bnr = bufnr(bufname)
+    if bnr == -1
+        let bnr = nvim_create_buf(0, 1)
+        call nvim_buf_set_name(bnr, bufname)
+    endif
+    call setbufvar(bnr, '&buftype',   'nofile')
+    call setbufvar(bnr, '&buflisted', 0)
+    call setbufvar(bnr, '&swapfile',  0)
+    call setbufvar(bnr, '&wrap',      0)
+    call setbufvar(bnr, '&filetype',  'sql')
+    call s:setMainFloatTabMaps(bnr)
+    let s:mainFloatTabBufs['scratch'] = bnr
+    return bnr
+endfunction
 
 " タイトルのハイライストリストを構築する (nvim_open_win の title に渡す)
 " 例: [ [' Tables ', 'TabLineSel'], ['│','TabLineFill'], [' Result ','TabLine'] ]
 function s:mainFloatTitle(cur_tab) abort
+    call s:ensureScratchMainTab()
     let parts = []
     for tab in s:main_tab_order
         if has_key(s:mainFloatTabBufs, tab) && bufexists(get(s:mainFloatTabBufs, tab, -1))
@@ -5008,7 +5033,7 @@ function s:mainFloatTitle(cur_tab) abort
 endfunction
 
 " メインフロートに tab_type のバッファを表示する
-" tab_type: 'tables' | 'result' | 'history' | 'jobs'
+" tab_type: 'tables' | 'result' | 'scratch' | 'history' | 'jobs' | 'log'
 " bufname:  バッファ名
 " focus:    1=フロートにフォーカス移動, 0=元のウィンドウに戻る
 " 戻り値: [bufnr, cbufnr, winid]  winid=-1 は非フロート
@@ -5020,24 +5045,33 @@ function s:openMainFloat(tab_type, bufname, focus) abort
     call s:ensureModalBackdrop()
 
     " バッファ準備
-    let bnr = bufnr(a:bufname)
-    if bnr == -1
-        let bnr = nvim_create_buf(0, 1)
-        call nvim_buf_set_name(bnr, a:bufname)
+    if a:tab_type ==# 'scratch'
+        let bnr = s:ensureScratchMainTab()
+    else
+        let bnr = bufnr(a:bufname)
+        if bnr == -1
+            let bnr = nvim_create_buf(0, 1)
+            call nvim_buf_set_name(bnr, a:bufname)
+        endif
+        call setbufvar(bnr, '&buftype',   'nofile')
+        call setbufvar(bnr, '&buflisted', 0)
+        call setbufvar(bnr, '&swapfile',  0)
+        call setbufvar(bnr, '&wrap',      0)
+        call setbufvar(bnr, '&filetype',  'dbiclient')
     endif
-    call setbufvar(bnr, '&buftype',   'nofile')
-    call setbufvar(bnr, '&buflisted', 0)
-    call setbufvar(bnr, '&swapfile',  0)
-    call setbufvar(bnr, '&wrap',      0)
-    call setbufvar(bnr, '&filetype',  'dbiclient')
 
     " タブ登録・カレントタブ更新
     let s:mainFloatTabBufs[a:tab_type] = bnr
     let s:mainFloatCurTab = a:tab_type
 
     " バッファローカルのキーマップを設定 (q=閉じる, gt/gT=タブ切り替え)
-    call nvim_buf_set_keymap(bnr, 'n', 'q', '<Cmd>close<CR>',
-        \ {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+    if a:tab_type ==# 'scratch'
+        call nvim_buf_set_keymap(bnr, 'n', 'q', '<Cmd>call <SID>mainFloatCloseScratch()<CR>',
+            \ {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+    else
+        call nvim_buf_set_keymap(bnr, 'n', 'q', '<Cmd>close<CR>',
+            \ {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
+    endif
     call s:setMainFloatTabMaps(bnr)
 
     " 既存メインフロートが有効ならバッファを切り替えるだけ
@@ -5152,6 +5186,14 @@ function s:mainFloatSwitchToTab(tab_type) abort
     endtry
 endfunction
 
+function s:mainFloatCloseScratch() abort
+    if s:mainFloatCurTab ==# 'scratch' && has_key(s:mainFloatTabBufs, 'result') && bufexists(s:mainFloatTabBufs.result)
+        call s:mainFloatSwitchToTab('result')
+        return
+    endif
+    close
+endfunction
+
 " ─── 共有結果フロートウィンドウ ──────────────────────────────────────────────
 " SELECT/UPDATE 等の結果バッファはすべてメインフロートに表示する。
 " 戻り値: [bufnr, cbufnr]  (-1 なら非フロート)
@@ -5166,115 +5208,19 @@ function s:openResultFloat(bufname) abort
     return [-1, -1]
 endfunction
 
-" ─── ScratchSQL フロートウィンドウ ───────────────────────────────────────────
-" INSERT/UPDATE/DELETE 文生成はすべてこの1バッファ + 1フロートに集約する。
-" 結果フロートの下に表示する。
-" 戻り値: bufnr (フロートにフォーカス移動済み)  -1 なら非フロート
+" ─── ScratchSQL タブ ────────────────────────────────────────────────────────
+" INSERT/UPDATE/DELETE 文生成はすべてこの1バッファに集約する。
+" メインフロートの scratch タブへ切り替える。
+" 戻り値: bufnr (タブにフォーカス移動済み)  -1 なら非フロート
 function s:openScratchBuffer() abort
     if !has('nvim') || !exists('*nvim_open_win')
         return -1
     endif
-    call s:ensureModalBackdrop()
-    let bufname = 'ScratchSQL'
-    let bnr = bufnr(bufname)
-    if bnr == -1
-        let bnr = nvim_create_buf(0, 1)
-        call nvim_buf_set_name(bnr, bufname)
+    let [bnr, _cbnr, winid] = s:openMainFloat('scratch', 'ScratchSQL', 1)
+    if winid != -1
+        return bnr
     endif
-    call setbufvar(bnr, '&buftype',   'nofile')
-    call setbufvar(bnr, '&buflisted', 0)
-    call setbufvar(bnr, '&swapfile',  0)
-    call setbufvar(bnr, '&wrap',      0)
-    call setbufvar(bnr, '&filetype',  'sql')
-    call nvim_buf_set_keymap(bnr, 'n', 'q', '<Cmd>close<CR>', {'silent': v:true, 'nowait': v:true, 'noremap': v:true})
-
-    " 既存 ScratchSQL フロートが有効ならフォーカス移動のみ
-    if s:scratchFloatWinid != -1
-        try
-            if nvim_win_is_valid(s:scratchFloatWinid)
-                call nvim_win_set_buf(s:scratchFloatWinid, bnr)
-                call s:registerFloatWinid(s:scratchFloatWinid)
-                call s:setFloatNavMapsForBuf(bnr)
-                call win_gotoid(s:scratchFloatWinid)
-                return bnr
-            endif
-        catch
-        endtry
-        let s:scratchFloatWinid = -1
-    endif
-
-    " 配置計算: 結果フロートと上下に並べる
-    let tw = &columns
-    let th = &lines
-    let fw = float2nr(tw * g:dbiclient_float_window_width)
-    let col = float2nr((tw - fw) / 2)
-    let gap = 1
-
-    " result float が有効なら上下分割レイアウトを計算
-    if s:resultFloatWinid != -1
-        try
-            if nvim_win_is_valid(s:resultFloatWinid)
-                let cfg = nvim_win_get_config(s:resultFloatWinid)
-                let orig_row  = float2nr(type(cfg.row)    == v:t_float ? cfg.row    : cfg.row    + 0.0)
-                let orig_h    = float2nr(type(cfg.height) == v:t_float ? cfg.height : cfg.height + 0.0)
-                let orig_col  = float2nr(type(cfg.col)    == v:t_float ? cfg.col    : cfg.col    + 0.0)
-                let orig_fw   = float2nr(type(cfg.width)  == v:t_float ? cfg.width  : cfg.width  + 0.0)
-                let total     = orig_h
-                let fh_scratch = max([float2nr(total * 0.35), 5])
-                let fh_result  = total - fh_scratch - gap - 2  " 枠分2
-                if fh_result < 3
-                    let fh_result = 3
-                    let fh_scratch = total - fh_result - gap - 2
-                    if fh_scratch < 3
-                        let fh_scratch = 3
-                    endif
-                endif
-                " 結果フロートを上部に縮小（高さのみ変更）
-                let new_cfg = {'relative': 'editor', 'width': orig_fw, 'height': fh_result, 'row': orig_row, 'col': orig_col}
-                call nvim_win_set_config(s:resultFloatWinid, new_cfg)
-                " Scratch は結果フロートのすぐ下
-                let row        = orig_row + fh_result + gap + 2
-                let col_scratch = orig_col
-                let fw         = orig_fw
-                " ScratchSQL を閉じたら結果フロートを元の高さに戻す autocmd
-                let s:resultFloatOrigHeight = orig_h
-                let s:resultFloatWinidForRestore = s:resultFloatWinid
-            else
-                let s:resultFloatWinid = -1
-                let fh_scratch  = float2nr(th * g:dbiclient_float_window_height)
-                let row         = float2nr((th - fh_scratch) / 2)
-                let col_scratch = col
-            endif
-        catch
-            let fh_scratch = float2nr(th * g:dbiclient_float_window_height)
-            let row        = float2nr((th - fh_scratch) / 2)
-            let col_scratch = col
-        endtry
-    else
-        let fh_scratch  = float2nr(th * g:dbiclient_float_window_height)
-        let row         = float2nr((th - fh_scratch) / 2)
-        let col_scratch = col
-    endif
-
-    let opts = {
-        \ 'relative': 'editor',
-        \ 'width': fw,
-        \ 'height': fh_scratch,
-        \ 'row': row,
-        \ 'col': col_scratch,
-        \ 'style': 'minimal',
-        \ 'border': 'rounded',
-        \ 'title': ' ScratchSQL ',
-        \ 'title_pos': 'center',
-        \ }
-    let winid = nvim_open_win(bnr, 1, opts)
-    setlocal buftype=nofile nobuflisted noswapfile nowrap filetype=sql
-    nnoremap <buffer> <silent> <nowait> q <Cmd>close<CR>
-    call setwinvar(winid, 'dbiclient_float', 1)
-    call s:registerFloatWinid(winid)
-    call s:setFloatNavMapsForBuf(bnr)
-    let s:scratchFloatWinid = winid
-    return bnr
+    return -1
 endfunction
 
 " ScratchSQL バッファに内容を追記するヘルパー
@@ -5298,8 +5244,8 @@ function s:appendToScratch(lines) abort
     endif
     call s:appendbufline(bnr, '$', a:lines)
     " 末尾へカーソル移動
-    if nvim_win_is_valid(get(s:, 'scratchFloatWinid', -1))
-        call nvim_win_set_cursor(s:scratchFloatWinid, [len(getbufline(bnr, 1, '$')), 0])
+    if nvim_win_is_valid(get(s:, 'mainFloatWinid', -1)) && winbufnr(s:mainFloatWinid) ==# bnr
+        call nvim_win_set_cursor(s:mainFloatWinid, [len(getbufline(bnr, 1, '$')), 0])
     endif
 endfunction
 
