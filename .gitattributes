@@ -1,0 +1,11 @@
+# Root attributes for repository
+# Normalize line endings for text files
+* text=auto
+
+# Keep CRLF for Windows scripts
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Force LF for common source file types
+*.vim text eol=lf
+*.rs text eol=lf

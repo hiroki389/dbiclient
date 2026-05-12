@@ -5223,15 +5223,14 @@ endfunction
 " メインフロートの scratch タブへ切り替える。
 " 戻り値: bufnr (タブにフォーカス移動済み)  -1 なら非フロート
 function s:openScratchBuffer() abort
-    if !get(g:, 'dbiclient_float_window', 1)
-        return -1
-    endif
     if !has('nvim') || !exists('*nvim_open_win')
         return -1
     endif
-    let [bnr, _cbnr, winid] = s:openMainFloat('scratch', 'ScratchSQL', 1)
-    if winid != -1
-        return bnr
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        let [bnr, _cbnr, winid] = s:openMainFloat('scratch', 'ScratchSQL', 1)
+        if winid != -1
+            return bnr
+        endif
     endif
     return -1
 endfunction
@@ -5257,8 +5256,10 @@ function s:appendToScratch(lines) abort
     endif
     call s:appendbufline(bnr, '$', a:lines)
     " 末尾へカーソル移動
-    if nvim_win_is_valid(get(s:, 'mainFloatWinid', -1)) && winbufnr(s:mainFloatWinid) ==# bnr
-        call nvim_win_set_cursor(s:mainFloatWinid, [len(getbufline(bnr, 1, '$')), 0])
+    if get(g:, 'dbiclient_float_window', 1) && has('nvim')
+        if nvim_win_is_valid(get(s:, 'mainFloatWinid', -1)) && winbufnr(s:mainFloatWinid) ==# bnr
+            call nvim_win_set_cursor(s:mainFloatWinid, [len(getbufline(bnr, 1, '$')), 0])
+        endif
     endif
 endfunction
 
