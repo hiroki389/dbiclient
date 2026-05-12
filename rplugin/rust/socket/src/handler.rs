@@ -60,6 +60,14 @@ impl DbState {
     }
 }
 
+fn safe_sql_preview(s: &str, max_bytes: usize) -> &str {
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// メインのリクエスト処理 (Perl の rutine 相当)
 /// 返り値: (result JSON object, exit_flag)
 pub fn handle_request(
@@ -216,7 +224,7 @@ fn run_main(
             let loop_start = Instant::now();
 
             outputlog(&format!("UPDATE START({})", db.user), Some(port));
-            outputlog(&format!("SQL: {}", &lsql[..lsql.len().min(100)]), Some(port));
+            outputlog(&format!("SQL: {}", safe_sql_preview(&lsql, 100)), Some(port));
 
             let conn = db.conn.as_mut().unwrap();
             conn.dbms_output_enable(1_000_000);
@@ -289,7 +297,7 @@ fn run_main(
             let conn = db.conn.as_mut().unwrap();
             conn.dbms_output_enable(1_000_000);
 
-            outputlog(&format!("SQL: {}", &lsql[..lsql.len().min(100)]), Some(port));
+            outputlog(&format!("SQL: {}", safe_sql_preview(&lsql, 100)), Some(port));
 
             let sql_start = Instant::now();
             let limitrows = db.limitrows;
@@ -964,4 +972,18 @@ fn is_system_table(name: &str) -> bool {
     upper.starts_with("V$") || upper.starts_with("GV$")
     || upper.starts_with("ALL_") || upper.starts_with("DBA_") || upper.starts_with("USER_")
     || upper.starts_with("SYS.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_sql_preview;
+
+    #[test]
+    fn sql_preview_keeps_utf8_boundaries() {
+        let sql = "SELECT コード, 名称 FROM items";
+
+        assert_eq!(safe_sql_preview(sql, 8), "SELECT ");
+        assert_eq!(safe_sql_preview(sql, 10), "SELECT コ");
+        assert_eq!(safe_sql_preview(sql, sql.len()), sql);
+    }
 }
