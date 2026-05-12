@@ -1,7 +1,9 @@
 #![cfg(feature = "pg")]
 
 use anyhow::{Context, Result};
-use postgres::{Client, NoTls};
+use native_tls::TlsConnector;
+use postgres::Client;
+use postgres_native_tls::MakeTlsConnector;
 
 use super::{
     factory::{column_info_via_sql, primary_key_via_sql, table_info_via_sql},
@@ -28,9 +30,64 @@ fn build_pg_connstring(dsn_body: &str, user: &str, pass: &str) -> String {
     parts.join(" ")
 }
 
+fn parse_pg_sslmode(dsn_body: &str) -> Option<String> {
+    dsn_body
+        .split(';')
+        .filter_map(|kv| kv.split_once('='))
+        .find(|(key, _)| key.trim().eq_ignore_ascii_case("sslmode"))
+        .map(|(_, value)| value.trim().to_ascii_lowercase())
+        .filter(|v| !v.is_empty())
+}
+
+fn redact_pg_connstring(connstring: &str) -> String {
+    connstring
+        .split_whitespace()
+        .map(|part| {
+            let Some((key, _value)) = part.split_once('=') else {
+                return part.to_string();
+            };
+            if key.eq_ignore_ascii_case("password") {
+                format!("{}=<redacted>", key)
+            } else {
+                part.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn preview_sql(sql: &str, max_bytes: usize) -> &str {
+    let mut end = max_bytes.min(sql.len());
+    while end > 0 && !sql.is_char_boundary(end) {
+        end -= 1;
+    }
+    &sql[..end]
+}
+
+fn build_pg_tls_connector(insecure: bool) -> Result<MakeTlsConnector> {
+    let mut builder = TlsConnector::builder();
+    if insecure {
+        builder.danger_accept_invalid_certs(true);
+        builder.danger_accept_invalid_hostnames(true);
+    }
+    let connector = builder.build().context("postgres TLS connector")?;
+    Ok(MakeTlsConnector::new(connector))
+}
+
 pub fn connect(dsn_body: &str, user: &str, pass: &str, _encoding: &str) -> Result<Box<dyn DbConn>> {
     let cs = build_pg_connstring(dsn_body, user, pass);
-    let mut client = Client::connect(&cs, NoTls).with_context(|| format!("postgres connect: {}", cs))?;
+    let sslmode = parse_pg_sslmode(dsn_body);
+    let redacted_cs = redact_pg_connstring(&cs);
+
+    let mut client = match sslmode.as_deref() {
+        None | Some("disable") => {
+            Client::connect(&cs, postgres::NoTls).with_context(|| format!("postgres connect: {}", redacted_cs))?
+        }
+        Some(_) => {
+            let tls = build_pg_tls_connector(true)?;
+            Client::connect(&cs, tls).with_context(|| format!("postgres connect: {}", redacted_cs))?
+        }
+    };
     // Perl の AutoCommit=0 に相当: 明示的トランザクション開始
     client.simple_query("BEGIN").context("pg BEGIN")?;
     Ok(Box::new(PgConn { client }))
@@ -46,7 +103,7 @@ fn simple_query_to_cursor(
     use postgres::SimpleQueryMessage;
     let msgs = client
         .simple_query(sql)
-        .with_context(|| format!("pg query: {}", &sql[..sql.len().min(80)]))?;
+        .with_context(|| format!("pg query: {}", preview_sql(sql, 80)))?;
 
     let limit = if max_rows <= 0 { usize::MAX } else { (max_rows + 1) as usize };
     let mut columns: Vec<String> = vec![];
@@ -71,7 +128,7 @@ fn simple_query_to_cursor(
     if columns.is_empty() {
         let stmt = client
             .prepare(sql)
-            .with_context(|| format!("pg prepare for columns: {}", &sql[..sql.len().min(80)]))?;
+            .with_context(|| format!("pg prepare for columns: {}", preview_sql(sql, 80)))?;
         columns = stmt.columns().iter().map(|c| c.name().to_string()).collect();
     }
 
@@ -85,7 +142,7 @@ impl DbConn for PgConn {
 
     fn execute(&mut self, sql: &str) -> Result<i64> {
         let msgs = self.client.simple_query(sql)
-            .with_context(|| format!("pg execute: {}", &sql[..sql.len().min(80)]))?;
+            .with_context(|| format!("pg execute: {}", preview_sql(sql, 80)))?;
         // CommandComplete メッセージから影響行数を取得
         let n = msgs.iter().find_map(|m| {
             if let postgres::SimpleQueryMessage::CommandComplete(n) = m { Some(*n as i64) } else { None }
@@ -129,5 +186,36 @@ impl DbConn for PgConn {
     fn disconnect(&mut self) -> Result<()> {
         let _ = self.client.simple_query("ROLLBACK");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_pg_sslmode, preview_sql, redact_pg_connstring};
+
+    #[test]
+    fn preview_sql_keeps_utf8_boundaries() {
+        let sql = "SELECT コード, 名称 FROM items";
+        assert_eq!(preview_sql(sql, 8), "SELECT ");
+        assert_eq!(preview_sql(sql, 10), "SELECT コ");
+        assert_eq!(preview_sql(sql, sql.len()), sql);
+    }
+
+    #[test]
+    fn redact_pg_connstring_hides_password() {
+        let cs = "host=192.168.8.133 port=5433 dbname=mydatabase sslmode=require user=prd password=pass";
+        let redacted = redact_pg_connstring(cs);
+        assert_eq!(
+            redacted,
+            "host=192.168.8.133 port=5433 dbname=mydatabase sslmode=require user=prd password=<redacted>"
+        );
+        assert!(!redacted.contains("password=pass"));
+    }
+
+    #[test]
+    fn parse_pg_sslmode_reads_mode() {
+        assert_eq!(parse_pg_sslmode("host=a;sslmode=require;user=b"), Some("require".into()));
+        assert_eq!(parse_pg_sslmode("host=a;sslmode=disable"), Some("disable".into()));
+        assert_eq!(parse_pg_sslmode("host=a"), None);
     }
 }

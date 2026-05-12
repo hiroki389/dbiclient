@@ -16,6 +16,8 @@ hex = "0.4"
 signal-hook = "0.3"
 chrono = "0.4"
 encoding_rs = "0.8"
+native-tls = "0.2"
+postgres-native-tls = "0.5"
 
 # DB drivers (feature-gated for flexibility)
 postgres = { version = "0.19", features = ["with-chrono-0_4"], optional = true }

@@ -108,7 +108,7 @@ On success the table list opens automatically (float window in Neovim, split in 
 
 | DBMS | DSN example |
 |---|---|
-| PostgreSQL | `Pg:dbname=mydb;host=localhost;port=5432` |
+| PostgreSQL | `Pg:dbname=mydb;host=localhost;port=5432;sslmode=require` |
 | MySQL / MariaDB | `mysql:dbname=mydb;host=localhost` |
 | SQLite | `sqlite:/path/to/database.db` |
 | Oracle | `Oracle:sid=XE` or `Oracle:service_name=XEPDB1` or `Oracle:host:port/service` |
@@ -119,7 +119,8 @@ On success the table list opens automatically (float window in Neovim, split in 
 #### PostgreSQL
 
 ```vim
-call setenv('MYPG_DB_DSN',  'Pg:dbname=mydb;host=localhost')
+" `sslmode=require` などの PostgreSQL オプションも指定できます
+call setenv('MYPG_DB_DSN',  'Pg:dbname=mydb;host=localhost;sslmode=require')
 call setenv('MYPG_DB_USER', 'postgres')
 call setenv('MYPG_DB_PASS', 'password')
 command! DBIConnMyPg call dbiclient#connect('MYPG')
