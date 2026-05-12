@@ -5223,6 +5223,9 @@ endfunction
 " メインフロートの scratch タブへ切り替える。
 " 戻り値: bufnr (タブにフォーカス移動済み)  -1 なら非フロート
 function s:openScratchBuffer() abort
+    if !get(g:, 'dbiclient_float_window', 1)
+        return -1
+    endif
     if !has('nvim') || !exists('*nvim_open_win')
         return -1
     endif
