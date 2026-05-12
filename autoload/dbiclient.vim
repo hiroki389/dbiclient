@@ -2034,6 +2034,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
                 \, 'reloadBufname' : bufname
                 \, 'reloadBufnr'   : bufnr
                 \, 'callbackstr'   : a:callback
+                \, 'restoreFlg'    : get(a:opt, 'restoreFlg', 0)
                 \, 'connInfo'      : s:params[a:port]
                 \, 'tempfile'      : s:tempname()}
     let param.setnmaps = getbufvar(bufnr, 'dbiclient_nmap', [])
@@ -2204,6 +2205,7 @@ function s:cb_do(ch, dict) abort
     let data = get(a:dict, 'data', {})
     let port = get(get(data, 'connInfo', {}), 'port')
     let connInfo = get(data, 'connInfo', {})
+    let restoreFlg = get(a:dict, 'restoreFlg', get(data, 'restoreFlg', 0))
     let is_commit = has_key(a:dict, 'commit') || has_key(data, 'commit')
     let is_rollback = has_key(a:dict, 'rollback') || has_key(data, 'rollback')
     call s:myChClose(a:ch)
@@ -2297,7 +2299,7 @@ function s:cb_do(ch, dict) abort
             endif
         endif
     endif
-    if get(a:dict, "status", 9) !=# 9 && get(a:dict, 'restoreFlg', 0) !=# 1 && !empty(get(a:dict.data, 'do', []))
+    if get(a:dict, "status", 9) !=# 9 && restoreFlg !=# 1 && !empty(get(a:dict.data, 'do', []))
         let path = s:getHistoryPathCmd(port)
         let bufVals=[]
         let datetime = strftime("%Y-%m-%d %H:%M:%S ")
@@ -2312,7 +2314,9 @@ function s:cb_do(ch, dict) abort
                     \ 'message': get(a:dict, 'message', ''),
                     \ 'data': {
                     \     'do': get(a:dict.data, 'do', []),
+                    \     'continue': get(a:dict.data, 'continue', 0),
                     \     'sql': get(a:dict.data, 'sql', ''),
+                    \     'connInfo': connInfo,
                     \     'reloadBufname': get(a:dict.data, 'reloadBufname', ''),
                     \     'reloadBufnr': get(a:dict.data, 'reloadBufnr', -1),
                     \     'tableNm': get(a:dict.data, 'tableNm', ''),
@@ -2384,6 +2388,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
 
     let status = s:getStatus(port, connInfo)
     let opt = get(a:dict.data, 'opt', {})
+    let restoreFlg = get(a:dict, 'restoreFlg', get(get(a:dict, 'data', {}), 'restoreFlg', 0))
     let tupleList = []
     let msgList = []
     call add(msgList, ['PID', '=' .. get(connInfo, 'process', '')])
@@ -2700,7 +2705,7 @@ function s:cb_outputResultCmn(ch, dict, bufnr) abort
         let dbiclient_bufmap.opt.group.selectdictAscDesc = s:f2.Foldl({x, y -> extend(x, y)}, {}, map(groupStr[:], {i, x -> {F1(x) : 0}}))
         let dbiclient_bufmap.opt.group.selectUnmatchCols = uniq(sort(filter(groupStr[:], {i, x -> match(cols, '\V' .. substitute(trim(x), '\\', '\\\\', 'g')) == -1})))
     endif
-    if get(a:dict, "status", 9) !=# 9 && get(a:dict, 'restoreFlg', 0) !=# 1 && !empty(get(a:dict.data, 'sql', ''))
+    if get(a:dict, "status", 9) !=# 9 && restoreFlg !=# 1 && !empty(get(a:dict.data, 'sql', ''))
         let path = s:getHistoryPathCmd(port)
         let bufVals=[]
         let datetime = strftime("%Y-%m-%d %H:%M:%S ")
@@ -4026,35 +4031,66 @@ function s:dbhistoryRestore(str) abort
     catch
         return
     endtry
-    let tempfile = get(get(dbiclient_bufmap, 'data', {}), 'tempfile', '')
-    "echom tempfile
-    if !filereadable(tempfile)
-        call s:echoMsg('EO02', tempfile)
-        return
-    endif
-    let dbiclient_bufmap.restoreFlg = 1
+    let history_bufmap = getbufvar(s:bufnr('%'), 'dbiclient_bufmap', {})
+    let fallback_connInfo = get(get(history_bufmap, 'data', {}), 'connInfo', {})
     let connInfo1 = s:getconninfo(dbiclient_bufmap)
+    if empty(connInfo1)
+        let connInfo1 = fallback_connInfo
+    endif
+    if empty(connInfo1)
+        let connInfo1 = get(s:params, s:getCurrentPort(), {})
+    endif
+    let restore_bufname = get(get(dbiclient_bufmap, 'data', {}), 'reloadBufname', '')
+    let matched_port = s:getCurrentPort()
     for [port, connInfo2] in items(s:params)
         let status = s:ch_statusStrOk(s:ch_open2status(port))
         if get(connInfo1, 'hashKey', '1') ==# get(connInfo2, 'hashKey', '2') && status
             let dbiclient_bufmap.data.connInfo = connInfo2
+            let matched_port = port
             break
         endif
     endfor
-    let dbiclient_bufmap.data.reloadBufnr = -1
-    let dbiclient_bufmap.data.reloadBufname = dbiclient_bufmap.data.reloadBufname
-    if s:f.getwidCurrentTab(s:bufnr(dbiclient_bufmap.data.reloadBufname)) ==# -1
-        call s:f.delbuf(s:bufnr(dbiclient_bufmap.data.reloadBufname))
-    endif
-    let restore_bufname = dbiclient_bufmap.data.reloadBufname
-    if has_key(dbiclient_bufmap.data, 'sql')
-        let callbackstr = get(dbiclient_bufmap.data, 'callbackstr', 's:cb_outputResultEasyAlign')
-        if has_key(dbiclient_bufmap, 'opt')
-            call remove(dbiclient_bufmap, 'opt')
+    let async_restore = 0
+    let tempfile = get(get(dbiclient_bufmap, 'data', {}), 'tempfile', '')
+    if filereadable(tempfile)
+        let dbiclient_bufmap.restoreFlg = 1
+        let dbiclient_bufmap.data.reloadBufnr = -1
+        if !empty(restore_bufname) && s:f.getwidCurrentTab(s:bufnr(restore_bufname)) ==# -1
+            call s:f.delbuf(s:bufnr(restore_bufname))
         endif
-        call funcref(callbackstr)({}, dbiclient_bufmap)
+        if has_key(dbiclient_bufmap.data, 'sql')
+            let callbackstr = get(dbiclient_bufmap.data, 'callbackstr', 's:cb_outputResultEasyAlign')
+            if has_key(dbiclient_bufmap, 'opt')
+                call remove(dbiclient_bufmap, 'opt')
+            endif
+            call funcref(callbackstr)({}, dbiclient_bufmap)
+        else
+            call s:cb_do({}, dbiclient_bufmap)
+        endif
+    elseif !empty(get(dbiclient_bufmap.data, 'do', []))
+        let command = {
+                    \ 'doText': get(dbiclient_bufmap.data, 'doText', get(dbiclient_bufmap.data, 'do', [])),
+                    \ 'do': get(dbiclient_bufmap.data, 'do', [])[:],
+                    \ 'continue': get(dbiclient_bufmap.data, 'continue', 0),
+                    \ 'callbackstr': 's:cb_do',
+                    \ 'restoreFlg': 1,
+                    \ 'reloadBufname': restore_bufname,
+                    \ 'reloadBufnr': -1,
+                    \ }
+        call s:dBCommandAsync(command, 's:cb_do', matched_port)
+        let async_restore = 1
+    elseif !empty(get(dbiclient_bufmap.data, 'sql', ''))
+        let opt = deepcopy(get(dbiclient_bufmap, 'opt', {}), 1)
+        if !empty(restore_bufname)
+            let opt.reloadBufname = restore_bufname
+            let opt.reloadBufnr = -1
+        endif
+        let opt.restoreFlg = 1
+        call s:getQueryAsync(dbiclient_bufmap.data.sql, get(dbiclient_bufmap.data, 'callbackstr', 's:cb_outputResultEasyAlign'), get(dbiclient_bufmap.data, 'limitrows', s:getLimitrows()), opt, matched_port)
+        let async_restore = 1
     else
-        call s:cb_do({}, dbiclient_bufmap)
+        call s:echoMsg('EO02', tempfile)
+        return
     endif
     " 履歴フロートを閉じる
     " ただしメインフロート (Tables/Result/History/Jobs 共用) からの呼び出しは閉じない
@@ -4067,6 +4103,9 @@ function s:dbhistoryRestore(str) abort
             endif
         catch
         endtry
+    endif
+    if async_restore
+        return
     endif
     " 結果フロートへフォーカスを移動（previewwindow廃止後のフォールバック）
     if s:resultFloatWinid != -1

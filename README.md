@@ -177,7 +177,7 @@ command! DBIConnODBC call dbiclient#connect('ODBC')
 | connect_opt_envdict          | `g:dbiclient_connect_opt_envdict = {}`      | DBMS-specific environment variables |
 | connect_opt_schema_flg       | `g:dbiclient_connect_opt_schema_flg = 0`    | Prefix schema name to table name |
 | connect_opt_schema_list      | `g:dbiclient_connect_opt_schema_list = []`  | Additional schemas to search for column info |
-| connect_opt_history_data_flg | `g:dbiclient_connect_opt_history_data_flg = 0` | Persist SQL result history (default OFF) |
+| connect_opt_history_data_flg | `g:dbiclient_connect_opt_history_data_flg = 0` | Persist SQL result history (default OFF; history restore reruns when the tempfile is gone) |
 | connect_opt_columninfoflg    | `g:dbiclient_connect_opt_columninfoflg = 0` | Show column comments |
 
 ---
