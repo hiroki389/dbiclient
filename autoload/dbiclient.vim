@@ -1955,7 +1955,7 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     let bufname = get(a:opt, 'reloadBufname', 'Result_' .. s:getuser(s:params[a:port]) .. '_' .. a:port .. '_' .. ymdhmss)
     let bufnr = s:bufnr(get(a:opt, 'reloadBufnr', s:bufnr(bufname)))
 
-    let ro = getbufvar(bufnr, '&readonly', 0)
+    let ro = bufnr >= 0 ? getbufvar(bufnr, '&readonly', 0) : 0
     if s:f.getwid(bufnr) ==# -1
         let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
         call add(s:bufferList, bufnr)
@@ -2170,7 +2170,7 @@ function s:dBCommandAsync(command, callback, port) abort
         let ymdhmss = strftime("%Y%m%d%H%M%S", localtime()) .. reltime()[1][-4:] .. split(reltimestr(reltime()), '\.')[1]
         let bufname='Result_' .. s:getuser(s:params[a:port]) .. '_' .. port .. '_' .. ymdhmss
         let bufnr = s:bufnr(bufname)
-        let ro = getbufvar(bufnr, '&readonly', 0)
+        let ro = bufnr >= 0 ? getbufvar(bufnr, '&readonly', 0) : 0
         if s:f.getwid(bufnr) ==# -1
             let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
             call add(s:bufferList, bufnr)
@@ -2211,7 +2211,7 @@ function s:cb_do(ch, dict) abort
     let is_rollback = has_key(a:dict, 'rollback') || has_key(data, 'rollback')
     call s:myChClose(a:ch)
     let bufnr = s:bufnr(get(data, 'reloadBufnr', -1))
-    let ro = getbufvar(bufnr, '&readonly', 0)
+    let ro = bufnr >= 0 ? getbufvar(bufnr, '&readonly', 0) : 0
     let matchadds=[]
     if is_commit
         call s:echoMsg('IO13')
@@ -2761,7 +2761,7 @@ function s:cb_outputResult(ch, dict) abort
     if get(a:dict, 'restoreFlg', 0) ==# 1
         let bufnr = s:bufnr(bufname)
     endif
-    let ro = getbufvar(bufnr, '&readonly', 0)
+    let ro = bufnr >= 0 ? getbufvar(bufnr, '&readonly', 0) : 0
     if s:f.getwid(bufnr) ==# -1
         let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
         let a:dict.data.reloadBufnr = bufnr
@@ -2822,7 +2822,7 @@ function s:cb_outputResultEasyAlign(ch, dict) abort
     if get(a:dict, 'restoreFlg', 0) ==# 1
         let bufnr = s:bufnr(bufname)
     endif
-    let ro = getbufvar(bufnr, '&readonly', 0)
+    let ro = bufnr >= 0 ? getbufvar(bufnr, '&readonly', 0) : 0
     if s:f.getwid(bufnr) ==# -1
         let [bufnr, cbufnr] = s:belowPeditBuffer(bufname)
         let a:dict.data.reloadBufnr = bufnr
