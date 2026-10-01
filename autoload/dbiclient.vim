@@ -969,9 +969,19 @@ function s:getPrimaryKeys(tableNm, port) abort
     return get(s:getQuery('', -1, opt, a:port), 'primary_key', [])
 endfunction
 
+" V$/GV$ ビューやデータディクショナリ系のシステム表かどうかを判定する
+function s:isSystemTable(tableNm) abort
+    let name = toupper(a:tableNm)
+    return name =~# '\v^(G?V\$|G?V_\$|ALL_|DBA_|USER_|SYS\.)'
+endfunction
+
 function s:getColumns(tableNm, port) abort
     " TABLE() 関数などをテーブル名として処理しないように除外
     if a:tableNm =~? '\v^table$'
+        return []
+    endif
+    " V$/GV$ ビュー等のシステム表はメタデータ取得対象外（辞書参照・全件 SELECT の自動発行を防止）
+    if s:isSystemTable(a:tableNm)
         return []
     endif
 
@@ -980,7 +990,8 @@ function s:getColumns(tableNm, port) abort
         let s:params[a:port][a:tableNm] = []
         let opt = {'tableNm':a:tableNm, 'column_info_data':1}
         let cols = get(s:getQuery('', -1, opt, a:port),'column_info',[])->map({_,x -> x.COLUMN_NAME})
-        if empty(cols)
+        " システム表はフォールバックの全件 SELECT を発行しない（二重防御）
+        if empty(cols) && !s:isSystemTable(a:tableNm)
             let cols = get(s:getQuery('SELECT * FROM ' .. a:tableNm, 0, {}, a:port),'cols',[])
         endif
         if !empty(cols)
@@ -1940,6 +1951,10 @@ function s:getQueryAsync(sql, callback, limitrows, opt, port) abort
     let tableJoinNmWithAs = s:getTableJoinList(a:sql)
     let cols = []
     for item in tableJoinNmWithAs
+        " V$/GV$ ビュー等のシステム表は列メタデータ取得をスキップ（二重防御）
+        if s:isSystemTable(item.tableNm)
+            continue
+        endif
         if len(tableJoinNmWithAs) > 1
             let prefix = empty(item.AS) ? item.tableNm .. '.' : item.AS .. '.'
         else

@@ -383,6 +383,12 @@ fn run_main(
     if data["table_info"].as_i64().unwrap_or(0) == 1 {
         let table_nm = data["table_name"].as_str().filter(|s| !s.trim().is_empty());
         let table_type = data["tabletype"].as_str().filter(|s| !s.trim().is_empty());
+        // V$/GV$ ビューはメタデータ取得対象外（辞書参照の自動発行を防止）
+        if let Some(t) = table_nm {
+            if is_system_table(t) {
+                return Ok(());
+            }
+        }
         let table_schem_str: Option<String> = if db.is_odbc()
             || db.conn.as_ref().map(|c| c.db_type() == DbType::Postgres).unwrap_or(false)
         {
@@ -613,6 +619,10 @@ fn fetch_table_metadata(
     result: &mut Value,
     port: u16,
 ) {
+    // V$/GV$ ビューはメタデータ取得対象外（辞書参照の自動発行を防止）
+    if is_system_table(table_entry) {
+        return;
+    }
     // schema.table 形式を分解
     let (forced_schema, table_name) = if let Some(dot) = table_entry.find('.') {
         (Some(&table_entry[..dot]), &table_entry[dot + 1..])
@@ -692,6 +702,10 @@ fn fetch_full_metadata(
     result: &mut Value,
     port: u16,
 ) {
+    // V$/GV$ ビューはメタデータ取得対象外（辞書参照の自動発行を防止）
+    if is_system_table(table) {
+        return;
+    }
     let user_schem = schem;
 
     let t0 = Instant::now();
@@ -982,6 +996,7 @@ fn is_system_schema(schema: Option<&str>) -> bool {
 fn is_system_table(name: &str) -> bool {
     let upper = name.to_uppercase();
     upper.starts_with("V$") || upper.starts_with("GV$")
+    || upper.starts_with("V_$") || upper.starts_with("GV_$")
     || upper.starts_with("ALL_") || upper.starts_with("DBA_") || upper.starts_with("USER_")
     || upper.starts_with("SYS.")
 }
