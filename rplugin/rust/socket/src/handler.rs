@@ -355,6 +355,10 @@ fn run_main(
                     if is_sql_non_table(table_entry) {
                         continue;
                     }
+                    // V$/GV$ ビューはメタデータ取得対象外（辞書参照の自動発行を防止）
+                    if is_system_table(table_entry) {
+                        continue;
+                    }
                     fetch_table_metadata(
                         db,
                         basedir,
@@ -461,6 +465,10 @@ fn run_main(
     if data["column_info"].as_i64().unwrap_or(0) == 1 {
         let table = data["tableNm"].as_str().unwrap_or("").to_string();
         if is_sql_non_table(&table) {
+            return Ok(());
+        }
+        // V$/GV$ ビューはメタデータ取得対象外（辞書参照の自動発行を防止）
+        if is_system_table(&table) {
             return Ok(());
         }
         let schem_raw = data["schem"].as_str().unwrap_or("");
