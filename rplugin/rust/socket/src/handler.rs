@@ -420,6 +420,10 @@ fn run_main(
         if is_sql_non_table(&table) {
             return Ok(());
         }
+        // V$/GV$ ビューはメタデータ取得対象外（辞書参照の自動発行を防止）
+        if is_system_table(&table) {
+            return Ok(());
+        }
         outputlog(&format!("SQL: COLUMN_INFO_DATA({})", table), Some(port));
         let schem_raw = data["schem"].as_str().unwrap_or("");
         let schem_str: Option<String> = if schem_raw.is_empty() {
