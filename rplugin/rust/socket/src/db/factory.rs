@@ -3,6 +3,9 @@ use std::collections::HashMap;
 
 use super::{DbConn, DbType, EagerCursor, StmtCursor};
 
+/// table_info クエリが読み込む最大行数（イージェ読み込みによる OOM・長時間スキャンを抑制）
+const TABLE_INFO_MAX_ROWS: i64 = 50000;
+
 /// datasource 文字列 ("DBI:Pg:host=...;dbname=..." 形式) を解析して接続を作成
 pub fn connect(
     datasource: &str,
@@ -124,7 +127,7 @@ pub fn table_info_via_sql(
                  WHERE {} ORDER BY table_name",
                 conditions.join(" AND ")
             );
-            conn.query(&sql, -1)
+            conn.query(&sql, TABLE_INFO_MAX_ROWS)
         }
         DbType::Mysql => {
             if let Some(s) = schema {
@@ -142,7 +145,7 @@ pub fn table_info_via_sql(
                  FROM information_schema.tables WHERE {} ORDER BY TABLE_NAME",
                 conditions.join(" AND ")
             );
-            conn.query(&sql, -1)
+            conn.query(&sql, TABLE_INFO_MAX_ROWS)
         }
         DbType::Sqlite => {
             let mut name_cond = String::new();
@@ -161,7 +164,7 @@ pub fn table_info_via_sql(
                  FROM sqlite_master WHERE 1=1{}{} ORDER BY name",
                 name_cond, type_cond
             );
-            conn.query(&sql, -1)
+            conn.query(&sql, TABLE_INFO_MAX_ROWS)
         }
         DbType::Oracle => {
             let mut obj_conditions = vec!["1=1".to_string()];
@@ -194,7 +197,7 @@ pub fn table_info_via_sql(
                 obj_conditions.join(" AND "),
                 type_filter
             );
-            conn.query(&sql, -1)
+            conn.query(&sql, TABLE_INFO_MAX_ROWS)
         }
         DbType::Odbc => {
             // ODBC では専用 API を使うためここには来ない想定だが念のため
