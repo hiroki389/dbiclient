@@ -230,7 +230,7 @@ When a float opens, focus always moves to it and the background is dimmed with a
 | `:DBIExecuteNoSplit[!]`       | Execute a single SQL statement from visual selection |
 | `:DBICommit`                  | Commit |
 | `:DBIRollback`                | Rollback |
-| `:DBICancel`                  | Cancel the running SQL |
+| `:DBICancel`                  | Interrupt the running SQL (sends SIGINT to the server; the connection is kept) |
 | `:DBIHistory`                 | Show SQL history |
 | `:DBIOpenBuf`                 | Re-open the last result buffer in a float window |
 | `:DBILog`                     | Open the socket log file (`socket_YYYYMMDD.log`) |

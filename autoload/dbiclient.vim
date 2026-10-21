@@ -57,6 +57,9 @@ let s:msg = {
             \'IO19': 'Socket server started.',
             \'IO20': 'SQL is already running. Please wait.',
             \'IO22': 'SQL is already running. Please wait.',
+            \'IO23': 'Cancel requested. (port: $1)',
+            \'IO24': 'Nothing is running on port ($1).',
+            \'IO25': 'Stopped the running server job. (port: $1)',
             \'EO23': 'Display limit reached (1000 rows). Narrow the condition.',
             \}
 
@@ -497,8 +500,8 @@ function dbiclient#getHardparseDict() abort
     return s:lastparse
 endfunction
 
-function dbiclient#cancel() abort
-    call s:cancel(s:getCurrentPort())
+function dbiclient#cancel(...) abort
+    return s:cancel(get(a:, 1, s:getCurrentPort()))
 endfunction
 
 function dbiclient#clearCache() abort
@@ -1618,18 +1621,82 @@ function s:MyJobStop(port) abort
     return 1
 endfunction
 
-function s:cancel(port) abort
-    let port = a:port
-    if empty(s:params)
+" 実行中の SQL を実行しているサーバープロセスの PID を解決する。
+" s:jobs にエントリが無い場合（s:zonbie でロックファイルから接続を復元したケース）は
+" s:params[port].process を使用する。
+function s:getServerPid(port) abort
+    let portStr = printf('%s', a:port)
+    if has_key(s:jobs, portStr)
+        try
+            let pid = get(s:jobInfo(s:jobs[portStr]), 'process', 0)
+            if pid > 0
+                return pid
+            endif
+        catch
+        endtry
+    endif
+    return str2nr(get(get(s:params, portStr, {}), 'process', 0))
+endfunction
+
+" サーバープロセスへ SIGINT を送る。
+" サーバー側は SIGINT を受け取ると cancel_flag を立てて実行中のフェッチループを
+" 抜けるため、接続は維持したまま実行中の SQL だけを割り込める。
+" Windows ではプロセス単位で SIGINT を送れないので 0 を返す（呼び出し側でフォールバック）。
+function s:sendSigInt(pid) abort
+    let pid = str2nr(a:pid)
+    if pid <= 0
         return 0
     endif
-    if has_key(s:jobs, port)
-        call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
-        let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
-        if len(sendexprList) > 0
-            call s:jobStop(s:jobs[port], 'int')
-        endif
+    if has('win32') || has('win64') || has('win32unix')
+        return 0
     endif
+    silent! call system('kill -INT ' . pid)
+    return v:shell_error ==# 0
+endfunction
+
+function s:cancel(port) abort
+    let port = a:port
+    let portStr = printf('%s', port)
+    if empty(s:params) || !has_key(s:params, portStr)
+        call s:echoMsg('IO07', port)
+        return 0
+    endif
+    call filter(s:sendexprList, {_, x -> s:ch_statusOk(x[1])})
+    let sendexprList = filter(s:sendexprList[:], {_, x -> x[0] ==# port})
+    if len(sendexprList) ==# 0
+        call s:echoMsg('IO24', port)
+        return 0
+    endif
+    let pid = s:getServerPid(port)
+    if s:sendSigInt(pid)
+        call s:echoMsg('IO23', printf('%s (pid: %s)', port, pid))
+        if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
+            call s:joblist(0)
+        endif
+        call s:updateStatus(0)
+        return 1
+    endif
+    if has_key(s:jobs, portStr)
+        " SIGINT を送れない環境（Windows 等）では従来どおりジョブ停止で割り込む。
+        " サーバープロセスが終了するため台帳とロックファイルも後片付けする。
+        call s:jobStop(s:jobs[portStr], 'int')
+        call filter(s:sendexprList, {_, x -> !(x[0] ==# port)})
+        call remove(s:jobs, portStr)
+        call remove(s:params, portStr)
+        for file in split(glob(s:Filepath.join(s:getRootPath(), '*.lock')), "\n")
+            if portStr ==# fnamemodify(file, ':p:t:r')
+                call delete(file)
+            endif
+        endfor
+        call s:echoMsg('IO25', port)
+        if s:f.getwid(s:bufnr('DBIJobList')) !=# -1
+            call s:joblist(0)
+        endif
+        call s:updateStatus(0)
+        return 1
+    endif
+    call s:echoMsg('IO25', port)
+    return 0
 endfunction
 
 function s:selectRangeSQL(alignFlg, limitrows) range abort
